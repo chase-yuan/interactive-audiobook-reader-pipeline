@@ -14,6 +14,7 @@ import re
 import hashlib
 import contextlib
 import fcntl
+import subprocess
 from pathlib import Path
 
 PIPELINE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -133,10 +134,9 @@ def _public_audio_url(public_audio_base_url, public_book_id, chapter_number):
     """Return the canonical public name without depending on local filenames."""
     if not public_audio_base_url or not public_book_id:
         return None
-    public_chapter = chapter_number + 1 if chapter_number == 0 else chapter_number
     return (
         f"{public_audio_base_url.rstrip('/')}/{public_book_id}/"
-        f"chapter_{public_chapter:02d}.mp3"
+        f"chapter_{chapter_number:02d}.mp3"
     )
 
 def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual Synchronized Reader", book_author=None,
@@ -368,9 +368,19 @@ def main():
     parser.add_argument("--public-audio-base-url", help="Optional public audio CDN base URL")
     parser.add_argument("--public-book-id", help="Public audio namespace, required with --public-audio-base-url")
     parser.add_argument("--chapter-metadata", help="Validated display metadata JSON (defaults to BOOK_DIR/chapter_metadata.json)")
+    parser.add_argument("--publish", action="store_true", help="Automatically upload to R2, chunk, seal, and deploy to Audible production portal")
     
     args = parser.parse_args()
-    ready_count, _ = auto_discover_and_build(
+
+    if args.publish:
+        if not args.public_audio_base_url:
+            args.public_audio_base_url = "https://audio.audiblelibrary.online"
+        if not args.public_book_id:
+            folder = Path(args.book_dir).name
+            slug = re.sub(r'[^a-zA-Z0-9]+', '-', folder.lower()).strip('-')
+            args.public_book_id = slug
+
+    ready_count, master_html_path = auto_discover_and_build(
         book_dir=args.book_dir,
         book_title=args.title,
         book_subtitle=args.subtitle,
@@ -382,6 +392,27 @@ def main():
     )
     if ready_count == 0:
         raise SystemExit(1)
+
+    if args.publish:
+        audible_publisher = Path("/Users/lindy/Vault/Audible/scripts/publish_book.py")
+        if not audible_publisher.is_file():
+            print(f"❌ [PUBLISH FAILED] Publisher script not found at {audible_publisher}")
+            raise SystemExit(1)
+
+        audio_dir = Path(args.book_dir) / "audio"
+        audio_dir_arg = str(audio_dir) if audio_dir.is_dir() else str(args.book_dir)
+        print(f"\n🚀 [PIPELINE -> AUTO-PUBLISH] Triggering automated production release for '{args.public_book_id}'...")
+        cmd = [
+            sys.executable, str(audible_publisher),
+            "--id", args.public_book_id,
+            "--src", master_html_path,
+            "--audio-dir", audio_dir_arg,
+        ]
+        res = subprocess.run(cmd)
+        if res.returncode != 0:
+            print("❌ [PIPELINE -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
+            raise SystemExit(1)
+        print(f"🎉 [PIPELINE -> AUTO-PUBLISH] Finished! '{args.public_book_id}' is live and verified on production.")
 
 if __name__ == "__main__":
     main()
