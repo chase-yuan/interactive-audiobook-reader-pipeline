@@ -102,6 +102,10 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   if (t && (t === 'sepia' || t === 'light' || t === 'dark' || t === 'night')) {{
     document.documentElement.setAttribute('data-theme', t);
   }}
+  var hideCh = localStorage.getItem('reader_' + bId + '_hide_chinese') || localStorage.getItem('audible_hide_chinese');
+  if (hideCh === 'true') {{
+    document.documentElement.setAttribute('data-hide-chinese', 'true');
+  }}
 }})();
 </script>
 <style>
@@ -810,9 +814,15 @@ body {{
   cursor: pointer;
 }}
 
-.sentence-unit.active .inspect-panel {{
+.sentence-unit.active:not(.card-collapsed) .inspect-panel {{
   display: block;
 }}
+
+/* Global Chinese Lock (Pure English Listening Mode) */
+[data-hide-chinese="true"] .inspect-panel {{
+  display: none !important;
+}}
+
 
 .inspect-trans {{
   font-family: var(--font-serif);
@@ -957,6 +967,7 @@ body {{
             <button class="seg-btn" onclick="adjustFontSize(1)" title="Increase font size">A+</button>
           </div>
           <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark / Night)">🌓 Theme</button>
+          <button class="pill-btn" id="chineseLockBtn" onclick="toggleChineseLock()" title="Lock / Hide Chinese translation for pure English listening">🔒 锁定中文</button>
         </div>
         <div class="drawer-group"{repeat_group_attr}>
           <div class="segmented-control">
@@ -985,8 +996,8 @@ body {{
           </div>
           <div class="tips-section">
             <div class="tips-section-title">Keyboard Shortcuts</div>
-            <div class="tips-row"><span class="kbd-key">Space</span><span>Toggle breakdown card</span></div>
-            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
+            <div class="tips-row"><span class="kbd-key">Space</span><span>Toggle translation card (peek / hide)</span></div>
+            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence (audio only)</span></div>
           </div>
         </div>
       </div>
@@ -1283,6 +1294,44 @@ window.addEventListener('storage', event => {{
   }}
 }});
 
+function updateChineseLockUI(isLocked) {
+  const btn = document.getElementById('chineseLockBtn');
+  if (!btn) return;
+  if (isLocked) {
+    btn.classList.add('active');
+    btn.textContent = '🔒 中文已锁';
+    btn.title = '中文翻译已锁定隐藏（点击解锁）';
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '🔓 锁定中文';
+    btn.title = '锁定中文翻译，仅听英文（纯听模式）';
+  }
+}
+
+function toggleChineseLock() {
+  const isLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+  const next = !isLocked;
+  if (next) {
+    document.documentElement.setAttribute('data-hide-chinese', 'true');
+    document.querySelectorAll('.sentence-unit.active').forEach(u => u.classList.add('card-collapsed'));
+  } else {
+    document.documentElement.removeAttribute('data-hide-chinese');
+  }
+  localStorage.setItem(STORAGE_PREFIX + 'hide_chinese', String(next));
+  localStorage.setItem('audible_hide_chinese', String(next));
+  updateChineseLockUI(next);
+}
+
+window.toggleChineseLock = toggleChineseLock;
+
+const savedHideChinese = localStorage.getItem(STORAGE_PREFIX + 'hide_chinese') || localStorage.getItem('audible_hide_chinese');
+if (savedHideChinese === 'true') {
+  document.documentElement.setAttribute('data-hide-chinese', 'true');
+  updateChineseLockUI(true);
+} else {
+  updateChineseLockUI(false);
+}
+
 let currentFontSizeRem = 1.20;
 
 function setFontSizePreset(value) {
@@ -1359,9 +1408,19 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
     return;
   }}
 
+  const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+
   if (el.classList.contains('active') && !isDoubleTap) {{
-    el.classList.remove('active');
-    return;
+    if (!el.classList.contains('card-collapsed')) {{
+      el.classList.add('card-collapsed');
+      return;
+    }} else if (!isChineseLocked) {{
+      el.classList.remove('card-collapsed');
+      return;
+    }} else {{
+      el.classList.remove('active', 'card-collapsed');
+      return;
+    }}
   }}
   
   localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, id);
@@ -1370,7 +1429,19 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
     audio.play();
     globalPlayBtn.textContent = '⏸ Pause';
   }}
+
+  document.querySelectorAll('.sentence-unit.active').forEach(u => {{
+    if (u !== el) {{
+      u.classList.remove('active', 'card-collapsed');
+    }}
+  }});
+
   el.classList.add('active');
+  if (isChineseLocked) {{
+    el.classList.add('card-collapsed');
+  }} else {{
+    el.classList.remove('card-collapsed');
+  }}
 }}
 
 function handleInspectPanelClick(event, id) {
@@ -1553,8 +1624,8 @@ window.addEventListener('keydown', (e) => {
     const targetIdx = Math.max(0, currentIndex - 1);
     const targetUnit = units[targetIdx];
     if (targetUnit) {
-      if (activeUnit) activeUnit.classList.remove('active');
-      targetUnit.classList.add('active');
+      if (activeUnit) activeUnit.classList.remove('active', 'card-collapsed');
+      targetUnit.classList.add('active', 'card-collapsed');
       if (window.__HAS_AUDIO__ && targetUnit.dataset.matched === '1') {
         const st = parseFloat(targetUnit.dataset.start);
         if (!isNaN(st)) {
@@ -1570,8 +1641,8 @@ window.addEventListener('keydown', (e) => {
     const targetIdx = Math.min(units.length - 1, currentIndex + 1);
     const targetUnit = units[targetIdx];
     if (targetUnit) {
-      if (activeUnit) activeUnit.classList.remove('active');
-      targetUnit.classList.add('active');
+      if (activeUnit) activeUnit.classList.remove('active', 'card-collapsed');
+      targetUnit.classList.add('active', 'card-collapsed');
       if (window.__HAS_AUDIO__ && targetUnit.dataset.matched === '1') {
         const st = parseFloat(targetUnit.dataset.start);
         if (!isNaN(st)) {
@@ -1586,7 +1657,19 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     const currentUnit = units[currentIndex];
     if (currentUnit) {
-      currentUnit.classList.toggle('active');
+      const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+      if (!isChineseLocked) {
+        if (currentUnit.classList.contains('card-collapsed')) {
+          currentUnit.classList.remove('card-collapsed');
+        } else if (currentUnit.classList.contains('active')) {
+          currentUnit.classList.add('card-collapsed');
+        } else {
+          currentUnit.classList.add('active');
+          currentUnit.classList.remove('card-collapsed');
+        }
+      } else {
+        toggleGlobalPlay();
+      }
     }
   }
 });

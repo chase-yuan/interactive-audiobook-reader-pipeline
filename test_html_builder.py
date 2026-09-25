@@ -342,3 +342,23 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertNotIn('CHAPTER 1<br>Chapter 1', rendered)
             self.assertIn('class="sentence-text epigraph-citation"', rendered)
             self.assertIn('class="sentence-text chapter-intext-heading"', rendered)
+
+    def test_chinese_lock_mode_and_arrow_keys_navigation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Focus Reading", "Pure Audio", "Language Coach", [{
+                    "num": 1, "title": "Focus Track", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            self.assertIn('id="chineseLockBtn"', rendered)
+            self.assertIn("function toggleChineseLock()", rendered)
+            self.assertIn("[data-hide-chinese=\"true\"] .inspect-panel", rendered)
+            self.assertIn(".sentence-unit.active:not(.card-collapsed) .inspect-panel", rendered)
+            self.assertIn("targetUnit.classList.add('active', 'card-collapsed')", rendered)
+            self.assertIn("STORAGE_PREFIX + 'hide_chinese'", rendered)
+
