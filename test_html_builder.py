@@ -362,3 +362,26 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn("targetUnit.classList.add('active', 'card-collapsed')", rendered)
             self.assertIn("STORAGE_PREFIX + 'hide_chinese'", rendered)
 
+    def test_shortcuts_t_and_r_registered_and_documented(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Shortcut Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            self.assertIn("e.key === 't'", rendered)
+            self.assertIn("e.key === 'r'", rendered)
+            self.assertIn("toggleChineseLock()", rendered)
+            self.assertIn("toggleShadowing()", rendered)
+            self.assertIn("e.metaKey || e.ctrlKey || e.altKey", rendered)
+            self.assertIn('<span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span>', rendered)
+            self.assertIn('<span class="kbd-key">R</span><span>Repeat sentence loop</span>', rendered)
+            self.assertIn('快捷键 T', rendered)
+            self.assertIn('快捷键 R', rendered)
+
+

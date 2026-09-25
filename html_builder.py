@@ -977,9 +977,9 @@ body {{
             <button class="seg-btn" onclick="adjustFontSize(1)" title="Increase font size">A+</button>
           </div>
           <div class="segmented-control" id="chineseLockBtn" role="group" aria-label="Language mode">
-            <button class="seg-btn active" id="langModeBilingual" onclick="setLanguageMode('bilingual')" title="双语研读模式（点击查看译文与生词卡）">双语</button>
+            <button class="seg-btn active" id="langModeBilingual" onclick="setLanguageMode('bilingual')" title="双语研读模式（快捷键 T）">双语</button>
             <div class="seg-divider"></div>
-            <button class="seg-btn" id="langModeEnglish" onclick="setLanguageMode('english')" title="纯英磨耳朵模式（隐藏中文干扰）">纯英</button>
+            <button class="seg-btn" id="langModeEnglish" onclick="setLanguageMode('english')" title="纯英磨耳朵模式（快捷键 T）">纯英</button>
           </div>
           <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark / Night)">Theme</button>
         </div>
@@ -989,7 +989,7 @@ body {{
               <option value="1">1×</option><option value="3" selected>3×</option><option value="5">5×</option>
             </select>
             <div class="seg-divider"></div>
-            <button class="seg-btn" id="shadowBtn" onclick="toggleShadowing()">Repeat</button>
+            <button class="seg-btn" id="shadowBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
           </div>
         </div>
         <div class="drawer-group">
@@ -1012,6 +1012,8 @@ body {{
             <div class="tips-section-title">Keyboard Shortcuts</div>
             <div class="tips-row"><span class="kbd-key">Space</span><span>Toggle translation card (peek / hide)</span></div>
             <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence (audio only)</span></div>
+            <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
+            {f'<div class="tips-row"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>' if has_audio else ''}
           </div>
         </div>
       </div>
@@ -1508,7 +1510,11 @@ function toggleShadowing() {
     stopShadowing();
     return;
   }
-  const sentence = findSentenceAt(audio.currentTime) || document.getElementById(currentPlayingId);
+  const activeSection = document.querySelector('.chapter-section.active');
+  const sentence = findSentenceAt(audio.currentTime) || 
+    (currentPlayingId ? document.getElementById(currentPlayingId) : null) || 
+    (activeSection ? activeSection.querySelector('.sentence-unit.active') : null) || 
+    (activeSection ? activeSection.querySelector('.sentence-unit') : null);
   if (sentence) {
     startSentenceShadowing(sentence);
   }
@@ -1605,12 +1611,29 @@ function syncPlayback() {
 
 rebuildSentenceTimeIndex();
 
-// Desktop Keyboard Navigation (Arrow Keys + Spacebar)
+// Desktop Keyboard Navigation (Arrow Keys, Spacebar, T, R)
 window.addEventListener('keydown', (e) => {
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
     return;
   }
-  
+  if (e.metaKey || e.ctrlKey || e.altKey) {
+    return;
+  }
+
+  if (e.key === 't' || e.key === 'T' || e.code === 'KeyT') {
+    e.preventDefault();
+    toggleChineseLock();
+    return;
+  }
+
+  if (e.key === 'r' || e.key === 'R' || e.code === 'KeyR') {
+    e.preventDefault();
+    if (window.__HAS_AUDIO__) {
+      toggleShadowing();
+    }
+    return;
+  }
+
   const activeSection = document.querySelector('.chapter-section.active');
   if (!activeSection) return;
   
