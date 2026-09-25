@@ -115,35 +115,43 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
 [data-theme="sepia"] {{
   --bg-page: #fbf7ee;
-  --bg-panel: #f2ece0;
-  --bg-hover: #e8e0d0;
+  --bg-page-glass: rgba(251, 247, 238, 0.88);
+  --bg-panel: #f4eee2;
+  --bg-panel-glass: rgba(244, 238, 226, 0.92);
+  --bg-hover: #eae1d2;
   --text-main: #2d261e;
-  --text-sub: #6c5d4b;
-  --accent: #8b4513;
-  --accent-light: #d4a373;
-  --word-highlight-bg: #fde047;
+  --text-sub: #786854;
+  --accent: #92400e;
+  --accent-light: #d97706;
+  --word-highlight-bg: #fef08a;
   --word-highlight-text: #78350f;
-  --border: #e2d7c5;
-  --card-shadow: 0 4px 16px rgba(45, 38, 30, 0.07);
+  --border: #e6dcce;
+  --border-subtle: rgba(45, 38, 30, 0.08);
+  --card-shadow: 0 4px 20px rgba(45, 38, 30, 0.06);
 }}
 
 [data-theme="light"] {{
   --bg-page: #ffffff;
+  --bg-page-glass: rgba(255, 255, 255, 0.88);
   --bg-panel: #f8f9fa;
-  --bg-hover: #eaedf0;
+  --bg-panel-glass: rgba(248, 249, 250, 0.92);
+  --bg-hover: #f1f3f5;
   --text-main: #1a1a1a;
-  --text-sub: #555555;
-  --accent: #1e3a8a;
+  --text-sub: #666666;
+  --accent: #2563eb;
   --accent-light: #3b82f6;
-  --word-highlight-bg: #bfdbfe;
-  --word-highlight-text: #1e3a8a;
+  --word-highlight-bg: #dbeafe;
+  --word-highlight-text: #1e40af;
   --border: #e5e7eb;
-  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
 }}
 
 [data-theme="dark"] {{
   --bg-page: #12151c;
+  --bg-page-glass: rgba(18, 21, 28, 0.88);
   --bg-panel: #1b202c;
+  --bg-panel-glass: rgba(27, 32, 44, 0.92);
   --bg-hover: #262e3f;
   --text-main: #e2e8f0;
   --text-sub: #94a3b8;
@@ -152,7 +160,8 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   --word-highlight-bg: #2563eb;
   --word-highlight-text: #ffffff;
   --border: #2d3748;
-  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }}
 
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -173,10 +182,12 @@ body {{
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: var(--bg-page);
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-  backdrop-filter: blur(8px);
+  background: var(--bg-page-glass);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 12px rgba(0, 0, 0, 0.04);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }}
 
 .nav-bar {{
@@ -199,19 +210,20 @@ body {{
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
   color: var(--text-main);
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
   font-family: var(--font-sans);
-  font-size: 0.90rem;
-  font-weight: 600;
+  font-size: 0.86rem;
+  font-weight: 500;
   cursor: pointer;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   transition: all 0.2s ease;
 }}
 
@@ -221,45 +233,50 @@ body {{
 }}
 
 .dropdown-arrow {{
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-sub);
+  margin-left: 2px;
 }}
 
 .chapter-dropdown {{
   display: none;
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   left: 0;
-  width: 280px;
-  max-height: 400px;
+  width: 290px;
+  max-height: 420px;
   overflow-y: auto;
   background: var(--bg-page);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--card-shadow);
-  padding: 6px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12);
+  padding: 6px;
   z-index: 2000;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }}
 
 .chapter-dropdown.open {{
   display: block;
+  animation: dropdownFadeIn 0.18s ease-out;
+}}
+
+@keyframes dropdownFadeIn {{
+  from {{ opacity: 0; transform: translateY(-4px); }}
+  to {{ opacity: 1; transform: translateY(0); }}
 }}
 
 .chapter-item {{
-  padding: 8px 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
   font-family: var(--font-sans);
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   color: var(--text-main);
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-bottom: 1px solid var(--border);
   transition: background 0.15s ease;
-}}
-
-.chapter-item:last-child {{
-  border-bottom: none;
 }}
 
 .chapter-item:hover {{
@@ -270,14 +287,14 @@ body {{
   background: var(--bg-panel);
   color: var(--accent);
   font-weight: 600;
-  border-left: 3px solid var(--accent);
 }}
 
 .chapter-item-tag {{
-  font-size: 0.72rem;
-  color: var(--text-sub);
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: var(--accent);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
 }}
 
 .nav-actions {{
@@ -287,19 +304,21 @@ body {{
 }}
 
 .icon-btn {{
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
   color: var(--text-main);
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
   font-family: var(--font-sans);
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.84rem;
+  font-weight: 500;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   transition: all 0.2s ease;
+  line-height: 1.2;
 }}
 
 .icon-btn:hover {{
@@ -307,30 +326,43 @@ body {{
   border-color: var(--accent-light);
 }}
 
+.icon-btn:active {{
+  transform: scale(0.96);
+}}
+
 .icon-btn.primary {{
   background: var(--accent);
   color: #ffffff;
   border-color: var(--accent);
+  font-weight: 600;
 }}
 
 .icon-btn.primary:hover {{
-  filter: brightness(1.1);
+  filter: brightness(1.08);
 }}
 
 /* Collapsible Control Drawer */
 .control-drawer {{
   display: none;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
+  background: var(--bg-panel-glass);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 14px 20px;
   max-height: calc(100vh - 60px);
   max-height: calc(100dvh - 60px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
 }}
 
 .control-drawer.open {{
   display: block;
+  animation: drawerSlideDown 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}}
+
+@keyframes drawerSlideDown {{
+  from {{ opacity: 0; transform: translateY(-6px); }}
+  to {{ opacity: 1; transform: translateY(0); }}
 }}
 
 .drawer-inner {{
@@ -344,7 +376,14 @@ body {{
 .control-drawer audio {{
   width: 100%;
   height: 38px;
-  border-radius: 6px;
+  border-radius: 20px;
+  outline: none;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+}}
+
+[data-theme="dark"] .control-drawer audio {{
+  filter: invert(0.88) hue-rotate(180deg) brightness(1.1);
 }}
 
 .drawer-row {{
@@ -352,25 +391,138 @@ body {{
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }}
 
 .drawer-group {{
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }}
 
-.search-input {{
+.segmented-control {{
+  display: inline-flex;
+  align-items: center;
   background: var(--bg-page);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 2px 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}}
+
+.seg-btn {{
+  background: none;
+  border: none;
   color: var(--text-main);
-  padding: 6px 12px;
-  border-radius: 6px;
   font-family: var(--font-sans);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}}
+
+.seg-btn:hover {{
+  background: var(--bg-hover);
+}}
+
+.seg-btn:active {{
+  transform: scale(0.96);
+}}
+
+.seg-divider {{
+  width: 1px;
+  height: 14px;
+  background: var(--border-subtle);
+  margin: 0 1px;
+}}
+
+.seg-select {{
+  background: none;
+  border: none;
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 4px 6px;
+  border-radius: 16px;
+  cursor: pointer;
   outline: none;
-  width: 100%;
+}}
+
+.pill-btn {{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}}
+
+.pill-btn:hover {{
+  background: var(--bg-hover);
+  border-color: var(--accent-light);
+}}
+
+.pill-btn:active {{
+  transform: scale(0.96);
+}}
+
+.pill-btn.active {{
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}}
+
+.toggle-pill {{
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}}
+
+.toggle-pill input[type="checkbox"] {{
+  display: none;
+}}
+
+.toggle-badge {{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-sub);
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+  line-height: 1.2;
+}}
+
+.toggle-pill input[type="checkbox"]:checked + .toggle-badge {{
+  color: var(--text-main);
+  border-color: var(--accent-light);
+  background: var(--bg-hover);
+}}
+
+.toggle-pill input[type="checkbox"]:checked + .toggle-badge::before {{
+  content: "✓ ";
+  color: var(--accent);
+  font-weight: 700;
 }}
 
 .drawer-tips {{
@@ -378,10 +530,11 @@ body {{
   font-family: var(--font-sans);
   font-size: 0.82rem;
   background: var(--bg-page);
-  padding: 14px 18px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
+  padding: 16px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  animation: drawerSlideDown 0.2s ease-out;
 }}
 
 .drawer-tips.open {{
@@ -391,19 +544,19 @@ body {{
 .tips-columns {{
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 24px;
 }}
 
 @media (max-width: 600px) {{
   .control-drawer {{
-    padding: 10px 12px;
+    padding: 10px 14px;
     max-height: calc(100vh - 54px);
     max-height: calc(100dvh - 54px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }}
   .drawer-inner {{
-    gap: 8px;
+    gap: 10px;
   }}
   .drawer-row {{
     display: flex;
@@ -418,68 +571,51 @@ body {{
     gap: 6px;
     width: 100%;
   }}
-  .drawer-group > * {{
-    flex: 1 1 auto;
-    min-height: 32px;
-    box-sizing: border-box;
-  }}
-  .drawer-group label, .font-size-control {{
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-    font-size: 0.8rem;
-  }}
-  .drawer-group select, .font-size-control select {{
-    min-width: 0;
-    flex: 1;
-    min-height: 30px;
-    padding: 3px 6px;
-  }}
   .tips-columns {{
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 14px;
   }}
 }}
 
 .tips-section {{
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }}
 
 .tips-section-title {{
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--accent);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   margin-bottom: 2px;
   padding-bottom: 4px;
-  border-bottom: 1px dashed var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }}
 
 .tips-row {{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
   font-size: 0.82rem;
   color: var(--text-main);
   line-height: 1.4;
 }}
 
-.tips-key {{
+.kbd-key {{
   display: inline-block;
   font-family: var(--font-sans);
   font-weight: 600;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--text-main);
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
+  border-bottom: 2px solid var(--border);
   border-radius: 5px;
   padding: 2px 7px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 1px rgba(0,0,0,0.06);
   white-space: nowrap;
 }}
 
@@ -719,40 +855,42 @@ body {{
       <audio id="audioTrack" controls preload="metadata" src="{html.escape(audio_src)}"{audio_track_attr}></audio>
       <div class="drawer-row">
         <div class="drawer-group">
-          <button class="icon-btn" onclick="adjustFontSize(-1)">A-</button>
-          <button class="icon-btn" onclick="adjustFontSize(1)">A+</button>
-          <button class="icon-btn" onclick="toggleTheme()">Theme</button>
-          <button class="icon-btn" id="tipsToggleBtn" onclick="toggleTips()">Tips</button>
+          <div class="segmented-control" role="group" aria-label="Font size">
+            <button class="seg-btn" onclick="adjustFontSize(-1)" title="Decrease font size">A−</button>
+            <div class="seg-divider"></div>
+            <button class="seg-btn" onclick="adjustFontSize(1)" title="Increase font size">A+</button>
+          </div>
+          <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark)">🌓 Theme</button>
         </div>
         <div class="drawer-group"{repeat_group_attr}>
-          <label style="font-family: var(--font-sans); font-size: 0.82rem; color: var(--text-sub);">
-            Repeat
-            <select id="shadowRepeatSelect" onchange="setShadowRepetitions(this.value)">
-              <option value="1">1x</option><option value="3" selected>3x</option><option value="5">5x</option>
+          <div class="segmented-control">
+            <select id="shadowRepeatSelect" class="seg-select" onchange="setShadowRepetitions(this.value)" title="Repetitions">
+              <option value="1">1×</option><option value="3" selected>3×</option><option value="5">5×</option>
             </select>
-          </label>
-          <button class="icon-btn" id="shadowBtn" onclick="toggleShadowing()">Repeat</button>
+            <div class="seg-divider"></div>
+            <button class="seg-btn" id="shadowBtn" onclick="toggleShadowing()">Repeat</button>
+          </div>
         </div>
         <div class="drawer-group">
-          <label style="font-family: var(--font-sans); font-size: 0.82rem; display: flex; align-items: center; gap: 4px; color: var(--text-sub);">
-            <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)"> Auto-scroll
+          <label class="toggle-pill" title="Auto-scroll to active sentence">
+            <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
+            <span class="toggle-badge">Auto-scroll</span>
           </label>
+          <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" title="Keyboard & Gesture shortcuts">💡 Shortcuts</button>
         </div>
       </div>
-      <input type="text" id="searchInput" class="search-input" placeholder="Search in active chapter..." oninput="handleSearch()">
       <div class="drawer-tips" id="drawerTips">
         <div class="tips-columns">
           <div class="tips-section">
             <div class="tips-section-title">Touch & Mouse</div>
-            <div class="tips-row"><span class="tips-key">Tap Sentence</span><span>{'Play audio & show breakdown' if has_audio else 'Show translation & vocabulary breakdown'}</span></div>
-            <div class="tips-row"><span class="tips-key">{'Double Tap' if has_audio else 'Tap Active / Card'}</span><span>{'Repeat sentence loop' if has_audio else 'Collapse translation card'}</span></div>
-            {f'<div class="tips-row"><span class="tips-key">Tap Card</span><span>Collapse card</span></div>' if has_audio else ''}
+            <div class="tips-row"><span class="kbd-key">Tap Sentence</span><span>{'Play audio & show breakdown' if has_audio else 'Show translation & vocabulary breakdown'}</span></div>
+            <div class="tips-row"><span class="kbd-key">{'Double Tap' if has_audio else 'Tap Active'}</span><span>{'Repeat sentence loop' if has_audio else 'Collapse translation card'}</span></div>
+            {f'<div class="tips-row"><span class="kbd-key">Tap Card</span><span>Collapse card</span></div>' if has_audio else ''}
           </div>
           <div class="tips-section">
             <div class="tips-section-title">Keyboard Shortcuts</div>
-            <div class="tips-row"><span class="tips-key">Space</span><span>Toggle breakdown card</span></div>
-            {f'<div class="tips-row"><span class="tips-key">R</span><span>Repeat current sentence</span></div>' if has_audio else ''}
-            <div class="tips-row"><span class="tips-key">← / →</span><span>Previous / Next sentence</span></div>
+            <div class="tips-row"><span class="kbd-key">Space</span><span>Toggle breakdown card</span></div>
+            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
           </div>
         </div>
       </div>
@@ -771,10 +909,15 @@ body {{
         csents = ch["sentences"]
         active_cls = " active" if cnum == first_ch_num else ""
         ch_heading_label = ch["label"].upper()
-        if ctitle.strip().upper() == ch_heading_label.strip().upper() or ctitle.strip().upper() == f"CHAPTER {cnum}":
+        clean_title = ctitle.strip()
+        disp_num = str(ch.get("display_number")) if ch.get("display_number") is not None else ""
+        disp_part = rf"|\b(?:Chapter\s+)?{re.escape(disp_num)}(?!\d)\s*[\.\:—–-]\s*" if disp_num else ""
+        prefix_pattern = rf"^(?:{re.escape(ch['label'])}\s*[:—–-]?\s*{disp_part})"
+        sub_title = re.sub(prefix_pattern, "", clean_title, flags=re.IGNORECASE).strip()
+        if not sub_title or clean_title.upper() == ch_heading_label.upper() or clean_title.upper() == f"CHAPTER {cnum}":
             title_html = ch_heading_label
         else:
-            title_html = f"{ch_heading_label}<br>{html.escape(ctitle)}"
+            title_html = f"{ch_heading_label}<br>{html.escape(sub_title)}"
         
         html_head += f"""
   <!-- CHAPTER {cnum} -->
@@ -952,10 +1095,16 @@ function findSentenceAt(time) {
 function switchChapter(chNum) {
   activeChapterNum = chNum;
   localStorage.setItem(STORAGE_PREFIX + 'active_ch', chNum);
-  currentChapterLabel.textContent = chNum === 0 ? 'Preface' : 'Ch. ' + chNum;
+  
+  const menuEl = document.getElementById('menu-ch-' + chNum);
+  if (menuEl) {
+    const tagText = menuEl.querySelector('.chapter-item-tag')?.textContent?.trim();
+    currentChapterLabel.textContent = tagText || (chNum === 0 ? 'Preface' : 'Ch. ' + chNum);
+  } else {
+    currentChapterLabel.textContent = chNum === 0 ? 'Preface' : 'Ch. ' + chNum;
+  }
   
   document.querySelectorAll('.chapter-item').forEach(el => el.classList.remove('active'));
-  const menuEl = document.getElementById('menu-ch-' + chNum);
   if (menuEl) menuEl.classList.add('active');
   chapterDropdown.classList.remove('open');
   
@@ -1269,26 +1418,6 @@ function syncPlayback() {
 
 rebuildSentenceTimeIndex();
 
-function handleSearch() {
-  const query = document.getElementById('searchInput').value.toLowerCase().trim();
-  const activeSection = document.querySelector('.chapter-section.active');
-  if (!activeSection) return;
-  const units = activeSection.querySelectorAll('.sentence-unit');
-  
-  for (let u of units) {
-    if (!query) {
-      u.style.display = '';
-      continue;
-    }
-    const text = u.textContent.toLowerCase();
-    if (text.includes(query)) {
-      u.style.display = '';
-    } else {
-      u.style.display = 'none';
-    }
-  }
-}
-
 // Desktop Keyboard Navigation (Arrow Keys + Spacebar)
 window.addEventListener('keydown', (e) => {
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
@@ -1302,12 +1431,6 @@ window.addEventListener('keydown', (e) => {
   if (units.length === 0) return;
   
   const curTime = audio.currentTime;
-
-  if (e.key === 'r' || e.key === 'R') {
-    e.preventDefault();
-    toggleShadowing();
-    return;
-  }
   
   let activeUnit = activeSection.querySelector('.sentence-unit.active');
   let currentIndex = activeUnit ? units.indexOf(activeUnit) : -1;

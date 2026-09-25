@@ -365,7 +365,8 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             )
             if non_narrated:
                 evidence = item.get("non_narrated_evidence") or {}
-                acoustic_path = book_dir / "audio" / f"fourth_wing_ch{number:02d}_acoustic_words.json"
+                prefix = canonical.name.removesuffix("_canonical_sentences.json")
+                acoustic_path = book_dir / "audio" / f"{prefix}_acoustic_words.json"
                 import hashlib
                 non_narrated_reviews.append({
                     "chapter": number,
