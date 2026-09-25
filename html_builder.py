@@ -532,6 +532,12 @@ body {{
   transform: scale(0.96);
 }}
 
+.seg-btn.active {{
+  background: var(--bg-hover);
+  color: var(--accent);
+  font-weight: 600;
+}}
+
 .seg-divider {{
   width: var(--space-3xs);
   height: var(--seg-divider-height);
@@ -620,9 +626,13 @@ body {{
 }}
 
 .toggle-pill input[type="checkbox"]:checked + .toggle-badge::before {{
-  content: "✓ ";
-  color: var(--accent);
-  font-weight: 700;
+  content: "";
+  display: inline-block;
+  width: var(--space-sm);
+  height: var(--space-sm);
+  border-radius: var(--radius-full);
+  background-color: var(--accent);
+  margin-right: var(--space-xs);
 }}
 
 .drawer-tips {{
@@ -952,7 +962,7 @@ body {{
     
     <div class="nav-actions">
       <button class="icon-btn primary" id="globalPlayBtn" onclick="toggleGlobalPlay()"{play_btn_attr}>▶ Play</button>
-      <button class="icon-btn" id="drawerToggleBtn" onclick="toggleDrawer()">⚙️ Menu</button>
+      <button class="icon-btn" id="drawerToggleBtn" onclick="toggleDrawer()">Menu</button>
     </div>
   </div>
   
@@ -966,8 +976,12 @@ body {{
             <div class="seg-divider"></div>
             <button class="seg-btn" onclick="adjustFontSize(1)" title="Increase font size">A+</button>
           </div>
-          <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark / Night)">🌓 Theme</button>
-          <button class="pill-btn" id="chineseLockBtn" onclick="toggleChineseLock()" title="Lock / Hide Chinese translation for pure English listening">🔒 锁定中文</button>
+          <div class="segmented-control" id="chineseLockBtn" role="group" aria-label="Language mode">
+            <button class="seg-btn active" id="langModeBilingual" onclick="setLanguageMode('bilingual')" title="双语研读模式（点击查看译文与生词卡）">双语</button>
+            <div class="seg-divider"></div>
+            <button class="seg-btn" id="langModeEnglish" onclick="setLanguageMode('english')" title="纯英磨耳朵模式（隐藏中文干扰）">纯英</button>
+          </div>
+          <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark / Night)">Theme</button>
         </div>
         <div class="drawer-group"{repeat_group_attr}>
           <div class="segmented-control">
@@ -983,7 +997,7 @@ body {{
             <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
             <span class="toggle-badge">Auto-scroll</span>
           </label>
-          <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" title="Keyboard & Gesture shortcuts">💡 Shortcuts</button>
+          <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" title="Keyboard & Gesture shortcuts">Shortcuts</button>
         </div>
       </div>
       <div class="drawer-tips" id="drawerTips">
@@ -1244,11 +1258,11 @@ function toggleDrawer() {
   const isOpen = controlDrawer.classList.contains('open');
   if (isOpen) {
     controlDrawer.classList.remove('open');
-    drawerToggleBtn.innerHTML = '⚙️ Menu';
+    drawerToggleBtn.innerHTML = 'Menu';
     localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'false');
   } else {
     controlDrawer.classList.add('open');
-    drawerToggleBtn.innerHTML = '✕ Close';
+    drawerToggleBtn.innerHTML = 'Close';
     localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'true');
   }
 }
@@ -1256,7 +1270,7 @@ function toggleDrawer() {
 const savedDrawerState = localStorage.getItem(STORAGE_PREFIX + 'drawer_open');
 if (savedDrawerState === 'true') {
   controlDrawer.classList.add('open');
-  drawerToggleBtn.innerHTML = '✕ Close';
+  drawerToggleBtn.innerHTML = 'Close';
 }
 
 const themes = ['sepia', 'light', 'dark', 'night'];
@@ -1294,42 +1308,48 @@ window.addEventListener('storage', event => {{
   }}
 }});
 
-function updateChineseLockUI(isLocked) {
-  const btn = document.getElementById('chineseLockBtn');
-  if (!btn) return;
-  if (isLocked) {
-    btn.classList.add('active');
-    btn.textContent = '🔒 中文已锁';
-    btn.title = '中文翻译已锁定隐藏（点击解锁）';
-  } else {
-    btn.classList.remove('active');
-    btn.textContent = '🔓 锁定中文';
-    btn.title = '锁定中文翻译，仅听英文（纯听模式）';
-  }
-}
-
-function toggleChineseLock() {
-  const isLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
-  const next = !isLocked;
-  if (next) {
+function setLanguageMode(mode) {
+  const isEnglish = (mode === 'english');
+  if (isEnglish) {
     document.documentElement.setAttribute('data-hide-chinese', 'true');
     document.querySelectorAll('.sentence-unit.active').forEach(u => u.classList.add('card-collapsed'));
   } else {
     document.documentElement.removeAttribute('data-hide-chinese');
   }
-  localStorage.setItem(STORAGE_PREFIX + 'hide_chinese', String(next));
-  localStorage.setItem('audible_hide_chinese', String(next));
-  updateChineseLockUI(next);
+  localStorage.setItem(STORAGE_PREFIX + 'hide_chinese', String(isEnglish));
+  localStorage.setItem('audible_hide_chinese', String(isEnglish));
+  updateLanguageModeUI(mode);
 }
 
+function updateLanguageModeUI(mode) {
+  const isEnglish = (mode === 'english');
+  const btnBilingual = document.getElementById('langModeBilingual');
+  const btnEnglish = document.getElementById('langModeEnglish');
+  if (btnBilingual && btnEnglish) {
+    if (isEnglish) {
+      btnBilingual.classList.remove('active');
+      btnEnglish.classList.add('active');
+    } else {
+      btnBilingual.classList.add('active');
+      btnEnglish.classList.remove('active');
+    }
+  }
+}
+
+function toggleChineseLock() {
+  const isEnglish = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+  setLanguageMode(isEnglish ? 'bilingual' : 'english');
+}
+
+window.setLanguageMode = setLanguageMode;
 window.toggleChineseLock = toggleChineseLock;
 
 const savedHideChinese = localStorage.getItem(STORAGE_PREFIX + 'hide_chinese') || localStorage.getItem('audible_hide_chinese');
 if (savedHideChinese === 'true') {
   document.documentElement.setAttribute('data-hide-chinese', 'true');
-  updateChineseLockUI(true);
+  updateLanguageModeUI('english');
 } else {
-  updateChineseLockUI(false);
+  updateLanguageModeUI('bilingual');
 }
 
 let currentFontSizeRem = 1.20;
