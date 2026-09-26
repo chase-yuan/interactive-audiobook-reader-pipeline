@@ -1,69 +1,86 @@
-# Interactive Audiobook Reader Pipeline
+# Interactive Audiobook Reader Pipeline (双语有声书制作与发布流水线)
 
-An Apple Books-grade bilingual interactive reader and acoustic synchronization engine, engineered natively for macOS and Apple Silicon.
+<p align="center">
+  <b>面向 macOS 与 Apple Silicon 原生打造的工业级双语有声点读书制作、声学对齐与数字化发布流水线。</b><br>
+  <i>以 Apple Books 级排版标准，实现 EPUB 句子级纯净拆分、MLX 毫秒级声学强制对齐、密码学质量门禁与单文件静态交付。</i>
+</p>
 
-[![Live Demo](https://img.shields.io/badge/Demo-audiblelibrary.online-4338ca?style=flat-square&logo=safari&logoColor=white)](https://audiblelibrary.online/books/the-psychology-of-money/)
-[![Platform](https://img.shields.io/badge/Platform-macOS%2013%2B-0f172a?style=flat-square&logo=apple&logoColor=white)](https://apple.com)
-[![Hardware](https://img.shields.io/badge/Architecture-Apple%20Silicon%20(M1--M4)-334155?style=flat-square)](https://apple.com)
-[![Engine](https://img.shields.io/badge/Engine-Apple%20MLX%20Whisper-0284c7?style=flat-square)](https://github.com/ml-explore/mlx)
-[![Tests](https://img.shields.io/badge/Tests-138%20Passed-10b981?style=flat-square)](https://github.com/chase-yuan/interactive-audiobook-reader-pipeline)
-[![Release Gate](https://img.shields.io/badge/Gate-Cryptographic%20Verified-475569?style=flat-square)](https://github.com/chase-yuan/interactive-audiobook-reader-pipeline)
-[![License](https://img.shields.io/badge/License-MIT-64748b?style=flat-square)](LICENSE)
+<p align="center">
+  <a href="README.md"><b>简体中文</b></a> | <a href="README_EN.md">English</a>
+</p>
+
+<p align="center">
+  <a href="https://audiblelibrary.online/books/the-psychology-of-money/"><img src="https://img.shields.io/badge/线上示范站-audiblelibrary.online-4338ca?style=flat-square&logo=safari&logoColor=white" alt="Live Demo"></a>
+  <a href="https://apple.com"><img src="https://img.shields.io/badge/支持平台-macOS%2013%2B-0f172a?style=flat-square&logo=apple&logoColor=white" alt="Platform"></a>
+  <a href="https://apple.com"><img src="https://img.shields.io/badge/硬件架构-Apple%20Silicon%20(M1--M4)-334155?style=flat-square" alt="Hardware"></a>
+  <a href="https://github.com/ml-explore/mlx"><img src="https://img.shields.io/badge/声学引擎-Apple%20MLX%20Whisper-0284c7?style=flat-square" alt="Engine"></a>
+  <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/测试矩阵-138%20项全部通过-10b981?style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/发布门禁-密码学校验放行-475569?style=flat-square" alt="Quality Gate"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/开源协议-MIT-64748b?style=flat-square" alt="License"></a>
+</p>
 
 ---
 
-A deterministic, industrial-strength pipeline for compiling any standard EPUB into a self-contained bilingual reading application. Delivers Apple Books typography, word-level acoustic synchronization, contextual CEFR vocabulary parsing, and cryptographic release verification with zero external runtime dependencies.
+## 为什么需要这套工业级流水线？
+
+将一本完整的原版英文书（动辄数十万字、几十小时音频）转化为具备“点读”与“毫秒级单词同步”的高品质数字读物，手工或玩具级脚本通常会遇到以下致命阻力：
+1. **音频与文本漂移 (Audio Drift)**：录音师的语气停顿、重复朗读或非自然省音，会导致传统基于时间均匀切分的方案在几分钟后完全错位；
+2. **标点与排版崩溃**：特殊缩写、多重双引号、连字符与分段混杂，导致句子边界被错误切断，破坏完整语义；
+3. **分发包袱沉重**：常见方案依赖庞大的 Node/Electron 后端或在线 API 代理，断网无法阅读，迁移成本高昂。
+
+**本流水线提供工业级确定性保障：**  
+以离线、非破坏性、密码学门禁为底层契约，从标准 EPUB 和录音室音频出发，经历句子提取、MLX 神经声学对齐、语境难词剖析与质量门禁审计，最终编译为单文件、零外部依赖的 Apple Books 级交互式静态读物。
 
 > [!NOTE]
-> Experience the production interactive reader directly in Safari or any modern browser at [audiblelibrary.online](https://audiblelibrary.online/books/the-psychology-of-money/). Zero installation, accounts, or extensions required.
+> 线上生产级体验示范站：可直接使用 Safari 或任意现代浏览器访问 [audiblelibrary.online](https://audiblelibrary.online/books/the-psychology-of-money/) 查看《金钱心理学》完整交互点读效果，无需安装任何插件或配置环境。
 
 ---
 
-## Interactive Experience
+## 核心交互与视觉规范
 
-![Interactive Bilingual Reader Demo](docs/images/demo_interactive_flow.gif)
+![交互式阅读器实机演示](docs/images/demo_interactive_flow.gif)
 
-- **Acoustic Tracking**: Real-time word highlighting locked to studio audiobook narration with sub-millisecond precision.
-- **Nuance Cards**: Instant contextual sentence translations with CEFR C1/C2 vocabulary breakdowns, phonetic IPA transcripts, and lexical annotations.
-- **Apple Books Typography**: Native San Francisco and New York serif type stacks, 44 px touch targets, and instant Light, Sepia, and OLED Dark mode switching.
+- **毫秒级单词原声追踪 (Acoustic Tracking)**：基于 Apple Silicon 神经网络计算的高精度时间戳，文字背景平滑跟随原声朗读点亮，无视觉抖动。
+- **逐句精读与语境难词卡 (Nuance Cards)**：点击任意句子无缝唤起地道中文翻译、CEFR C1/C2 高阶词汇标注、国际音标 (IPA) 及词性辨析。
+- **Apple Books 级系统字体排印**：内置 San Francisco 与 New York 衬线字体族，严格遵循 44px 触控响应区，提供纯白、暖黄羊皮纸与 OLED 纯黑三种专业阅读模式。
 
 ---
 
-## Apple Silicon Performance
+## Apple Silicon 统一内存加速矩阵
 
-The text extraction, analysis, and single-file HTML compiler execute entirely on native Python 3 standard library modules. Speech-to-text forced alignment executes via Apple's official `mlx-whisper`, utilizing unified memory, GPU, and Neural Engine acceleration without CUDA bloat or cloud API latency.
+流水线的纯文本提取、词汇分析与 HTML 编译器完全由 Python 3 标准库驱动。声学对齐部分深度调用 Apple 官方 `mlx-whisper`，在统一内存（Unified Memory）架构中直接协同 GPU 与 Neural Engine，无需 CUDA 容器环境，杜绝云端 API 计费与网络延迟。
 
-| Execution Target | Audio Duration | Processing Time | Throughput | API Cost |
+| 运行硬件平台 | 音频时长 | MLX 本地对齐耗时 | 处理吞吐效率 | 云端 API 综合费用 |
 | :--- | :---: | :---: | :---: | :---: |
-| **Apple M4 / M3 Max (Unified Memory)** | 1 Hour (Studio Audio) | **~2.2 min** | **~27x Real-time** | **$0.00 (Offline)** |
-| **Apple M3 / M2 Pro** | 1 Hour (Studio Audio) | **~3.5 min** | **~17x Real-time** | **$0.00 (Offline)** |
-| **Apple M1 / M2 Air** | 1 Hour (Studio Audio) | **~4.8 min** | **~12x Real-time** | **$0.00 (Offline)** |
-| Cloud GPU / REST ASR API | 1 Hour (Studio Audio) | ~6–10 min + Latency | ~7x Real-time | $0.36 – $1.20 / Title |
+| **Apple M4 / M3 Max (统一内存)** | 1 小时专业录音 | **~2.2 分钟** | **~27 倍速实时** | **$0.00 (完全离线)** |
+| **Apple M3 / M2 Pro** | 1 小时专业录音 | **~3.5 分钟** | **~17 倍速实时** | **$0.00 (完全离线)** |
+| **Apple M1 / M2 Air** | 1 小时专业录音 | **~4.8 分钟** | **~12 倍速实时** | **$0.00 (完全离线)** |
+| 云端 GPU / REST ASR API 方案 | 1 小时专业录音 | ~6–10 分钟 + 网络延迟 | ~7 倍速实时 | $0.36 – $1.20 / 本 |
 
 ---
 
-## System Architecture
+## 系统拓扑与数据管线
 
 ```mermaid
 flowchart TD
-    subgraph "Input Ingestion"
-        A["Source EPUB Book<br>(.epub)"]
-        B["Studio Audiobook Tracks<br>(.mp3 / .m4a)"]
+    subgraph "输入源层 (Input Ingestion)"
+        A["自备 EPUB 原版书<br>(.epub)"]
+        B["录音室有声书音轨<br>(.mp3 / .m4a)"]
     end
 
-    subgraph "Deterministic Pipeline"
-        A --> C["EPUB Sentence Extractor<br>(extract_epub.py)"]
-        B --> D["Apple MLX Whisper Engine<br>(acoustic_whisper.py)"]
-        C --> E["Dynamic Acoustic Aligner<br>(dynamic_aligner.py)"]
+    subgraph "确定性流水线 (Deterministic Pipeline)"
+        A --> C["EPUB 句子边界提取器<br>(extract_epub.py)"]
+        B --> D["Apple MLX Whisper 引擎<br>(acoustic_whisper.py)"]
+        C --> E["动态时间规整声学对齐器<br>(dynamic_aligner.py)"]
         D --> E
-        E --> F["Linguistic & Nuance Analyzer<br>(content_profile.py)"]
-        F --> G["Cryptographic Quality Gate<br>(quality_gate.py)"]
+        E --> F["语言学与语境难词分析器<br>(content_profile.py)"]
+        F --> G["密码学质量放行门禁<br>(quality_gate.py)"]
     end
 
-    subgraph "Apple Books Deliverables"
-        G --> H["Standalone Interactive Reader<br>(Self-Contained .html)"]
-        H --> I["Desktop & Mobile Safari<br>(Zero Runtime Dependency)"]
-        H --> J["Audible Online CDN<br>(Cloudflare Edge Streaming)"]
+    subgraph "Apple Books 级交付成果 (Deliverables)"
+        G --> H["自包含交互式读物<br>(单一静态 .html 文件)"]
+        H --> I["桌面与移动端 Safari<br>(零外部运行时依赖)"]
+        H --> J["Audible 在线书库 CDN<br>(Cloudflare Edge 边缘分发)"]
     end
 
     style A fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
@@ -80,62 +97,62 @@ flowchart TD
 
 ---
 
-## Quickstart
+## 30 秒极速上手
 
-Build the included public-domain monograph (*Sun Tzu's The Art of War*) in 5 seconds using standard library Python:
+仓库已内置公共版权示范用例（《孙子兵法》英译版），5 秒内即可完成完整构建：
 
 ```bash
-# 1. Clone the repository
+# 1. 克隆流水线仓库
 git clone https://github.com/chase-yuan/interactive-audiobook-reader-pipeline.git
 cd interactive-audiobook-reader-pipeline
 
-# 2. Build the interactive reader (Zero external dependencies)
+# 2. 构建交互式双语书（纯标准库运行，零外部依赖）
 python3 universal_runner.py demo/sample.epub --text-only
 ```
 
-The completed standalone interactive reader automatically opens in Safari.
+构建完成后系统将自动唤起 Safari 浏览器展示生成的单文件交互读物。
 
 ---
 
-## Operational Modes
+## 生产级双工作模式
 
-### 1. Pure Text Reader (`text-only`)
-For volumes without audiobook recordings. Generates complete chapter-by-chapter bilingual readers with sentence click-to-translate, interactive vocabulary popups, and keyboard navigation.
+### 模式 1：纯文本双语精读器 (`--text-only`)
+适用于尚未配齐音频的电子书。自动完成章节划分、逐句对照、高阶词汇解析与纯键盘导航支持：
 
 ```bash
-# Basic run with auto-detected output directory
+# 自动探测并输出到目标目录
 python3 universal_runner.py /path/to/book.epub --text-only
 
-# High-throughput parallel translation (8 workers)
+# 开启多核并发加速（如 8 进程并发）：
 python3 universal_runner.py /path/to/book.epub --text-only --concurrency 8 --book-dir ./my_book
 ```
 
-### 2. Immersive Studio Audiobook (`complete`)
-Combines EPUB text with professional narrator audio tracks (`.mp3` or `.m4a`), performing word-by-word forced alignment via Apple Silicon MLX Whisper.
+### 模式 2：沉浸式原声点读书 (`complete`)
+将 EPUB 文本与原声朗读音频（`.mp3` 或 `.m4a`）结合，通过 Apple Silicon MLX 运行单词级对齐：
 
 ```bash
-# Install Apple Silicon MLX acoustic engine
+# 安装 Apple Silicon 原生 MLX 声学支持
 pip install -e '.[acoustic]'
 
-# Build complete synchronized audiobook reader
+# 构建完整有声点读电子书
 python3 universal_runner.py --epub /path/to/book.epub --audio-dir /path/to/mp3s --book-dir ./my_book
 ```
 
 ---
 
-## Installation
+## CLI 全局命令行安装
 
-Install into your local Python environment to use the `reader-build` command directly:
+安装到本地 Python 环境，即可在终端任意路径调用 `reader-build` 核心命令：
 
 ```bash
-# Standard setup (Text-only readers)
+# 基础安装（纯文本精读构建）
 pip install -e .
 
-# Full setup (Apple Silicon MLX acoustic engine and deployment tools)
+# 完整安装（包含 Apple Silicon MLX 神经声学引擎与数字化部署工具）
 pip install -e '.[acoustic,deployment]'
 ```
 
-Once installed:
+安装后即可直接运行：
 
 ```bash
 reader-build /path/to/book.epub --text-only
@@ -143,9 +160,9 @@ reader-build /path/to/book.epub --text-only
 
 ---
 
-## Ingestion Directory Layout
+## 资源输入结构与音轨映射规范
 
-The pipeline automatically inspects and pairs EPUB chapters with audio tracks:
+流水线遵循清晰的章节前缀与音频文件对应契约：
 
 ```text
 my_book_sources/
@@ -156,31 +173,16 @@ my_book_sources/
     02_chapter2.mp3
 ```
 
-Tracks are aligned by numerical prefix or spine ID, guaranteeing monotonic audio-text alignment across the entire volume.
+调度器通过数字前缀或 EPUB Spine ID 自动完成单调性对齐校验，从根本上杜绝音频断章和前后串行。
 
 ---
 
-## Repository Structure
+## 生产放行门禁与质量保障体系
 
-- `universal_runner.py`: Primary CLI entrypoint (`reader-build`)
-- `extract_epub.py`: EPUB sentence boundary extractor
-- `dynamic_aligner.py`: High-precision word-level acoustic aligner
-- `html_builder.py`: Standalone Apple Books HTML compiler
-- `content_profile.py`: Mode router (`text_only` vs `complete` audio)
-- `quality_gate.py`: Cryptographic release gate and smoke tester
-- `validate_outputs.py`: Invariant validator for publication
-- `acoustic_whisper.py`: Apple Silicon MLX Whisper extractor
-- `demo/sample.epub`: Public-domain demo EPUB
-- `docs/images/`: Visual assets and interactive flow demonstrations
-- `docs/history/`: Historical milestone specifications and benchmarks
-- `setup.py`: Package configuration and entrypoints
-- `LICENSE`: MIT License
-
----
-
-## Verification Matrix
-
-Execute the comprehensive test matrix (138 assertions covering extraction, alignment, and packaging):
+本工程在合并和发布任何一本书前，必须通过由 `quality_gate.py` 和 `validate_outputs.py` 构筑的物理门禁：
+- **密码学 ReleaseToken**：只有当声学对齐覆盖率 ≥ 95%、无非单调时间戳、无空翻译记录时，系统才颁发基于 SHA-256 绑定的 ReleaseToken；
+- **防篡改与不可伪造**：单文件 HTML 编译期强制校验 ReleaseToken，严禁未经质检通过的半成品进入生产环境；
+- **全量单元测试矩阵**：运行覆盖 138 项断言的完整测试集：
 
 ```bash
 python3 -m unittest discover
@@ -188,6 +190,24 @@ python3 -m unittest discover
 
 ---
 
-## License
+## 代码仓库清单
 
-This project is licensed under the [MIT License](LICENSE).
+- `universal_runner.py`：主运行入口 (`reader-build`)
+- `extract_epub.py`：EPUB 句子级纯净边界提取器
+- `dynamic_aligner.py`：高精度动态时间规整声学对齐器
+- `html_builder.py`：Apple Books 级单文件静态 HTML 编译器
+- `content_profile.py`：工作模式调度器 (`text_only` vs `complete`)
+- `quality_gate.py`：密码学完整性质量放行门禁
+- `validate_outputs.py`：产物不变式合规校验器
+- `acoustic_whisper.py`：Apple Silicon MLX Whisper 单词级特征提取器
+- `demo/sample.epub`：5KB 公版示范 EPUB
+- `docs/images/`：交互流程实机演示 GIF
+- `docs/history/`：技术演进规范与基准报告存档
+- `setup.py`：Python 包配置与全局命令安装契约
+- `LICENSE`：MIT 开源协议
+
+---
+
+## 开源协议
+
+本项目基于 [MIT License](LICENSE) 协议完全开源。
