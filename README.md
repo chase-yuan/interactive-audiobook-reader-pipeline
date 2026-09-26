@@ -25,8 +25,6 @@ A deterministic, industrial-strength pipeline for converting any EPUB book into 
 - **Click-to-Translate & Nuance Cards**: Click any sentence to reveal idiomatic Chinese translation alongside contextual CEFR C1/C2 vocabulary breakdowns with parts of speech and phonetics.
 - **Apple Books-Grade Aesthetics**: Powered by responsive New York/San Francisco serif type stacks, 44px Apple HIG touch targets, and instant Light, Sepia, and Pure Black OLED Dark mode switching.
 
-![Full Reader Interface](docs/images/reader-hero-showcase.png)
-
 ---
 
 ## Why macOS & Apple Silicon?
