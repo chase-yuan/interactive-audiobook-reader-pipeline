@@ -1497,6 +1497,13 @@ function findSentenceAt(time) {
 }
 
 function switchChapter(chNum) {
+  if (chNum > 2 && typeof window.PasskeyGate !== 'undefined' && !window.PasskeyGate.isUnlocked()) {
+    if (audio && !audio.paused) audio.pause();
+    if (typeof window.PasskeyGate.openModal === 'function') {
+      window.PasskeyGate.openModal(chNum);
+    }
+    return;
+  }
   activeChapterNum = chNum;
   localStorage.setItem(STORAGE_PREFIX + 'active_ch', chNum);
   
@@ -1745,12 +1752,13 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
     }}
   }}
   
+  const isMatched = (hasMatch === undefined || hasMatch === null) ? (Number.isFinite(start) && Number.isFinite(end) && end > start && start >= 0) : Boolean(hasMatch);
   localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, id);
-  if (window.__HAS_AUDIO__ && hasMatch && Number.isFinite(start) && Number.isFinite(end) && end > start) {{
+  if (window.__HAS_AUDIO__ && isMatched && Number.isFinite(start) && Number.isFinite(end) && end > start) {{
     audio.currentTime = start;
     audio.play();
     globalPlayBtn.textContent = '⏸ Pause';
-  }} else if (window.__HAS_AUDIO__ && (!hasMatch || !Number.isFinite(start))) {{
+  }} else if (window.__HAS_AUDIO__ && (!isMatched || !Number.isFinite(start))) {{
     showToast('原版有声书未录制本句音频，已展开双语释义');
   }}
 
