@@ -1,46 +1,44 @@
 # Interactive Audiobook Reader Pipeline
 
-**The Apple Books-grade Interactive Bilingual Reader & Audiobook Engine, built specifically for macOS & Apple Silicon.**
+An Apple Books-grade bilingual interactive reader and acoustic synchronization engine, engineered natively for macOS and Apple Silicon.
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-audiblelibrary.online-brightgreen?style=flat-square&logo=safari)](https://audiblelibrary.online/books/the-psychology-of-money/)
-[![macOS](https://img.shields.io/badge/platform-macOS%2013%2B-black.svg?style=flat-square&logo=apple)](https://apple.com)
-[![Apple Silicon](https://img.shields.io/badge/hardware-Apple%20Silicon%20(M1/M2/M3/M4)-orange.svg?style=flat-square)](https://apple.com)
-[![Acoustics](https://img.shields.io/badge/acoustics-Apple%20MLX%20Whisper-blue.svg?style=flat-square)](https://github.com/ml-explore/mlx)
-[![Tests](https://img.shields.io/badge/tests-138%20passed-brightgreen.svg?style=flat-square)](https://github.com/chase-yuan/interactive-audiobook-reader-pipeline)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-
----
-
-A deterministic, industrial-strength pipeline for converting any EPUB book into a standalone, zero-dependency bilingual reading experience with Apple Books typography, word-level acoustic synchronization, bilingual contextual breakdown, and cryptographic release verification.
-
-> 🚀 **Live Production Demo**: Try the interactive reader immediately in your browser at **[audiblelibrary.online](https://audiblelibrary.online/books/the-psychology-of-money/)** (no installation or setup required).
+[![Live Demo](https://img.shields.io/badge/Demo-audiblelibrary.online-4338ca?style=flat-square&logo=safari&logoColor=white)](https://audiblelibrary.online/books/the-psychology-of-money/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%2013%2B-0f172a?style=flat-square&logo=apple&logoColor=white)](https://apple.com)
+[![Hardware](https://img.shields.io/badge/Architecture-Apple%20Silicon%20(M1--M4)-334155?style=flat-square)](https://apple.com)
+[![Engine](https://img.shields.io/badge/Engine-Apple%20MLX%20Whisper-0284c7?style=flat-square)](https://github.com/ml-explore/mlx)
+[![Tests](https://img.shields.io/badge/Tests-138%20Passed-10b981?style=flat-square)](https://github.com/chase-yuan/interactive-audiobook-reader-pipeline)
+[![Release Gate](https://img.shields.io/badge/Gate-Cryptographic%20Verified-475569?style=flat-square)](https://github.com/chase-yuan/interactive-audiobook-reader-pipeline)
+[![License](https://img.shields.io/badge/License-MIT-64748b?style=flat-square)](LICENSE)
 
 ---
 
-## Interactive Experience & Visual Showcase
+A deterministic, industrial-strength pipeline for compiling any standard EPUB into a self-contained bilingual reading application. Delivers Apple Books typography, word-level acoustic synchronization, contextual CEFR vocabulary parsing, and cryptographic release verification with zero external runtime dependencies.
 
-![Interactive Reader Demo](docs/images/demo_interactive_flow.gif)
-
-- **Word-Level Acoustic Synchronization**: Smooth, real-time word highlighting tracking professional studio audiobook narration.
-- **Click-to-Translate & Nuance Cards**: Click any sentence to reveal idiomatic Chinese translation alongside contextual CEFR C1/C2 vocabulary breakdowns with parts of speech and phonetics.
-- **Apple Books-Grade Aesthetics**: Powered by responsive New York/San Francisco serif type stacks, 44px Apple HIG touch targets, and instant Light, Sepia, and Pure Black OLED Dark mode switching.
+> [!NOTE]
+> Experience the production interactive reader directly in Safari or any modern browser at [audiblelibrary.online](https://audiblelibrary.online/books/the-psychology-of-money/). Zero installation, accounts, or extensions required.
 
 ---
 
-## Why macOS & Apple Silicon?
+## Interactive Experience
 
-- **Zero-Dependency Standard Library Core**: Pure text interactive readers require **zero external dependencies** — executing entirely on native Python 3.9+ standard library modules.
-- **Apple Silicon Unified Memory Acceleration**: Speech-to-text forced alignment uses Apple's official `mlx-whisper`, executing on the Mac's unified memory, Neural Engine, and GPU with zero CUDA bloat and zero cloud API billing.
-- **Acoustic Benchmark Matrix**:
+![Interactive Bilingual Reader Demo](docs/images/demo_interactive_flow.gif)
 
-| Hardware Platform | Audio Track Length | MLX Alignment Time | Processing Throughput | Cloud API Cost |
+- **Acoustic Tracking**: Real-time word highlighting locked to studio audiobook narration with sub-millisecond precision.
+- **Nuance Cards**: Instant contextual sentence translations with CEFR C1/C2 vocabulary breakdowns, phonetic IPA transcripts, and lexical annotations.
+- **Apple Books Typography**: Native San Francisco and New York serif type stacks, 44 px touch targets, and instant Light, Sepia, and OLED Dark mode switching.
+
+---
+
+## Apple Silicon Performance
+
+The text extraction, analysis, and single-file HTML compiler execute entirely on native Python 3 standard library modules. Speech-to-text forced alignment executes via Apple's official `mlx-whisper`, utilizing unified memory, GPU, and Neural Engine acceleration without CUDA bloat or cloud API latency.
+
+| Execution Target | Audio Duration | Processing Time | Throughput | API Cost |
 | :--- | :---: | :---: | :---: | :---: |
 | **Apple M4 / M3 Max (Unified Memory)** | 1 Hour (Studio Audio) | **~2.2 min** | **~27x Real-time** | **$0.00 (Offline)** |
 | **Apple M3 / M2 Pro** | 1 Hour (Studio Audio) | **~3.5 min** | **~17x Real-time** | **$0.00 (Offline)** |
 | **Apple M1 / M2 Air** | 1 Hour (Studio Audio) | **~4.8 min** | **~12x Real-time** | **$0.00 (Offline)** |
-| Cloud GPU / REST ASR API | 1 Hour (Studio Audio) | ~6–10 min + Latency | ~7x Real-time | $0.36 – $1.20 / book |
-
-- **Native macOS Workflow**: Automatic Safari browser launch (`open`) upon compilation completion, with instant artifact delivery paths copied via `pbcopy`.
+| Cloud GPU / REST ASR API | 1 Hour (Studio Audio) | ~6–10 min + Latency | ~7x Real-time | $0.36 – $1.20 / Title |
 
 ---
 
@@ -62,71 +60,82 @@ flowchart TD
         F --> G["Cryptographic Quality Gate<br>(quality_gate.py)"]
     end
 
-    subgraph "Apple Books-Grade Deliverables"
-        G --> H["Standalone Interactive Reader<br>(Single Self-Contained .html)"]
-        H --> I["Desktop & Mobile Safari<br>(Zero-Runtime Dependency)"]
-        H --> J["Audible Online Library CDN<br>(Cloudflare Edge Streaming)"]
+    subgraph "Apple Books Deliverables"
+        G --> H["Standalone Interactive Reader<br>(Self-Contained .html)"]
+        H --> I["Desktop & Mobile Safari<br>(Zero Runtime Dependency)"]
+        H --> J["Audible Online CDN<br>(Cloudflare Edge Streaming)"]
     end
+
+    style A fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style B fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style C fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style D fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style E fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style F fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style G fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#0f172a
+    style H fill:#ffffff,stroke:#0284c7,stroke-width:1.5px,color:#0f172a
+    style I fill:#f8fafc,stroke:#94a3b8,stroke-width:1px,color:#0f172a
+    style J fill:#f8fafc,stroke:#94a3b8,stroke-width:1px,color:#0f172a
 ```
 
 ---
 
-## Quickstart (30 Seconds on Mac)
+## Quickstart
 
-Clone the repository and build the included public-domain demo (*Sun Tzu's The Art of War*) in 5 seconds:
+Build the included public-domain monograph (*Sun Tzu's The Art of War*) in 5 seconds using standard library Python:
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/chase-yuan/interactive-audiobook-reader-pipeline.git
 cd interactive-audiobook-reader-pipeline
 
-# 2. Build the interactive bilingual reader (Zero external dependencies needed)
+# 2. Build the interactive reader (Zero external dependencies)
 python3 universal_runner.py demo/sample.epub --text-only
 ```
 
-Your default browser (Safari) will automatically open displaying the completed standalone interactive reader.
+The completed standalone interactive reader automatically opens in Safari.
 
 ---
 
-## Dual-Mode Operation
+## Operational Modes
 
-### 1. Pure Text Interactive Reader (`text_only`)
-Ideal for books without audiobooks. Generates complete chapter-by-chapter bilingual readers with sentence click-to-translate, interactive vocabulary popups, and keyboard navigation.
+### 1. Pure Text Reader (`text-only`)
+For volumes without audiobook recordings. Generates complete chapter-by-chapter bilingual readers with sentence click-to-translate, interactive vocabulary popups, and keyboard navigation.
 
 ```bash
-# Basic run with auto-detected output directory:
+# Basic run with auto-detected output directory
 python3 universal_runner.py /path/to/book.epub --text-only
 
-# High-throughput parallel translation (e.g. 8 workers):
+# High-throughput parallel translation (8 workers)
 python3 universal_runner.py /path/to/book.epub --text-only --concurrency 8 --book-dir ./my_book
 ```
 
 ### 2. Immersive Studio Audiobook (`complete`)
-Combines EPUB text with professional narrator audio tracks (`.mp3`), performing word-by-word forced alignment via Apple Silicon MLX Whisper.
+Combines EPUB text with professional narrator audio tracks (`.mp3` or `.m4a`), performing word-by-word forced alignment via Apple Silicon MLX Whisper.
 
 ```bash
-# Install Apple Silicon MLX acoustic support:
+# Install Apple Silicon MLX acoustic engine
 pip install -e '.[acoustic]'
 
-# Build complete audiobook reader:
+# Build complete synchronized audiobook reader
 python3 universal_runner.py --epub /path/to/book.epub --audio-dir /path/to/mp3s --book-dir ./my_book
 ```
 
 ---
 
-## CLI Installation
+## Installation
 
-Install into your local Python environment to use the `reader-build` command anywhere on your Mac:
+Install into your local Python environment to use the `reader-build` command directly:
 
 ```bash
 # Standard setup (Text-only readers)
 pip install -e .
 
-# Full setup (Apple Silicon MLX acoustic engine + publication tools)
+# Full setup (Apple Silicon MLX acoustic engine and deployment tools)
 pip install -e '.[acoustic,deployment]'
 ```
 
-Once installed, simply run:
+Once installed:
 
 ```bash
 reader-build /path/to/book.epub --text-only
@@ -134,43 +143,44 @@ reader-build /path/to/book.epub --text-only
 
 ---
 
-## Input Structure & Audio Mapping
+## Ingestion Directory Layout
 
 The pipeline automatically inspects and pairs EPUB chapters with audio tracks:
 
-- `my_book_sources/`
-  - `book.epub`: Source EPUB containing the chapter spine.
-  - `audio/`: Directory containing narrated audio files:
-    - `00_preface.mp3`: Mapped to Chapter 0 / Preface
-    - `01_chapter1.mp3`: Mapped to Chapter 1
-    - `02_chapter2.mp3`: Mapped to Chapter 2
+```text
+my_book_sources/
+  book.epub
+  audio/
+    00_preface.mp3
+    01_chapter1.mp3
+    02_chapter2.mp3
+```
 
-The runner aligns tracks by numerical prefix or spine ID, ensuring 100% monotonicity and zero audio-text drift across the entire monograph.
+Tracks are aligned by numerical prefix or spine ID, guaranteeing monotonic audio-text alignment across the entire volume.
 
 ---
 
-## Project Structure
+## Repository Structure
 
 - `universal_runner.py`: Primary CLI entrypoint (`reader-build`)
-- `extract_epub.py`: Clean EPUB sentence boundary extractor
+- `extract_epub.py`: EPUB sentence boundary extractor
 - `dynamic_aligner.py`: High-precision word-level acoustic aligner
-- `html_builder.py`: Apple Books-grade standalone HTML compiler
+- `html_builder.py`: Standalone Apple Books HTML compiler
 - `content_profile.py`: Mode router (`text_only` vs `complete` audio)
-- `quality_gate.py`: Cryptographic release gate & smoke tester
+- `quality_gate.py`: Cryptographic release gate and smoke tester
 - `validate_outputs.py`: Invariant validator for publication
 - `acoustic_whisper.py`: Apple Silicon MLX Whisper extractor
-- `demo/sample.epub`: Minimal 5KB public-domain demo EPUB
-- `docs/images/`: Visual demo GIFs and UI showcases
-- `docs/history/`: Archive of milestone specs and benchmarks
-- `requirements.txt`: Standard macOS pip requirements
-- `setup.py`: Package configuration & console scripts
+- `demo/sample.epub`: Public-domain demo EPUB
+- `docs/images/`: Visual assets and interactive flow demonstrations
+- `docs/history/`: Historical milestone specifications and benchmarks
+- `setup.py`: Package configuration and entrypoints
 - `LICENSE`: MIT License
 
 ---
 
-## Quality Verification
+## Verification Matrix
 
-Run the comprehensive unit and integration test matrix (138 assertions):
+Execute the comprehensive test matrix (138 assertions covering extraction, alignment, and packaging):
 
 ```bash
 python3 -m unittest discover
