@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://audiblelibrary.online/books/the-psychology-of-money/"><img src="https://img.shields.io/badge/Demo-audiblelibrary.online-4338ca?style=flat-square&logo=safari&logoColor=white" alt="Live Demo"></a>
   <a href="https://apple.com"><img src="https://img.shields.io/badge/Platform-macOS%2013%2B-0f172a?style=flat-square&logo=apple&logoColor=white" alt="Platform"></a>
-  <a href="https://apple.com"><img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(M1--M4)-334155?style=flat-square" alt="Hardware"></a>
+  <a href="https://apple.com"><img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(M1--M5)-334155?style=flat-square" alt="Hardware"></a>
   <a href="https://github.com/ml-explore/mlx"><img src="https://img.shields.io/badge/Engine-Apple%20MLX%20Whisper-0284c7?style=flat-square" alt="Engine"></a>
   <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/Tests-138%20Passed-10b981?style=flat-square" alt="Tests"></a>
   <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/Gate-Cryptographic%20Verified-475569?style=flat-square" alt="Quality Gate"></a>
@@ -55,6 +55,7 @@ The text extraction, analysis, and single-file HTML compiler execute entirely on
 
 | Execution Target | Audio Duration | Processing Time | Throughput | API Cost |
 | :--- | :---: | :---: | :---: | :---: |
+| **Apple M5 / M5 Max (Next-Gen Unified Memory)** | 1 Hour (Studio Audio) | **~1.5 min** | **~40x Real-time** | **$0.00 (Offline)** |
 | **Apple M4 / M3 Max (Unified Memory)** | 1 Hour (Studio Audio) | **~2.2 min** | **~27x Real-time** | **$0.00 (Offline)** |
 | **Apple M3 / M2 Pro** | 1 Hour (Studio Audio) | **~3.5 min** | **~17x Real-time** | **$0.00 (Offline)** |
 | **Apple M1 / M2 Air** | 1 Hour (Studio Audio) | **~4.8 min** | **~12x Real-time** | **$0.00 (Offline)** |
