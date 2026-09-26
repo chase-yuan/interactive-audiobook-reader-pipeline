@@ -75,6 +75,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             'label': str(label),
             'audio': c['audio'],
             'public_audio': c.get('public_audio'),
+            'editorial_notice': c.get('editorial_notice'),
             'sentences': sents
         })
         
@@ -82,6 +83,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     first_ch_audio = loaded_chapters[0]['audio'] if (loaded_chapters and loaded_chapters[0].get('audio')) else ""
     first_ch_public_audio = loaded_chapters[0].get('public_audio') if loaded_chapters else None
     first_ch_num = loaded_chapters[0]['num'] if loaded_chapters else 0
+    first_ch_label = loaded_chapters[0]['label'].replace('Chapter ', 'Ch. ') if loaded_chapters else 'Ch. 1'
     audio_src = first_ch_public_audio or first_ch_audio or "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
     play_btn_attr = "" if has_audio else ' style="display: none;"'
     audio_track_attr = "" if has_audio else ' style="display: none;"'
@@ -430,7 +432,7 @@ body {{
 }}
 
 .icon-btn:active {{
-  transform: scale(0.96);
+  opacity: 0.85;
 }}
 
 .icon-btn.primary {{
@@ -476,14 +478,123 @@ body {{
   gap: var(--space-lg);
 }}
 
-.control-drawer audio {{
-  width: 100%;
-  height: var(--audio-track-height);
-  border-radius: var(--radius-pill);
-  outline: none;
-  background: var(--bg-page);
+.hidden-audio {{
+  display: none !important;
+}}
+
+.audio-player-bar {{
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-xs) var(--space-lg);
+  background: var(--bg-panel);
   border: var(--space-3xs) solid var(--border-subtle);
-  filter: var(--audio-filter);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-subtle);
+  min-height: var(--audio-track-height);
+  box-sizing: border-box;
+}}
+
+.player-speed-btn {{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--space-7xl);
+  height: var(--space-5xl);
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--bg-page);
+  color: var(--text-main);
+  border: var(--space-3xs) solid var(--border-subtle);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  flex-shrink: 0;
+  user-select: none;
+  box-shadow: var(--shadow-subtle);
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
+}}
+
+.player-speed-btn:hover {{
+  background: var(--accent);
+  color: var(--btn-primary-text);
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}}
+
+.player-speed-btn:active {{
+  opacity: 0.85;
+}}
+
+.player-speed-btn.custom-speed {{
+  background: var(--accent);
+  color: var(--btn-primary-text);
+  border-color: var(--accent);
+}}
+
+.player-time {{
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xs);
+  color: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+  min-width: var(--space-7xl);
+  text-align: center;
+  flex-shrink: 0;
+  user-select: none;
+}}
+
+.player-slider-wrap {{
+  flex: 1;
+  display: flex;
+  align-items: center;
+  position: relative;
+  min-width: 0;
+}}
+
+.player-slider {{
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: var(--space-xs);
+  background: var(--border);
+  border-radius: var(--radius-full);
+  outline: none;
+  cursor: pointer;
+  margin: 0;
+}}
+
+.player-slider::-webkit-slider-thumb {{
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--space-lg);
+  height: var(--space-lg);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-kbd);
+  transition: filter var(--transition-fast);
+}}
+
+.player-slider::-webkit-slider-thumb:hover {{
+  filter: brightness(1.15);
+}}
+
+.player-slider::-moz-range-thumb {{
+  width: var(--space-lg);
+  height: var(--space-lg);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-kbd);
+  transition: filter var(--transition-fast);
+}}
+
+.player-slider::-moz-range-thumb:hover {{
+  filter: brightness(1.15);
 }}
 
 .drawer-row {{
@@ -529,7 +640,7 @@ body {{
 }}
 
 .seg-btn:active {{
-  transform: scale(0.96);
+  opacity: 0.85;
 }}
 
 .seg-btn.active {{
@@ -582,7 +693,7 @@ body {{
 }}
 
 .pill-btn:active {{
-  transform: scale(0.96);
+  opacity: 0.85;
 }}
 
 .pill-btn.active {{
@@ -796,7 +907,76 @@ body {{
 }}
 
 .sentence-unit[data-matched="0"] .sentence-text {{
-  opacity: 0.92;
+  opacity: 0.88;
+}}
+
+.un-narrated-tag {{
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  margin-left: 6px;
+  vertical-align: middle;
+  cursor: default;
+  user-select: none;
+}}
+
+.inspect-audio-notice {{
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: var(--space-xs);
+  font-style: italic;
+}}
+
+.editorial-notice-box {{
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin: var(--space-2xl) 0 var(--space-xl) 0;
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-base);
+  background: var(--bg-panel);
+  border: 1px dashed var(--accent);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}}
+
+.editorial-notice-box .notice-icon {{
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}}
+
+.editorial-notice-box .notice-content {{
+  flex: 1;
+}}
+
+#reader-toast {{
+  position: fixed;
+  bottom: calc(var(--player-height, 64px) + var(--space-xl));
+  left: 50%;
+  transform: translateX(-50%) translateY(var(--space-md));
+  background: var(--text-main);
+  color: var(--bg-page);
+  padding: var(--space-sm) var(--space-xl);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--card-shadow);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  z-index: 10000;
+}}
+
+#reader-toast.show {{
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }}
 
 .w {{
@@ -941,7 +1121,7 @@ body {{
   <div class="nav-bar">
     <div class="chapter-nav-wrapper">
       <button class="chapter-btn" id="chapterSelectBtn" onclick="toggleChapterDropdown(event)">
-        <span>{html.escape(book_title)} · <span id="currentChapterLabel">Ch. 0</span></span>
+        <span>{html.escape(book_title)} · <span id="currentChapterLabel">{html.escape(first_ch_label)}</span></span>
         <span class="dropdown-arrow">▾</span>
       </button>
       <div class="chapter-dropdown" id="chapterDropdown">
@@ -968,7 +1148,15 @@ body {{
   
   <div class="control-drawer" id="controlDrawer">
     <div class="drawer-inner">
-      <audio id="audioTrack" controls preload="metadata" src="{html.escape(audio_src)}"{audio_track_attr}></audio>
+      <div class="audio-player-bar" id="audioPlayerBar"{audio_track_attr}>
+        <button class="player-speed-btn" id="audioSpeedBtn" onclick="cyclePlaybackRate()" title="Playback speed / 播放速度" aria-label="Playback speed">1.0×</button>
+        <span class="player-time" id="playerCurTime">00:00</span>
+        <div class="player-slider-wrap">
+          <input type="range" class="player-slider" id="playerScrubber" min="0" max="100" value="0" step="0.1" aria-label="Playback scrubber">
+        </div>
+        <span class="player-time" id="playerTotalTime">00:00</span>
+        <audio id="audioTrack" preload="metadata" src="{html.escape(audio_src)}" class="hidden-audio"{audio_track_attr}></audio>
+      </div>
       <div class="drawer-row">
         <div class="drawer-group">
           <div class="segmented-control" role="group" aria-label="Font size">
@@ -989,7 +1177,7 @@ body {{
               <option value="1">1×</option><option value="3" selected>3×</option><option value="5">5×</option>
             </select>
             <div class="seg-divider"></div>
-            <button class="seg-btn" id="shadowBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
+            <button class="seg-btn" id="repeatBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
           </div>
         </div>
         <div class="drawer-group">
@@ -1046,7 +1234,6 @@ body {{
   <!-- CHAPTER {cnum} -->
   <section class="chapter-section{active_cls}" id="chapter-{cnum}" data-audio="{html.escape(caudio)}" data-public-audio="{html.escape(cpublic_audio)}" data-ch="{cnum}">
     <header class="book-header">
-      <div class="book-subtitle">{html.escape(book_subtitle)}</div>
       <h1 class="book-title">{title_html}</h1>
       <div class="book-author">{html.escape(book_author)}</div>
     </header>
@@ -1064,6 +1251,11 @@ body {{
             # turn a paraphrase into a clickable karaoke sentence.
             spans_are_observed = all(w.get("timing_source", "observed") == "observed" for w in word_spans)
             has_match = 1 if s.get("has_audio_match", True) and spans_are_observed and isinstance(start, (int, float)) and isinstance(end, (int, float)) and end > start else 0
+            unmatched_tag = ""
+            inspect_unmatched_notice = ""
+            if has_match == 0 and has_audio:
+                unmatched_tag = ' <span class="un-narrated-tag" title="有声书原版未录制音频">纯文本</span>'
+                inspect_unmatched_notice = '<div class="inspect-audio-notice">（注：原版有声书未录制本句音频，已展开双语释义）</div>'
             start_arg = "null" if start is None else str(start)
             end_arg = "null" if end is None else str(end)
             trans = html.escape(s.get("trans", ""))
@@ -1105,11 +1297,23 @@ body {{
             html_head += f"""
       <div class="sentence-unit" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" data-audio-order="{s.get('audio_order', '')}" data-epigraph="{1 if s.get('alignment_method') == 'leading_epigraph_attribution' else 0}" data-matched="{has_match}" data-text="{html.escape(raw_text)}" data-trans="{trans}" data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}">
         <div class="sentence-text{h_class}" onclick="handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})">
-          <span class="s-content">{sentence_text_html}</span>
+          <span class="s-content">{sentence_text_html}</span>{unmatched_tag}
         </div>
-        <div class="inspect-panel" onclick="handleInspectPanelClick(event, '{sid}')" title="Click to collapse / 点击折叠">
+        <div class="inspect-panel" onclick="handleInspectPanelClick(event, '{sid}')">
+          {inspect_unmatched_notice}
           <div class="inspect-trans">{trans}</div>
           {vocab_section}
+        </div>
+      </div>
+"""
+
+        editorial_notice = ch.get("editorial_notice")
+        if editorial_notice:
+            html_head += f"""
+      <div class="editorial-notice-box">
+        <span class="notice-icon">ℹ️</span>
+        <div class="notice-content">
+          <strong>编者注：</strong>{html.escape(editorial_notice)}
         </div>
       </div>
 """
@@ -1135,6 +1339,83 @@ const controlDrawer = document.getElementById('controlDrawer');
 const drawerToggleBtn = document.getElementById('drawerToggleBtn');
 const chapterDropdown = document.getElementById('chapterDropdown');
 const currentChapterLabel = document.getElementById('currentChapterLabel');
+const audioSpeedBtn = document.getElementById('audioSpeedBtn');
+const playerCurTime = document.getElementById('playerCurTime');
+const playerTotalTime = document.getElementById('playerTotalTime');
+const playerScrubber = document.getElementById('playerScrubber');
+let isUserScrubbing = false;
+
+const SPEED_PRESETS = [1.0, 1.25, 1.5, 1.75, 2.0, 0.75];
+const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 1.75: '1.75×', 2.0: '2.0×', 0.75: '0.75×' };
+let currentPlaybackSpeed = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'playback_speed') || '1.0');
+if (!SPEED_PRESETS.includes(currentPlaybackSpeed)) currentPlaybackSpeed = 1.0;
+
+function applyPlaybackRate(rate) {
+  currentPlaybackSpeed = rate;
+  localStorage.setItem(STORAGE_PREFIX + 'playback_speed', String(rate));
+  if (audio) {
+    audio.playbackRate = rate;
+  }
+  if (audioSpeedBtn) {
+    audioSpeedBtn.textContent = SPEED_LABELS[rate] || (rate + '×');
+    if (rate !== 1.0) {
+      audioSpeedBtn.classList.add('custom-speed');
+    } else {
+      audioSpeedBtn.classList.remove('custom-speed');
+    }
+  }
+}
+
+function cyclePlaybackRate() {
+  const curIdx = SPEED_PRESETS.indexOf(currentPlaybackSpeed);
+  const nextRate = SPEED_PRESETS[(curIdx >= 0 ? curIdx + 1 : 0) % SPEED_PRESETS.length];
+  applyPlaybackRate(nextRate);
+}
+
+function formatAudioTime(sec) {
+  if (!Number.isFinite(sec) || sec < 0) return '00:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return (m < 10 ? '0' + m : m) + ':' + (s < 10 ? '0' + s : s);
+}
+
+function updateAudioPlayerUI() {
+  if (!audio) return;
+  if (audio.playbackRate !== currentPlaybackSpeed) {
+    audio.playbackRate = currentPlaybackSpeed;
+  }
+  const cur = audio.currentTime || 0;
+  const dur = audio.duration || 0;
+  const pct = dur > 0 ? (cur / dur) * 100 : 0;
+  if (!isUserScrubbing && playerScrubber) {
+    playerScrubber.value = pct;
+    playerScrubber.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
+  }
+  if (playerCurTime && !isUserScrubbing) {
+    playerCurTime.textContent = formatAudioTime(cur);
+  }
+  if (playerTotalTime) {
+    playerTotalTime.textContent = formatAudioTime(dur);
+  }
+}
+
+if (playerScrubber) {
+  playerScrubber.addEventListener('input', () => {
+    isUserScrubbing = true;
+    const pct = parseFloat(playerScrubber.value) || 0;
+    playerScrubber.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
+    if (audio && audio.duration) {
+      const targetSec = (pct / 100) * audio.duration;
+      if (playerCurTime) playerCurTime.textContent = formatAudioTime(targetSec);
+    }
+  });
+  playerScrubber.addEventListener('change', () => {
+    if (audio && audio.duration) {
+      audio.currentTime = (parseFloat(playerScrubber.value) / 100) * audio.duration;
+    }
+    isUserScrubbing = false;
+  });
+}
 
 let activeChapterNum = parseInt(localStorage.getItem(STORAGE_PREFIX + 'active_ch') || String(window.__INITIAL_CHAPTER__), 10);
 let autoScrollEnabled = localStorage.getItem(STORAGE_PREFIX + 'autoscroll') !== 'false';
@@ -1222,7 +1503,7 @@ function switchChapter(chNum) {
   const menuEl = document.getElementById('menu-ch-' + chNum);
   if (menuEl) {
     const tagText = menuEl.querySelector('.chapter-item-tag')?.textContent?.trim();
-    currentChapterLabel.textContent = tagText || (chNum === 0 ? 'Preface' : 'Ch. ' + chNum);
+    currentChapterLabel.textContent = tagText ? tagText.replace(/^Chapter\s*/i, 'Ch. ') : (chNum === 0 ? 'Preface' : 'Ch. ' + chNum);
   } else {
     currentChapterLabel.textContent = chNum === 0 ? 'Preface' : 'Ch. ' + chNum;
   }
@@ -1389,16 +1670,35 @@ function toggleTips() {
   }
 }
 
+function showToast(msg) {
+  let toast = document.getElementById('reader-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'reader-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toast.__timer);
+  toast.__timer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2200);
+}
+
 let lastSentenceClickTime = 0;
 let lastSentenceClickId = null;
 
 function startSentenceShadowing(sentenceEl) {
-  if (!sentenceEl || sentenceEl.dataset.matched !== '1') return;
+  if (!sentenceEl) return;
+  if (sentenceEl.dataset.matched !== '1') {
+    showToast('该句子无音频，无法跟读');
+    return;
+  }
   if (shadowState.timer) clearTimeout(shadowState.timer);
   shadowState.phase = 'playing';
   shadowState.completed = 0;
   shadowState.sentence = sentenceEl;
-  const btn = document.getElementById('shadowBtn');
+  const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Stop Repeat';
   
   const activeSection = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
@@ -1450,6 +1750,8 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
     audio.currentTime = start;
     audio.play();
     globalPlayBtn.textContent = '⏸ Pause';
+  }} else if (window.__HAS_AUDIO__ && (!hasMatch || !Number.isFinite(start))) {{
+    showToast('原版有声书未录制本句音频，已展开双语释义');
   }}
 
   document.querySelectorAll('.sentence-unit.active').forEach(u => {{
@@ -1501,7 +1803,7 @@ function stopShadowing() {
   shadowState.completed = 0;
   shadowState.sentence = null;
   shadowState.timer = null;
-  const btn = document.getElementById('shadowBtn');
+  const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Repeat';
 }
 
@@ -1548,14 +1850,29 @@ function stopSyncLoop() {
   syncFrameId = null;
 }
 
-audio.addEventListener('play', () => { globalPlayBtn.textContent = '⏸ Pause'; startSyncLoop(); });
-audio.addEventListener('pause', () => { globalPlayBtn.textContent = '▶ Play'; stopSyncLoop(); });
+audio.addEventListener('play', () => {
+  globalPlayBtn.textContent = '⏸ Pause';
+  if (audio && audio.playbackRate !== currentPlaybackSpeed) {
+    audio.playbackRate = currentPlaybackSpeed;
+  }
+  startSyncLoop();
+});
+audio.addEventListener('pause', () => {
+  globalPlayBtn.textContent = '▶ Play';
+  stopSyncLoop();
+});
 audio.addEventListener('timeupdate', () => {
+  updateAudioPlayerUI();
   syncPlayback();
   if (!Number.isNaN(audio.currentTime) && audio.duration) {
     reportLibraryProgress(activeChapterNum, (audio.currentTime / audio.duration) * 100);
   }
 });
+audio.addEventListener('loadedmetadata', () => {
+  if (audio) audio.playbackRate = currentPlaybackSpeed;
+  updateAudioPlayerUI();
+});
+audio.addEventListener('durationchange', updateAudioPlayerUI);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopSyncLoop(); else startSyncLoop(); });
 
 function syncPlayback() {
