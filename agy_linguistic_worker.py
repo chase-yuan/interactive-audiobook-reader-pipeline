@@ -150,10 +150,21 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
     prompt = build_batch_prompt(base_prompt, batch, batch_idx, total_batches)
     last_error = ""
 
+    default_model = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
+    fallback_models = [default_model]
+    for alt in ("gemini-3.7-flash-high", "gemini-3.8-flash-medium"):
+        if alt not in fallback_models:
+            fallback_models.append(alt)
+
     for attempt in range(1, max_batch_attempts + 1):
+        model_name = fallback_models[(attempt - 1) % len(fallback_models)]
+        base_cmd = ["agy"]
+        if model_name:
+            base_cmd.extend(["--model", model_name])
+
         try:
             completed = subprocess.run(
-                ["agy", "--output-format", "text", "--print-timeout", "1h", "--print", prompt],
+                base_cmd + ["--output-format", "text", "--print-timeout", "1h", "--print", prompt],
                 cwd=str(cwd),
                 text=True,
                 capture_output=True,
@@ -161,7 +172,9 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
             )
             if completed.returncode != 0:
                 last_error = (completed.stderr or completed.stdout or "agy failed")[-4000:]
-                time.sleep(1)
+                is_quota = "RESOURCE_EXHAUSTED" in last_error or "429" in last_error
+                wait_sec = 10 if is_quota else min(2 * attempt, 10)
+                time.sleep(wait_sec)
                 continue
 
             batch_result = _json_from_output(completed.stdout)
@@ -182,7 +195,7 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                 sub_prompt = build_batch_prompt(base_prompt, missing_items, 0, 1)
                 try:
                     sub_completed = subprocess.run(
-                        ["agy", "--output-format", "text", "--print-timeout", "1h", "--print", sub_prompt],
+                        base_cmd + ["--output-format", "text", "--print-timeout", "1h", "--print", sub_prompt],
                         cwd=str(cwd),
                         text=True,
                         capture_output=True,

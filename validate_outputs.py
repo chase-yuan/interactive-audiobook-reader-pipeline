@@ -22,6 +22,8 @@ INTENTIONAL_INTERJECTION = re.compile(
     re.IGNORECASE,
 )
 MIN_CHAPTER_AUDIO_COVERAGE = 0.95
+MAX_NON_NARRATED_CHAPTER_RATIO = 0.10
+MAX_NON_NARRATED_CHAPTER_COUNT = 15
 
 
 def _sha256(path: Path) -> str:
@@ -365,7 +367,8 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             )
             if non_narrated:
                 evidence = item.get("non_narrated_evidence") or {}
-                acoustic_path = book_dir / "audio" / f"fourth_wing_ch{number:02d}_acoustic_words.json"
+                prefix = canonical.name.removesuffix("_canonical_sentences.json")
+                acoustic_path = book_dir / "audio" / f"{prefix}_acoustic_words.json"
                 import hashlib
                 non_narrated_reviews.append({
                     "chapter": number,
@@ -424,6 +427,22 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             errors.append(
                 f"{label}: acoustic coverage {coverage:.1%} is below the "
                 f"{MIN_CHAPTER_AUDIO_COVERAGE:.0%} release threshold"
+            )
+        non_narrated_records = sum(
+            1 for item in aligned_data
+            if item.get("alignment_status") == "not-applicable"
+            and item.get("alignment_reason") in {"non_narrated_content", "non_narrated_text", "duplicate_source_fragment", "out_of_scope_reference"}
+        )
+        non_narrated_ratio = non_narrated_records / len(aligned_data) if aligned_data else 0.0
+        is_excessive_omission = (
+            non_narrated_records > MAX_NON_NARRATED_CHAPTER_COUNT
+            or (len(aligned_data) >= 15 and non_narrated_records > 3 and non_narrated_ratio > MAX_NON_NARRATED_CHAPTER_RATIO)
+        )
+        if content_mode == COMPLETE and is_excessive_omission:
+            errors.append(
+                f"{label}: non-narrated omission ratio {non_narrated_ratio:.1%} "
+                f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {MAX_NON_NARRATED_CHAPTER_COUNT}-sentence release ceiling; "
+                f"chapter must be truncated to audio bounds or structured with explicit text-only profiles"
             )
         if review_ids:
             warnings.append(f"{label}: {len(review_ids)} alignment records require review ({', '.join(review_ids[:8])})")
