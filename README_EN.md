@@ -27,6 +27,18 @@ A deterministic, industrial-strength pipeline for compiling any standard EPUB in
 
 ---
 
+## Core Design Philosophy: Why Build This Tool?
+
+This project was born out of a personal exploration into focus and cognitive learning science during deep bilingual reading:
+
+1. **Dual-Modal Immersion for Laser Focus**: Reading alone often leads to mind-wandering; passive listening often leads to zone-outs. By reading the text while simultaneously listening to studio narration, dual-channel sensory input locks cognitive bandwidth into deep, sustained immersion.
+2. **Kinetic Word Tracking as a Visual Anchor**: Real-time highlighting that dynamic leaps word-by-word with the audio narration provides an unshakeable visual anchor, completely eliminating the cognitive friction of losing one's place or trailing off.
+3. **Pure English Mode: Embracing "Desirable Difficulty"**: By keeping the interface in pure English by default, the brain is deprived of premature crutches. This introduces the cognitive psychological concept of *desirable difficulty*, training the mind to process English directly in context.
+4. **On-Demand Bilingual Mode: Dynamic Cognitive Unloading**: Effective learning requires challenge without burnout. The reader allows seamless toggle between pure English and sentence-level bilingual translation on demand, unloading cognitive fatigue during dense chapters.
+5. **Contextual Idiomatic Translation & Nuance Breakdown**: Moving beyond rigid machine translation, nuance cards provide literary-grade idiomatic translations alongside CEFR C1/C2 vocabulary annotations, parts of speech, and phonetic IPA transcripts, helping readers truly absorb vocabulary in its living context.
+
+---
+
 ## Interactive Experience
 
 ![Interactive Bilingual Reader Demo](docs/images/demo_interactive_flow.gif)
