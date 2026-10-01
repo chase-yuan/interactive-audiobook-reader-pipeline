@@ -1968,7 +1968,7 @@ function getNextShadowSentence(currentEl) {
 }
 
 function advanceShadowing() {
-  if (shadowState.phase === 'idle' || !shadowState.sentence) return;
+  if (shadowState.phase === 'idle' || shadowState.phase === 'pause_buffer' || !shadowState.sentence) return;
   const end = parseFloat(shadowState.sentence.dataset.end);
   if (audio.currentTime < end) return;
   audio.pause();
@@ -1993,6 +1993,7 @@ function advanceShadowing() {
       if (shadowState.timer) clearTimeout(shadowState.timer);
       shadowState.timer = setTimeout(() => {
         if (shadowState.phase === 'idle' || !shadowState.sentence) return;
+        shadowState.pauseStartTime = 0;
         shadowState.phase = 'playing';
         audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
         audio.play();
@@ -2019,6 +2020,7 @@ function advanceShadowing() {
   if (shadowState.timer) clearTimeout(shadowState.timer);
   shadowState.timer = setTimeout(() => {
     if (shadowState.phase === 'idle' || !shadowState.sentence) return;
+    shadowState.pauseStartTime = 0;
     shadowState.phase = 'replaying';
     audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
     audio.play();
