@@ -1479,6 +1479,24 @@ let sentenceTimeIndex = [];
 let syncFrameId = null;
 const shadowState = { phase: 'idle', repetitions: 3, completed: 0, sentence: null, timer: null, pauseStartTime: 0 };
 
+let shadowWakeLock = null;
+async function requestShadowWakeLock() {
+  if (shadowState.phase === 'idle') return;
+  try {
+    if ('wakeLock' in navigator && (!shadowWakeLock || shadowWakeLock.released)) {
+      shadowWakeLock = await navigator.wakeLock.request('screen');
+      shadowWakeLock.addEventListener('release', () => { shadowWakeLock = null; });
+    }
+  } catch(e) {}
+}
+
+function releaseShadowWakeLock() {
+  if (shadowWakeLock) {
+    try { shadowWakeLock.release(); } catch(e) {}
+    shadowWakeLock = null;
+  }
+}
+
 document.getElementById('autoScrollCheck').checked = autoScrollEnabled;
 
 function toggleAutoScroll(enabled) {
@@ -1771,6 +1789,8 @@ function startSentenceShadowing(sentenceEl) {
   shadowState.sentence = sentenceEl;
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Stop Repeat';
+  requestShadowWakeLock();
+  showToast('跟读已启动 · 保持屏幕点亮');
   
   const activeSection = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
   if (activeSection) {
@@ -1930,6 +1950,7 @@ function stopShadowing() {
     shadowState.sentence.classList.remove('active');
   }
   shadowState.sentence = null;
+  releaseShadowWakeLock();
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Repeat';
 }
@@ -2141,7 +2162,28 @@ audio.addEventListener('ended', () => {
     }
   }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopSyncLoop(); else startSyncLoop(); });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopSyncLoop();
+  } else {
+    if (shadowState.phase !== 'idle' && audio && !audio.paused) {
+      const curSentence = findSentenceAt(audio.currentTime);
+      if (curSentence && curSentence !== shadowState.sentence) {
+        if (shadowState.sentence) shadowState.sentence.classList.remove('active');
+        shadowState.sentence = curSentence;
+        shadowState.completed = 0;
+        shadowState.phase = 'playing';
+        curSentence.classList.add('active');
+        if (autoScrollEnabled) {
+          curSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+    requestShadowWakeLock();
+    startSyncLoop();
+  }
+});
 
 function syncPlayback() {
   syncFrameId = null;
