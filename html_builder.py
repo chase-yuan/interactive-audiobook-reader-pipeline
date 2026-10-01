@@ -1754,12 +1754,64 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
   
   const isMatched = (hasMatch === undefined || hasMatch === null) ? (Number.isFinite(start) && Number.isFinite(end) && end > start && start >= 0) : Boolean(hasMatch);
   localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, id);
-  if (window.__HAS_AUDIO__ && isMatched && Number.isFinite(start) && Number.isFinite(end) && end > start) {{
+
+  if (window.__HAS_AUDIO__ && Number.isFinite(start) && start >= 0) {{
     audio.currentTime = start;
     audio.play();
     globalPlayBtn.textContent = '⏸ Pause';
-  }} else if (window.__HAS_AUDIO__ && (!isMatched || !Number.isFinite(start))) {{
-    showToast('原版有声书未录制本句音频，已展开双语释义');
+  }} else if (window.__HAS_AUDIO__) {{
+    const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
+    const units = activeSec ? Array.from(activeSec.querySelectorAll('.sentence-unit')) : [];
+    const idx = units.indexOf(el);
+    let interpolated = false;
+    if (idx !== -1) {{
+      let prevTime = null, prevIdx = -1;
+      for (let i = idx - 1; i >= 0; i--) {{
+        const u = units[i];
+        const eVal = parseFloat(u.dataset.end);
+        const sVal = parseFloat(u.dataset.start);
+        if (Number.isFinite(eVal) && eVal >= 0) {{ prevTime = eVal; prevIdx = i; break; }}
+        if (Number.isFinite(sVal) && sVal >= 0) {{ prevTime = sVal; prevIdx = i; break; }}
+      }}
+
+      let nextTime = null, nextIdx = -1;
+      for (let i = idx + 1; i < units.length; i++) {{
+        const u = units[i];
+        const sVal = parseFloat(u.dataset.start);
+        const eVal = parseFloat(u.dataset.end);
+        if (Number.isFinite(sVal) && sVal >= 0) {{ nextTime = sVal; nextIdx = i; break; }}
+        if (Number.isFinite(eVal) && eVal >= 0) {{ nextTime = eVal; nextIdx = i; break; }}
+      }}
+
+      if (prevTime !== null && nextTime !== null && nextTime >= prevTime) {{
+        const gapSteps = nextIdx - prevIdx;
+        const stepOffset = idx - prevIdx;
+        const targetTime = prevTime + (nextTime - prevTime) * (stepOffset / gapSteps);
+        audio.currentTime = targetTime;
+        audio.play();
+        globalPlayBtn.textContent = '⏸ Pause';
+        interpolated = true;
+      }} else if (prevTime !== null) {{
+        const dur = (audio && Number.isFinite(audio.duration)) ? audio.duration : Infinity;
+        if (prevTime < dur - 3) {{
+          audio.currentTime = prevTime;
+          audio.play();
+          globalPlayBtn.textContent = '⏸ Pause';
+          interpolated = true;
+        }} else {{
+          showToast('原版有声书音频已在正文末尾结束，已为您展开双语释义');
+          interpolated = true;
+        }}
+      }} else if (nextTime !== null) {{
+        audio.currentTime = 0;
+        audio.play();
+        globalPlayBtn.textContent = '⏸ Pause';
+        interpolated = true;
+      }}
+    }}
+    if (!interpolated) {{
+      showToast('原版有声书未录制本句音频，已展开双语释义');
+    }}
   }}
 
   document.querySelectorAll('.sentence-unit.active').forEach(u => {{
