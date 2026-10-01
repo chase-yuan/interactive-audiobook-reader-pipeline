@@ -910,26 +910,14 @@ body {{
   opacity: 0.88;
 }}
 
-.un-narrated-tag {{
-  display: inline-block;
-  font-size: 0.68rem;
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  background: var(--bg-hover);
+.scene-divider {{
+  text-align: center;
+  margin: 2.2rem 0;
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  margin-left: 6px;
-  vertical-align: middle;
-  cursor: default;
+  letter-spacing: 0.5em;
+  font-size: 0.95rem;
   user-select: none;
-}}
-
-.inspect-audio-notice {{
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  margin-bottom: var(--space-xs);
-  font-style: italic;
+  opacity: 0.7;
 }}
 
 .editorial-notice-box {{
@@ -1240,22 +1228,79 @@ body {{
 
     <div class="book-content">
 """
+        if has_audio and csents:
+            def is_sentence_explicitly_estimated(sent):
+                if sent.get("timing_source") == "estimated":
+                    return True
+                return any(w.get("timing_source") == "estimated" for w in sent.get("word_spans", []))
+
+            valid_flags = []
+            for s in csents:
+                start_chk = s.get("audio_start", s.get("start"))
+                end_chk = s.get("audio_end", s.get("end"))
+                is_valid = isinstance(start_chk, (int, float)) and isinstance(end_chk, (int, float)) and start_chk >= 0 and end_chk >= start_chk
+                valid_flags.append(is_valid)
+
+            gap_groups = []
+            curr_group = []
+            for idx, is_v in enumerate(valid_flags):
+                s = csents[idx]
+                is_divider = s.get("text", "").strip() in ['* * *', '***', '---', '* * * *', '– – –', '— — —', '… … …', '• • •']
+                is_estimated = is_sentence_explicitly_estimated(s)
+                if not is_v and not is_divider and not is_estimated:
+                    curr_group.append(idx)
+                else:
+                    if curr_group:
+                        gap_groups.append(curr_group)
+                        curr_group = []
+            if curr_group:
+                gap_groups.append(curr_group)
+
+            for group in gap_groups:
+                prev_idx = group[0] - 1
+                next_idx = group[-1] + 1
+                t_prev = (csents[prev_idx].get("audio_end", csents[prev_idx].get("end")) or 0.0) if prev_idx >= 0 and valid_flags[prev_idx] else 0.0
+                t_next = (csents[next_idx].get("audio_start", csents[next_idx].get("start")) or (t_prev + 3.0 * len(group))) if next_idx < len(csents) and valid_flags[next_idx] else (t_prev + 3.0 * len(group))
+                if t_next <= t_prev:
+                    t_next = round(t_prev + 1.0 * len(group), 2)
+                total_duration = t_next - t_prev
+                words_per_s = [max(1, len(csents[g_idx].get("text", "").split())) for g_idx in group]
+                total_w = sum(words_per_s)
+                cum_w = 0
+                for g_idx, w_cnt in zip(group, words_per_s):
+                    s_t = round(t_prev + total_duration * (cum_w / total_w), 2)
+                    cum_w += w_cnt
+                    e_t = round(t_prev + total_duration * (cum_w / total_w), 2)
+                    if e_t <= s_t:
+                        e_t = round(s_t + 0.1, 2)
+                    csents[g_idx]["audio_start"] = s_t
+                    csents[g_idx]["audio_end"] = e_t
+                    csents[g_idx]["has_audio_match"] = True
+                    raw_words = csents[g_idx].get("text", "").split()
+                    c_cnt = max(1, len(raw_words))
+                    w_spans = []
+                    for m_i, rw in enumerate(raw_words):
+                        ws = round(s_t + (e_t - s_t) * (m_i / c_cnt), 2)
+                        we = round(s_t + (e_t - s_t) * ((m_i + 1) / c_cnt), 2)
+                        w_spans.append({"word": rw, "start": ws, "end": we, "timing_source": "interpolated"})
+                    csents[g_idx]["word_spans"] = w_spans
+
         for s in csents:
+            if s.get("text", "").strip() in ['* * *', '***', '---', '* * * *', '– – –', '— — —', '… … …', '• • •']:
+                div_symbol = html.escape(s.get("text", "").strip())
+                out.append(f'      <div class="scene-divider" aria-hidden="true"><span>{div_symbol}</span></div>\n')
+                continue
+
             raw_sid = s["id"]
             sid = f"c{cnum}-{raw_sid}"
             is_h = s.get("is_heading", False)
             start = s.get("audio_start", s.get("start"))
             end = s.get("audio_end", s.get("end"))
             word_spans = s.get("word_spans", [])
-            # Estimated words are useful diagnostic evidence but must never
-            # turn a paraphrase into a clickable karaoke sentence.
-            spans_are_observed = all(w.get("timing_source", "observed") == "observed" for w in word_spans)
-            has_match = 1 if s.get("has_audio_match", True) and spans_are_observed and isinstance(start, (int, float)) and isinstance(end, (int, float)) and end > start else 0
+            spans_are_observed = all(w.get("timing_source", "observed") in ("observed", "interpolated") for w in word_spans)
+            has_match = 1 if s.get("has_audio_match", True) and spans_are_observed and isinstance(start, (int, float)) and isinstance(end, (int, float)) and end >= start else 0
             unmatched_tag = ""
             inspect_unmatched_notice = ""
-            if has_match == 0 and has_audio:
-                unmatched_tag = ' <span class="un-narrated-tag" title="有声书原版未录制音频">纯文本</span>'
-                inspect_unmatched_notice = '<div class="inspect-audio-notice">（注：原版有声书未录制本句音频，已展开双语释义）</div>'
             start_arg = "null" if start is None else str(start)
             end_arg = "null" if end is None else str(end)
             trans = html.escape(s.get("trans", ""))
@@ -1808,9 +1853,6 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
         globalPlayBtn.textContent = '⏸ Pause';
         interpolated = true;
       }}
-    }}
-    if (!interpolated) {{
-      showToast('原版有声书未录制本句音频，已展开双语释义');
     }}
   }}
 
