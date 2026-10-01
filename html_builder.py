@@ -1162,7 +1162,7 @@ body {{
         <div class="drawer-group"{repeat_group_attr}>
           <div class="segmented-control">
             <select id="shadowRepeatSelect" class="seg-select" onchange="setShadowRepetitions(this.value)" title="Repetitions">
-              <option value="1">1×</option><option value="3" selected>3×</option><option value="5">5×</option>
+              <option value="1">1×</option><option value="2">2×</option><option value="3" selected>3×</option><option value="5">5×</option>
             </select>
             <div class="seg-divider"></div>
             <button class="seg-btn" id="repeatBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
@@ -1442,6 +1442,15 @@ function updateAudioPlayerUI() {
   if (playerTotalTime) {
     playerTotalTime.textContent = formatAudioTime(dur);
   }
+  if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && dur > 0 && !isNaN(dur)) {
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: Math.max(0, dur),
+        playbackRate: audio.playbackRate || 1,
+        position: Math.min(Math.max(0, cur), dur)
+      });
+    } catch(e) {}
+  }
 }
 
 if (playerScrubber) {
@@ -1468,7 +1477,7 @@ let currentPlayingId = null;
 let currentActiveWordEl = null;
 let sentenceTimeIndex = [];
 let syncFrameId = null;
-const shadowState = { phase: 'idle', repetitions: 3, completed: 0, sentence: null, timer: null };
+const shadowState = { phase: 'idle', repetitions: 3, completed: 0, sentence: null, timer: null, pauseStartTime: 0 };
 
 document.getElementById('autoScrollCheck').checked = autoScrollEnabled;
 
@@ -1541,7 +1550,7 @@ function findSentenceAt(time) {
   return candidate && time < candidate.end ? candidate.el : null;
 }
 
-function switchChapter(chNum) {
+function switchChapter(chNum, autoPlay) {
   if (chNum > 2 && typeof window.PasskeyGate !== 'undefined' && !window.PasskeyGate.isUnlocked()) {
     if (audio && !audio.paused) audio.pause();
     if (typeof window.PasskeyGate.openModal === 'function') {
@@ -1570,7 +1579,7 @@ function switchChapter(chNum) {
       sec.classList.add('active');
       const audioSrc = resolveAudioSource(sec);
       if (audio.getAttribute('src') !== audioSrc) {
-        const wasPlaying = !audio.paused;
+        const wasPlaying = autoPlay || !audio.paused;
         audio.src = audioSrc;
         currentPlayingId = null;
         if (currentActiveWordEl) {
@@ -1578,11 +1587,20 @@ function switchChapter(chNum) {
           currentActiveWordEl = null;
         }
         if (wasPlaying) audio.play();
+      } else if (autoPlay && audio.paused) {
+        audio.play();
+      }
+      if (shadowState.phase !== 'idle') {
+        const firstSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
+        if (firstSentence) {
+          startSentenceShadowing(firstSentence);
+        }
       }
     }
   });
   rebuildSentenceTimeIndex();
   reportLibraryProgress(chNum, 0);
+  updateMediaSessionMetadata();
   
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1749,6 +1767,7 @@ function startSentenceShadowing(sentenceEl) {
   if (shadowState.timer) clearTimeout(shadowState.timer);
   shadowState.phase = 'playing';
   shadowState.completed = 0;
+  shadowState.pauseStartTime = 0;
   shadowState.sentence = sentenceEl;
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Stop Repeat';
@@ -1900,11 +1919,17 @@ function setShadowRepetitions(value) {
 }
 
 function stopShadowing() {
-  if (shadowState.timer) clearTimeout(shadowState.timer);
+  if (shadowState.timer) {
+    clearTimeout(shadowState.timer);
+    shadowState.timer = null;
+  }
   shadowState.phase = 'idle';
   shadowState.completed = 0;
+  shadowState.pauseStartTime = 0;
+  if (shadowState.sentence) {
+    shadowState.sentence.classList.remove('active');
+  }
   shadowState.sentence = null;
-  shadowState.timer = null;
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Repeat';
 }
@@ -1924,24 +1949,95 @@ function toggleShadowing() {
   }
 }
 
+function getNextShadowSentence(currentEl) {
+  if (!currentEl) return null;
+  const section = currentEl.closest('.chapter-section') || document.querySelector('.chapter-section.active');
+  if (!section) return null;
+  const allSentences = Array.from(section.querySelectorAll('.sentence-unit'));
+  const idx = allSentences.indexOf(currentEl);
+  if (idx === -1) return null;
+  for (let i = idx + 1; i < allSentences.length; i++) {
+    const s = allSentences[i];
+    const start = parseFloat(s.dataset.start);
+    const end = parseFloat(s.dataset.end);
+    if (s.dataset.matched !== '0' && Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      return s;
+    }
+  }
+  return null;
+}
+
 function advanceShadowing() {
   if (shadowState.phase === 'idle' || !shadowState.sentence) return;
   const end = parseFloat(shadowState.sentence.dataset.end);
   if (audio.currentTime < end) return;
   audio.pause();
   shadowState.completed += 1;
+  
   if (shadowState.completed >= shadowState.repetitions) {
-    stopShadowing();
-    return;
+    const nextSentence = getNextShadowSentence(shadowState.sentence);
+    if (nextSentence) {
+      if (shadowState.sentence) shadowState.sentence.classList.remove('active');
+      shadowState.sentence = nextSentence;
+      shadowState.completed = 0;
+      shadowState.phase = 'pause_buffer';
+      shadowState.pauseStartTime = Date.now();
+      nextSentence.classList.add('active');
+      if (autoScrollEnabled) {
+        const rect = nextSentence.getBoundingClientRect();
+        const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
+        if (!inView) {
+          nextSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+      if (shadowState.timer) clearTimeout(shadowState.timer);
+      shadowState.timer = setTimeout(() => {
+        if (shadowState.phase === 'idle' || !shadowState.sentence) return;
+        shadowState.phase = 'playing';
+        audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
+        audio.play();
+      }, 650);
+      return;
+    } else {
+      const nextCh = activeChapterNum + 1;
+      const nextOption = document.querySelector(`#chapterSelect option[value="${nextCh}"]`) || 
+                         document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+      if (nextOption) {
+        shadowState.phase = 'pause_buffer';
+        shadowState.completed = 0;
+        switchChapter(nextCh, true);
+        return;
+      } else {
+        stopShadowing();
+        return;
+      }
+    }
   }
+  
   shadowState.phase = 'pause_buffer';
+  shadowState.pauseStartTime = Date.now();
+  if (shadowState.timer) clearTimeout(shadowState.timer);
   shadowState.timer = setTimeout(() => {
-    if (!shadowState.sentence) return;
+    if (shadowState.phase === 'idle' || !shadowState.sentence) return;
     shadowState.phase = 'replaying';
     audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
     audio.play();
   }, 650);
 }
+
+setInterval(() => {
+  if (shadowState.phase === 'pause_buffer' && shadowState.pauseStartTime > 0) {
+    if (Date.now() - shadowState.pauseStartTime >= 700) {
+      shadowState.pauseStartTime = 0;
+      if (shadowState.timer) clearTimeout(shadowState.timer);
+      if (shadowState.phase !== 'idle' && shadowState.sentence) {
+        shadowState.phase = 'playing';
+        audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
+        audio.play();
+      }
+    }
+  }
+}, 250);
 
 function startSyncLoop() {
   if (syncFrameId === null && !audio.paused && !document.hidden) syncFrameId = requestAnimationFrame(syncPlayback);
@@ -1952,15 +2048,64 @@ function stopSyncLoop() {
   syncFrameId = null;
 }
 
+function updateMediaSessionMetadata() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
+    const chTitle = activeSec?.querySelector('.book-title')?.textContent?.trim() || ('Chapter ' + activeChapterNum);
+    const bookTitle = document.querySelector('#chapterSelectBtn span')?.textContent?.split('·')?.[0]?.trim() || document.title || 'Audiobook';
+    const author = document.querySelector('.book-author')?.textContent?.trim() || 'Audible';
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: chTitle,
+      artist: author,
+      album: bookTitle,
+      artwork: [
+        { src: '../../assets/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '../../assets/icon-512.png', sizes: '512x512', type: 'image/png' }
+      ]
+    });
+  } catch(e) {}
+}
+
+function initMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (audio && audio.paused) toggleGlobalPlay();
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (audio && !audio.paused) toggleGlobalPlay();
+    });
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      const skip = details.seekOffset || 10;
+      if (audio) audio.currentTime = Math.max(0, audio.currentTime - skip);
+    });
+    navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      const skip = details.seekOffset || 10;
+      if (audio && audio.duration) audio.currentTime = Math.min(audio.duration, audio.currentTime + skip);
+    });
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      const prevCh = Math.max(0, activeChapterNum - 1);
+      if (prevCh !== activeChapterNum) switchChapter(prevCh, true);
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      switchChapter(activeChapterNum + 1, true);
+    });
+  } catch(e) {}
+}
+
 audio.addEventListener('play', () => {
   globalPlayBtn.textContent = '⏸ Pause';
   if (audio && audio.playbackRate !== currentPlaybackSpeed) {
     audio.playbackRate = currentPlaybackSpeed;
   }
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+  updateMediaSessionMetadata();
   startSyncLoop();
 });
 audio.addEventListener('pause', () => {
   globalPlayBtn.textContent = '▶ Play';
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   stopSyncLoop();
 });
 audio.addEventListener('timeupdate', () => {
@@ -1975,6 +2120,25 @@ audio.addEventListener('loadedmetadata', () => {
   updateAudioPlayerUI();
 });
 audio.addEventListener('durationchange', updateAudioPlayerUI);
+audio.addEventListener('ended', () => {
+  if (shadowState.phase !== 'idle') {
+    advanceShadowing();
+    return;
+  }
+  const nextCh = activeChapterNum + 1;
+  const nextOption = document.querySelector(`#chapterSelect option[value="${nextCh}"]`) || 
+                     document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+  if (nextOption) {
+    switchChapter(nextCh, true);
+  } else {
+    const firstOpt = document.querySelector('#chapterSelect option') || 
+                     document.querySelector('.chapter-item[data-chapter]');
+    if (firstOpt) {
+      const firstCh = parseInt(firstOpt.dataset.chapter || firstOpt.value || '0', 10);
+      switchChapter(firstCh, true);
+    }
+  }
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopSyncLoop(); else startSyncLoop(); });
 
 function syncPlayback() {
@@ -2135,6 +2299,8 @@ window.addEventListener('keydown', (e) => {
     }
   }
 });
+initMediaSession();
+updateMediaSessionMetadata();
 </script>
 </body>
 </html>
