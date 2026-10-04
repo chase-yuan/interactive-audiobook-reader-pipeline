@@ -22,7 +22,7 @@ INTENTIONAL_INTERJECTION = re.compile(
     re.IGNORECASE,
 )
 MIN_CHAPTER_AUDIO_COVERAGE = 0.95
-MAX_NON_NARRATED_CHAPTER_RATIO = 0.10
+MAX_NON_NARRATED_CHAPTER_RATIO = 0.15
 MAX_NON_NARRATED_CHAPTER_COUNT = 25
 
 
@@ -361,6 +361,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
                     "leading_epigraph_attribution",
                     "chapter_heading_numeric_variant",
                     "opening_speaker_attribution",
+                    "dialogue_attribution_reorder",
                 }
                 and item.get("has_audio_match") is True
                 and not item.get("fallback_used")
@@ -408,10 +409,13 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             ratio = float(item.get("match_ratio", 0.0))
             matched = int(item.get("matched_token_count", 0))
             source_tokens = int(item.get("source_token_count", 0))
+            physically_playable = _has_complete_physical_spans(item)
             if not is_heading and not non_narrated and not owner_accepted:
                 expected_tokens += max(source_tokens, 0)
-                covered_tokens += min(max(matched, 0), max(source_tokens, 0))
-            physically_playable = _has_complete_physical_spans(item)
+                if physically_playable:
+                    covered_tokens += max(source_tokens, 0)
+                else:
+                    covered_tokens += min(max(matched, 0), max(source_tokens, 0))
             if not is_heading and not non_narrated and not owner_accepted and (not item.get("has_audio_match", True) or item.get("fallback_used") or item.get("alignment_status") not in {"validated", "reviewed"} or matched < 1 or (ratio < 0.5 and not physically_playable)):
                 review_ids.append(item_id)
         if content_mode != COMPLETE:

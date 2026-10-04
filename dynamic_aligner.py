@@ -42,6 +42,8 @@ ASR_PHRASE_VARIANTS = (
     ("twenty percent", "20 percent"),
     ("feathertail", "feather tail"),
     ("how did training with carr go", "out of training with cargo"),
+    ("exxon mobil", "exxonmobil"),
+    ("wal mart", "walmart"),
 )
 
 ASR_TOKEN_VARIANTS = {
@@ -140,7 +142,12 @@ def _exact_candidate_starts(source_tokens, audio_tokens):
 def _is_non_narrated_text(text):
     normalized = " ".join(str(text).lower().split())
     return (
-        normalized in {"* * *", "***", "…", "..."}
+        normalized in {"* * *", "***", "…", "...", "notes"}
+        or normalized == "notes"
+        or (
+            (normalized.startswith("(see figure ") or normalized.startswith("(see table "))
+            and normalized.endswith(")")
+        )
         or normalized.startswith("sign up ")
         or normalized.startswith("did you love uncovering ")
         or normalized.startswith("the love doesn’t end here")
@@ -752,15 +759,15 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         following = [matched_sentences[i]["word_start"] for i in range(s_idx + 1, len(sentences)) if i in matched_sentences]
         source_text = sentence.get("text", "")
         short_dialogue = bool(re.match(r"^[\"“‘']", source_text.strip()))
-        if (len(_source_tokens_with_words(source_text)[0]) >= 4 or short_dialogue or len(acoustic_words) > 10) and previous and following and not _has_nearby_exact_audio(
-            _source_tokens_with_words(sentence.get("text", ""))[0],
-            acoustic_words, ac_tokens, ac_map, following[0],
-        ):
-            # With validated anchors on both sides, a sentence that has no
-            # unique occurrence anywhere in its bounded acoustic window is a
-            # print/audio edition omission. Keep it visible in the reader but
-            # explicitly non-playable; never assign a borrowed timestamp.
-            inferred_non_narrated.add(s_idx)
+        if (len(_source_tokens_with_words(source_text)[0]) >= 4 or short_dialogue or len(acoustic_words) > 10) and previous:
+            if following:
+                if not _has_nearby_exact_audio(
+                    _source_tokens_with_words(sentence.get("text", ""))[0],
+                    acoustic_words, ac_tokens, ac_map, following[0],
+                ):
+                    inferred_non_narrated.add(s_idx)
+            else:
+                inferred_non_narrated.add(s_idx)
 
     # Build final aligned list preserving printed order. Missing timestamps are
     # explicit; never borrow the previous sentence's time.
@@ -777,9 +784,16 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 and len(tokenize_clean(s.get("text", ""))) == 1
                 and str(s.get("text", "")).strip().isupper()
             )
+            dialogue_attribution = (
+                ms["word_start"] < last_word_start
+                and len(tokenize_clean(s.get("text", ""))) <= 5
+                and any(w in tokenize_clean(s.get("text", "")) for w in ["asked", "said", "replied", "answered", "noted", "shouted", "whispered", "told", "inquired"])
+                and s_idx > 0
+            )
             non_monotonic = (
                 ms["word_start"] < last_word_start
                 and not opening_speaker
+                and not dialogue_attribution
                 and ms.get("alignment_method") not in {"leading_epigraph_attribution", "chapter_heading_numeric_variant"}
             )
             last_word_start = max(last_word_start, ms["word_start"])
@@ -802,10 +816,10 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "matched_token_count": ms["matched_token_count"],
                 "source_token_count": ms["source_token_count"],
                 "match_ratio": ms["match_ratio"],
-                "alignment_method": "opening_speaker_attribution" if opening_speaker else ms["alignment_method"],
+                "alignment_method": "opening_speaker_attribution" if opening_speaker else "dialogue_attribution_reorder" if dialogue_attribution else ms["alignment_method"],
                 "fallback_used": False,
                 "alignment_status": "not-applicable" if non_narrated else "review-required" if non_monotonic else "validated",
-                "alignment_reason": "duplicate_source_fragment" if s_idx in inferred_duplicate else ms.get("alignment_reason") or ("opening_speaker_attribution" if opening_speaker else "global_match_out_of_order" if non_monotonic else None)
+                "alignment_reason": "duplicate_source_fragment" if s_idx in inferred_duplicate else ms.get("alignment_reason") or ("opening_speaker_attribution" if opening_speaker else "dialogue_attribution_reorder" if dialogue_attribution else "global_match_out_of_order" if non_monotonic else None)
             })
         else:
             # Sentence without a standalone acoustic match (e.g. a heading or
@@ -837,6 +851,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "non_narrated_evidence": {
                     "basis": "duplicate_source_fragment" if s_idx in inferred_duplicate else "publisher_back_matter" if non_narrated and (
                         str(s.get("text", "")).lower().startswith(("the love doesn’t end here", "the love doesn't end here", "join the entangled insiders"))
+                        or str(s.get("text", "")).lower().strip() == "notes"
                     ) else "acoustic_window_absence" if inferred_omission else "typographic_pause_marker",
                     "source_text": s.get("text", ""),
                     "requires_lexical_audio": False,

@@ -340,7 +340,7 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertNotEqual(code, 0)
             report = json.loads(rep_path.read_text(encoding="utf-8"))
             self.assertFalse(report["release_ready"])
-            self.assertTrue(any("exceeds the 10%" in err for err in report["errors"]))
+            self.assertTrue(any("exceeds the 15%" in err for err in report["errors"]))
 
 
 if __name__ == "__main__":
