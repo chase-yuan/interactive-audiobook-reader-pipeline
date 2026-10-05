@@ -137,7 +137,7 @@ class HTMLBuilderTests(unittest.TestCase):
                 }], str(output), release_token=token, release_report_path=report_path,
             )
             rendered = output.read_text(encoding="utf-8")
-            self.assertIn("Test Book · <span id=\"currentChapterLabel\">Ch. 1</span>", rendered)
+            self.assertIn("<span id=\"currentChapterLabel\">Ch. 1</span> · <span class=\"book-pill-title\">Test Book</span>", rendered)
             self.assertNotIn("📖", rendered)
 
     def test_zero_jitter_css_invariants(self):

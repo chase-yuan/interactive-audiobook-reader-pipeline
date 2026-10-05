@@ -90,6 +90,10 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     audio_track_attr = "" if has_audio else ' style="display: none;"'
     repeat_group_attr = "" if has_audio else ' style="display: none;"'
     
+    clean_short_title = re.sub(r'[\(\[]\s*unabridged\s*[\)\]]', '', book_title, flags=re.I).strip()
+    if len(clean_short_title) > 28 and ':' in clean_short_title:
+        clean_short_title = clean_short_title.split(':')[0].strip()
+
     html_head = f"""<!DOCTYPE html>
 <html lang="en" data-theme="sepia">
 <head>
@@ -121,7 +125,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   <div class="nav-bar">
     <div class="chapter-nav-wrapper">
       <button class="chapter-btn" id="chapterSelectBtn" onclick="toggleChapterDropdown(event)">
-        <span>{html.escape(book_title)} · <span id="currentChapterLabel">{html.escape(first_ch_label)}</span></span>
+        <span><span id="currentChapterLabel">{html.escape(first_ch_label)}</span> · <span class="book-pill-title">{html.escape(clean_short_title)}</span></span>
         <span class="dropdown-arrow">▾</span>
       </button>
       <div class="chapter-dropdown" id="chapterDropdown">
@@ -1228,7 +1232,7 @@ function updateMediaSessionMetadata() {
   try {
     const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
     const chTitle = activeSec?.querySelector('.book-title')?.textContent?.trim() || ('Chapter ' + activeChapterNum);
-    const bookTitle = document.querySelector('#chapterSelectBtn span')?.textContent?.split('·')?.[0]?.trim() || document.title || 'Audiobook';
+    const bookTitle = document.querySelector('.book-pill-title')?.textContent?.trim() || document.querySelector('#chapterSelectBtn span')?.textContent?.split('·')?.[1]?.trim() || document.querySelector('#chapterSelectBtn span')?.textContent?.split('·')?.[0]?.trim() || document.title || 'Audiobook';
     const author = document.querySelector('.book-author')?.textContent?.trim() || 'Audible';
     navigator.mediaSession.metadata = new MediaMetadata({
       title: chTitle,

@@ -239,6 +239,16 @@ body {
   border-color: var(--accent-light);
 }
 
+#currentChapterLabel {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.book-pill-title {
+  color: var(--text-sub);
+  font-weight: 400;
+}
+
 .dropdown-arrow {
   font-size: var(--font-size-xs);
   color: var(--text-sub);
