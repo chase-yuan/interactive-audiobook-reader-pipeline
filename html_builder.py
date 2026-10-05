@@ -327,7 +327,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         for s in csents:
             if s.get("text", "").strip() in ['* * *', '***', '---', '* * * *', '– – –', '— — —', '… … …', '• • •']:
                 div_symbol = html.escape(s.get("text", "").strip())
-                out.append(f'      <div class="scene-divider" aria-hidden="true"><span>{div_symbol}</span></div>\n')
+                html_head += f'      <div class="scene-divider" aria-hidden="true"><span>{div_symbol}</span></div>\n'
                 continue
 
             raw_sid = s["id"]
