@@ -179,7 +179,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             <div class="seg-divider"></div>
             <button class="seg-btn" id="repeatBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
             <div class="seg-divider"></div>
-            <button class="seg-btn" id="pocketModeBtn" onclick="togglePocketMode()" title="OLED 息屏防误触跟读">息屏跟读</button>
+            <button class="seg-btn" id="pocketModeBtn" onclick="togglePocketMode()" title="OLED Pocket mode (快捷键 P)">Pocket</button>
           </div>
         </div>
         <div class="drawer-group">
@@ -204,7 +204,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence (audio only)</span></div>
             <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
             {f'<div class="tips-row"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>' if has_audio else ''}
-            {f'<div class="tips-row"><span class="kbd-key">P</span><span>Toggle OLED pocket mode (息屏跟读)</span></div>' if has_audio else ''}
+            {f'<div class="tips-row"><span class="kbd-key">P</span><span>Toggle OLED pocket mode (Pocket)</span></div>' if has_audio else ''}
           </div>
         </div>
       </div>
