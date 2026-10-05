@@ -240,8 +240,11 @@ def _duplicate_source_fragment_indices(sentences):
 
 
 def _build_word_spans(raw_words, source_word_indexes, source_to_audio, acoustic_words, st, et):
-    """Map source words to matched acoustic words, interpolating only true gaps."""
-    mapped_by_word = {index: [] for index in range(len(raw_words))}
+    """Map source words to matched acoustic words, partitioning shared tokens and interpolating gaps."""
+    if not raw_words:
+        return []
+    N = len(raw_words)
+    mapped_by_word = {index: [] for index in range(N)}
     for source_index, audio_token_index in source_to_audio.items():
         if source_index < len(source_word_indexes):
             mapped_by_word[source_word_indexes[source_index]].append(audio_token_index)
@@ -251,30 +254,91 @@ def _build_word_spans(raw_words, source_word_indexes, source_to_audio, acoustic_
         if token_indexes:
             mapped_word_ranges[word_index] = (min(token_indexes), max(token_indexes))
 
-    spans = []
-    for word_index, raw_word in enumerate(raw_words):
-        if word_index in mapped_word_ranges:
-            start_token, end_token = mapped_word_ranges[word_index]
-            start_word = acoustic_words[start_token]
-            end_word = acoustic_words[end_token]
-            ws = max(st, float(start_word["start"]))
-            we = max(ws, float(end_word["end"]))
+    initial_spans = [None] * N
+
+    # Step 1: Assign mapped words. Consecutive words sharing the exact same acoustic token range partition it.
+    i = 0
+    while i < N:
+        if i in mapped_word_ranges:
+            trange = mapped_word_ranges[i]
+            j = i
+            while j < N and j in mapped_word_ranges and mapped_word_ranges[j] == trange:
+                j += 1
+            k = j - i
+            start_tok, end_tok = trange
+            tok_s = max(st, float(acoustic_words[start_tok]["start"]))
+            tok_e = max(tok_s + 0.05 * k, float(acoustic_words[end_tok]["end"]))
+            dur = tok_e - tok_s
+            for offset in range(k):
+                w_idx = i + offset
+                s_time = tok_s + dur * (offset / k)
+                e_time = tok_s + dur * ((offset + 1) / k)
+                initial_spans[w_idx] = {"start": s_time, "end": e_time}
+            i = j
         else:
-            previous = [mapped_word_ranges[i][1] for i in range(word_index) if i in mapped_word_ranges]
-            following = [mapped_word_ranges[i][0] for i in range(word_index + 1, len(raw_words)) if i in mapped_word_ranges]
-            if previous and following:
-                left = acoustic_words[previous[-1]]["end"]
-                right = acoustic_words[following[0]]["start"]
-                gap_fraction = 1 / (len(raw_words) - word_index + 1)
-                ws = float(left) + (float(right) - float(left)) * max(0.0, gap_fraction - 0.5)
-                we = float(left) + (float(right) - float(left)) * min(1.0, gap_fraction + 0.5)
+            i += 1
+
+    # Step 2: Fill unmapped gaps, prefixes, and suffixes.
+    i = 0
+    while i < N:
+        if initial_spans[i] is None:
+            j = i
+            while j < N and initial_spans[j] is None:
+                j += 1
+            M = j - i
+            prev_end = initial_spans[i - 1]["end"] if i > 0 and initial_spans[i - 1] else None
+            next_start = initial_spans[j]["start"] if j < N and initial_spans[j] else None
+
+            if prev_end is not None and next_start is not None:
+                T0 = prev_end
+                T1 = max(T0 + 0.02 * M, next_start)
+            elif prev_end is not None:
+                T0 = prev_end
+                T1 = max(et, T0 + 0.02 * M)
+            elif next_start is not None:
+                if next_start > st:
+                    T0 = st
+                    T1 = next_start
+                else:
+                    T0 = st
+                    shift = min(0.02 * M, (initial_spans[j]["end"] - next_start) * 0.3)
+                    T1 = st + shift
+                    initial_spans[j]["start"] = T1
             else:
-                ws = st + (et - st) * (word_index / max(1, len(raw_words)))
-                we = st + (et - st) * ((word_index + 1) / max(1, len(raw_words)))
+                T0 = st
+                T1 = et
+
+            dur = max(0.01 * M, T1 - T0)
+            for offset in range(M):
+                w_idx = i + offset
+                s_time = T0 + dur * (offset / M)
+                e_time = T0 + dur * ((offset + 1) / M)
+                initial_spans[w_idx] = {"start": s_time, "end": e_time}
+            i = j
+        else:
+            i += 1
+
+    # Step 3: Strict monotonic ordering pass & round to 2 decimals.
+    spans = []
+    prev_s = -1.0
+    for idx, raw_word in enumerate(raw_words):
+        s_val = initial_spans[idx]["start"]
+        e_val = initial_spans[idx]["end"]
+        if s_val <= prev_s:
+            s_val = prev_s + 0.01
+        if e_val <= s_val:
+            e_val = s_val + 0.01
+        s_round = round(s_val, 2)
+        e_round = round(e_val, 2)
+        if s_round <= prev_s:
+            s_round = round(prev_s + 0.01, 2)
+        if e_round <= s_round:
+            e_round = round(s_round + 0.01, 2)
+        prev_s = s_round
         spans.append({
             "word": raw_word,
-            "start": round(ws, 2),
-            "end": round(max(ws, we), 2),
+            "start": s_round,
+            "end": e_round,
             "timing_source": "observed",
         })
     return spans
@@ -334,14 +398,17 @@ def _chapter_heading_matches(sentences, acoustic_words, ac_tokens, ac_map):
         word_start, word_end = ac_map[token_start], ac_map[token_end]
         st = float(acoustic_words[word_start]["start"])
         et = float(acoustic_words[word_end]["end"])
+        source_tokens, source_word_indexes = _source_tokens_with_words(sentence["text"])
+        source_to_audio = {offset: ac_map[token_start + offset] for offset in range(min(len(source_tokens), token_end - token_start + 1))}
+        word_spans = _build_word_spans(sentence["text"].split(), source_word_indexes, source_to_audio, acoustic_words, st, et)
         result[sentence_idx] = {
             "start": round(st, 2), "end": round(max(st + 0.3, et), 2),
             "raw_start": round(st, 2), "raw_end": round(max(st + 0.3, et), 2),
             "audio_start": round(st, 2), "audio_end": round(max(st + 0.3, et), 2),
             "audio_order": word_start, "has_audio_match": True,
-            "word_spans": [{"word": w, "start": round(st, 2), "end": round(max(st + 0.3, et), 2)} for w in sentence["text"].split()],
+            "word_spans": word_spans,
             "word_start": word_start, "word_end": word_end,
-            "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+            "matched_token_count": 2, "source_token_count": len(source_tokens), "match_ratio": 1.0,
             "alignment_method": "chapter_heading_numeric_variant",
             "alignment_reason": "spoken_numeric_heading", "fallback_used": False,
         }
@@ -491,11 +558,13 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                     if st < 15.0:
                         for o in range(b.size):
                             used_tokens.add(b.b + o)
+                        source_to_audio = {offset: ac_map[t_start + offset] for offset in range(b.size)}
+                        word_spans = _build_word_spans(s["text"].split(), source_word_indexes, source_to_audio, acoustic_words, st, et)
                         matched_sentences[s_idx] = {
                             "start": round(st, 2), "end": round(max(st + 0.3, et), 2),
                             "raw_start": round(st, 2), "raw_end": round(max(st + 0.3, et), 2),
                             "has_audio_match": True,
-                            "word_spans": [{"word": w, "start": round(st, 2), "end": round(et, 2)} for w in s["text"].split()],
+                            "word_spans": word_spans,
                             "word_start": w_start, "word_end": w_end,
                             "matched_token_count": b.size, "source_token_count": len(clean_s),
                             "match_ratio": round(b.size / len(clean_s), 3),
@@ -608,6 +677,12 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         s = sentences[s_idx]
         clean_s, source_word_indexes = _source_tokens_with_words(s["text"])
         if not clean_s:
+            continue
+        # Single isolated footnote/bullet markers (e.g. "a.", "b.", "1.") must not falsely
+        # latch onto random common function words like "a" in the audio track.
+        is_isolated_marker = bool(re.match(r"^[a-zA-Z0-9][\.\)]?$", s.get("text", "").strip()))
+        if is_isolated_marker and len(clean_s) <= 1:
+            inferred_non_narrated.add(s_idx)
             continue
 
         previous = [matched_sentences[i]["word_end"] for i in range(s_idx) if i in matched_sentences]
@@ -873,31 +948,64 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 } if non_narrated else None,
             })
             
-    # Guarantee strictly monotonic sentence boundaries: a preceding sentence must not overlap into the next sentence's start
+    # Guarantee strictly monotonic sentence boundaries across all playable sentences:
+    # A preceding sentence must not overlap into the next playable sentence's start,
+    # even if there are unaligned/unnarrated footnotes in between.
     for idx in range(len(aligned_results) - 1):
         cur = aligned_results[idx]
-        nxt = aligned_results[idx + 1]
-        if (
-            cur.get("has_audio_match")
-            and nxt.get("has_audio_match")
-            and cur.get("end") is not None
-            and nxt.get("start") is not None
-            and cur["end"] > nxt["start"]
-            and cur.get("start") is not None
-            and cur["start"] < nxt["start"]
-        ):
-            clamped_end = nxt["start"]
-            cur["end"] = clamped_end
-            if cur.get("audio_end") is not None:
-                cur["audio_end"] = min(cur["audio_end"], clamped_end)
-            if cur.get("raw_end") is not None:
-                cur["raw_end"] = min(cur["raw_end"], clamped_end)
-            if cur.get("word_spans"):
-                for w in cur["word_spans"]:
-                    if w.get("start") is not None and w["start"] > clamped_end:
-                        w["start"] = clamped_end
-                    if w.get("end") is not None and w["end"] > clamped_end:
-                        w["end"] = clamped_end
+        if not cur.get("has_audio_match") or cur.get("end") is None or cur.get("start") is None:
+            continue
+        # Find next playable sentence
+        nxt = None
+        for future_idx in range(idx + 1, len(aligned_results)):
+            future_item = aligned_results[future_idx]
+            if future_item.get("has_audio_match") and future_item.get("start") is not None:
+                nxt = future_item
+                break
+        if nxt is not None and cur["end"] > nxt["start"]:
+            if cur["start"] < nxt["start"]:
+                clamped_end = nxt["start"]
+                old_end = cur["end"]
+                cur["end"] = clamped_end
+                if cur.get("audio_end") is not None:
+                    cur["audio_end"] = min(cur["audio_end"], clamped_end)
+                if cur.get("raw_end") is not None:
+                    cur["raw_end"] = min(cur["raw_end"], clamped_end)
+                if cur.get("word_spans") and old_end > cur["start"]:
+                    S = cur["start"]
+                    scale = (clamped_end - S) / (old_end - S)
+                    prev_s = -1.0
+                    for w in cur["word_spans"]:
+                        if w.get("start") is not None and w.get("end") is not None:
+                            ns = S + (w["start"] - S) * scale
+                            ne = S + (w["end"] - S) * scale
+                            if ns <= prev_s:
+                                ns = prev_s + 0.01
+                            if ne <= ns:
+                                ne = ns + 0.01
+                            s_r = round(ns, 2)
+                            e_r = round(ne, 2)
+                            if s_r <= prev_s:
+                                s_r = round(prev_s + 0.01, 2)
+                            if e_r <= s_r:
+                                e_r = round(s_r + 0.01, 2)
+                            prev_s = s_r
+                            w["start"] = s_r
+                            w["end"] = e_r
+            elif cur["start"] >= nxt["start"]:
+                cur_tokens = cur.get("matched_token_count", 0)
+                nxt_tokens = nxt.get("matched_token_count", 0)
+                if cur_tokens <= 3 and nxt_tokens > cur_tokens:
+                    cur["has_audio_match"] = False
+                    cur["start"] = None
+                    cur["end"] = None
+                    cur["audio_start"] = None
+                    cur["audio_end"] = None
+                    cur["raw_start"] = None
+                    cur["raw_end"] = None
+                    cur["word_spans"] = []
+                    cur["alignment_status"] = "not-applicable"
+                    cur["alignment_reason"] = "non_narrated_text"
 
     atomic_write_json(aligned_out_path, aligned_results)
         

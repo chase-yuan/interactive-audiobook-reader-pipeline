@@ -37,7 +37,7 @@ def _book_run_lock(book_dir):
     """Prevent two processes from mutating one book's artifacts concurrently."""
     lock_path = Path(book_dir) / ".reader-pipeline.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("w", encoding="utf-8") as handle:
+    with lock_path.open("a", encoding="utf-8") as handle:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:

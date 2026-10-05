@@ -110,14 +110,14 @@ def _load_journal(path: Path, fingerprint: str, book_id: str) -> Dict:
     return journal
 
 
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=str(repo), check=True, capture_output=True, text=True)
+def _git(repo: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=str(repo), check=True, capture_output=True, text=True, timeout=timeout)
 
 
 def _changed_paths(repo: Path) -> set[str]:
     completed = subprocess.run(
         ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=str(repo), check=True, capture_output=True,
+        cwd=str(repo), check=True, capture_output=True, timeout=300,
     )
     return {
         record[3:].decode("utf-8", errors="replace")
@@ -322,7 +322,7 @@ def _git_stage(config: Dict, context: Dict) -> Dict:
     _git(repo, "add", "--", *(str(path) for path in whitelist))
     staged_check = subprocess.run(
         ["git", "diff", "--cached", "--quiet"], cwd=str(repo),
-        check=False, capture_output=True, text=True,
+        check=False, capture_output=True, text=True, timeout=300,
     )
     if staged_check.returncode not in (0, 1):
         raise RuntimeError(staged_check.stderr or "git diff --cached failed")

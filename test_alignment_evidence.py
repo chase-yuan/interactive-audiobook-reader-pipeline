@@ -188,3 +188,49 @@ class AlignmentEvidenceTests(unittest.TestCase):
         ])
         self.assertLessEqual(result[0]["audio_end"], result[1]["audio_start"])
 
+    def test_shared_acoustic_token_partitioned_strictly_monotonic(self):
+        # When Whisper emits a combined token like '13%.' for printed '13 percent.'
+        words = [
+            {"word": "return", "start": 10.0, "end": 10.5},
+            {"word": "of", "start": 10.5, "end": 10.8},
+            {"word": "13%.", "start": 10.8, "end": 11.8},
+        ]
+        result = self.run_alignment(words, [
+            {"id": "s-1", "text": "return of 13 percent."}
+        ])[0]
+        spans = result["word_spans"]
+        self.assertEqual(len(spans), 4)
+        for i in range(1, len(spans)):
+            self.assertLess(spans[i - 1]["start"], spans[i]["start"])
+            self.assertLessEqual(spans[i - 1]["start"], spans[i - 1]["end"])
+
+    def test_bullet_prefix_unmapped_token_strictly_monotonic(self):
+        # Printed bullet points '• Purchased' must not create duplicate word start timestamps
+        words = [
+            {"word": "Purchased", "start": 20.0, "end": 20.8},
+            {"word": "shares", "start": 20.8, "end": 21.5},
+        ]
+        result = self.run_alignment(words, [
+            {"id": "s-1", "text": "• Purchased shares"}
+        ])[0]
+        spans = result["word_spans"]
+        self.assertEqual(len(spans), 3)
+        self.assertEqual(spans[0]["word"], "•")
+        self.assertEqual(spans[1]["word"], "Purchased")
+        self.assertLess(spans[0]["start"], spans[1]["start"])
+        self.assertLess(spans[1]["start"], spans[2]["start"])
+
+    def test_unmapped_gap_dots_strictly_monotonic(self):
+        # Ellipsis punctuation 'owners . . . we' must have strictly increasing timestamps
+        words = [
+            {"word": "owners", "start": 30.0, "end": 30.5},
+            {"word": "we", "start": 31.0, "end": 31.5},
+        ]
+        result = self.run_alignment(words, [
+            {"id": "s-1", "text": "owners . . . we"}
+        ])[0]
+        spans = result["word_spans"]
+        self.assertEqual(len(spans), 5)
+        for i in range(1, len(spans)):
+            self.assertLess(spans[i - 1]["start"], spans[i]["start"])
+

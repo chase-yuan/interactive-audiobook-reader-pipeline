@@ -10,6 +10,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -207,8 +208,8 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                             for s_item in sub_result:
                                 if isinstance(s_item, dict) and "id" in s_item:
                                     returned_map[s_item["id"]] = s_item
-                except Exception:
-                    pass
+                except Exception as sub_exc:
+                    sys.stderr.write(f"⚠️ [AGY_WORKER] Sub-query auto-heal failed: {sub_exc}\n")
                 missing_items = [item for item in batch if item["id"] not in returned_map]
 
             if missing_items:

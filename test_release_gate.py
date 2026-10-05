@@ -342,6 +342,41 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertFalse(report["release_ready"])
             self.assertTrue(any("exceeds the 15%" in err for err in report["errors"]))
 
+    def test_overlapping_sentences_block_release(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+            canonical = [
+                {"id": "s-1", "text": "First sentence."},
+                {"id": "s-2", "text": "Second sentence."},
+            ]
+            analysis = [{**item, "trans": "译文", "vocab": []} for item in canonical]
+            # s-1 ends at 5.0s, s-2 starts at 4.0s (1.0s overlap)
+            aligned = [
+                {
+                    "id": "s-1", "text": "First sentence.",
+                    "raw_start": 0.0, "raw_end": 5.0, "has_audio_match": True,
+                    "word_spans": [{"word": "First", "start": 0.0, "end": 2.5, "timing_source": "observed"}, {"word": "sentence.", "start": 2.5, "end": 5.0, "timing_source": "observed"}],
+                    "fallback_used": False, "alignment_status": "validated", "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                },
+                {
+                    "id": "s-2", "text": "Second sentence.",
+                    "raw_start": 4.0, "raw_end": 8.0, "has_audio_match": True,
+                    "word_spans": [{"word": "Second", "start": 4.0, "end": 6.0, "timing_source": "observed"}, {"word": "sentence.", "start": 6.0, "end": 8.0, "timing_source": "observed"}],
+                    "fallback_used": False, "alignment_status": "validated", "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                },
+            ]
+            for suffix, data in (("canonical_sentences", canonical), ("full_analysis", analysis), ("aligned_sentences", aligned)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+            rep_path = root / "reader_validation_report.json"
+            code = validate(root, rep_path)
+            self.assertNotEqual(code, 0)
+            report = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertFalse(report["release_ready"])
+            self.assertTrue(any("sentence overlap detected" in err for err in report["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main()
+
