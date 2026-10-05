@@ -1348,20 +1348,7 @@ function syncPlayback() {
       
       if (activeUnit) {
         if (activeUnit.id !== currentPlayingId) {
-          if (currentPlayingId) {
-            const prevEl = document.getElementById(currentPlayingId);
-            if (prevEl && prevEl !== activeUnit) {
-              prevEl.classList.remove('active', 'card-collapsed');
-            }
-          }
           currentPlayingId = activeUnit.id;
-          activeUnit.classList.add('active');
-          const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
-          if (isChineseLocked) {
-            activeUnit.classList.add('card-collapsed');
-          } else {
-            activeUnit.classList.remove('card-collapsed');
-          }
           localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id);
           
           if (autoScrollEnabled) {
@@ -1390,11 +1377,6 @@ function syncPlayback() {
           currentActiveWordEl = foundWord;
         }
       } else {
-        if (currentPlayingId) {
-          const prevEl = document.getElementById(currentPlayingId);
-          if (prevEl) prevEl.classList.remove('active', 'card-collapsed');
-          currentPlayingId = null;
-        }
         if (currentActiveWordEl) {
           currentActiveWordEl.classList.remove('active-word');
           currentActiveWordEl = null;
