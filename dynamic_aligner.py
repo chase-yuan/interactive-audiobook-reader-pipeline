@@ -690,10 +690,10 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         previous = [matched_sentences[i]["word_end"] for i in range(s_idx) if i in matched_sentences]
         following = [matched_sentences[i]["word_start"] for i in range(s_idx + 1, len(sentences)) if i in matched_sentences]
 
-        w_left = previous[-1] if previous else 0
+        w_left = previous[-1] if previous else None
         w_right = following[0] if following else len(acoustic_words) - 1
 
-        t_left = next((i for i, w in enumerate(ac_map) if w >= w_left), 0)
+        t_left = next((i for i, w in enumerate(ac_map) if w > w_left), len(ac_tokens)) if w_left is not None else 0
         t_right = next((i for i, w in enumerate(ac_map) if w > w_right), len(ac_tokens))
 
         sub_tokens = ac_tokens[t_left:t_right]
@@ -709,9 +709,12 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         # look-back to four normalized tokens and keep the following anchor as
         # a hard upper bound; this is not a last-known-time fallback.
         if not candidates and len(clean_s) <= 2 and following:
-            t_left = max(0, t_left - 4)
-            sub_tokens = ac_tokens[t_left:t_right]
-            candidates = _exact_candidate_starts(clean_s, sub_tokens)
+            t_lookback = max(0, t_left - 4)
+            cand_lookback = _exact_candidate_starts(clean_s, ac_tokens[t_lookback:t_right])
+            if cand_lookback:
+                t_left = t_lookback
+                sub_tokens = ac_tokens[t_left:t_right]
+                candidates = cand_lookback
         if not candidates and len(clean_s) <= 2 and following:
             # Spoken attributions may be absorbed into the following printed
             # sentence. Select the nearest exact occurrence before that
@@ -819,6 +822,8 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                     w_end = ac_map[sub_t_end]
                     st = acoustic_words[w_start]["start"]
                     et = acoustic_words[w_end]["end"]
+                    if previous and st < float(acoustic_words[previous[-1]].get("end", 0.0)) - 0.05:
+                        continue
                     source_to_audio = {}
                     for block in sub_blocks:
                         for offset in range(block.size):
