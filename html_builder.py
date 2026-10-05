@@ -668,19 +668,46 @@ function switchChapter(chNum, autoPlay) {
       if (audio.getAttribute('src') !== audioSrc) {
         const wasPlaying = autoPlay || !audio.paused;
         audio.src = audioSrc;
+        try { audio.currentTime = 0; } catch(e) {}
         currentPlayingId = null;
         if (currentActiveWordEl) {
           currentActiveWordEl.classList.remove('active-word');
           currentActiveWordEl = null;
         }
-        if (wasPlaying) audio.play();
+        if (wasPlaying) {
+          let playTriggered = false;
+          const doPlay = function() {
+            if (playTriggered) return;
+            playTriggered = true;
+            try { audio.currentTime = 0; } catch(e) {}
+            const p = audio.play();
+            if (p && p.catch) p.catch(function(e) { if (e.name !== 'AbortError') console.warn("Auto-play error:", e); });
+            if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
+          };
+          if (audio.readyState >= 1) {
+            doPlay();
+          } else {
+            audio.addEventListener('loadedmetadata', doPlay, { once: true });
+            audio.addEventListener('canplay', doPlay, { once: true });
+            audio.load();
+          }
+        }
       } else if (autoPlay && audio.paused) {
-        audio.play();
+        try { audio.currentTime = 0; } catch(e) {}
+        const p = audio.play();
+        if (p && p.catch) p.catch(function(e) { if (e.name !== 'AbortError') console.warn("Auto-play error:", e); });
+        if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
       }
+      const firstSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
       if (shadowState.phase !== 'idle') {
-        const firstSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
         if (firstSentence) {
           startSentenceShadowing(firstSentence);
+        }
+      } else if (autoPlay && firstSentence) {
+        currentPlayingId = firstSentence.id;
+        firstSentence.classList.add('active');
+        if (autoScrollEnabled && typeof firstSentence.scrollIntoView === 'function') {
+          firstSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
     }
