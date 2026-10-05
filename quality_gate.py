@@ -43,9 +43,13 @@ def _check_temporal_integrity(content: str) -> list:
                 end = float(e_str)
             except ValueError:
                 continue
-            if prev_end is not None and start < (prev_end - 0.05):
-                errors.append(f"Ch {ch_num} {uid}: sentence overlap (starts at {start:.2f}s before previous ended at {prev_end:.2f}s)")
-            prev_end = max(prev_end or 0.0, end)
+            if end < start:
+                errors.append(f"Ch {ch_num} {uid}: end {end:.2f}s precedes start {start:.2f}s")
+            is_reordered = 'data-reorder="1"' in u[:500] or 'data-epigraph="1"' in u[:500]
+            if not is_reordered:
+                if prev_end is not None and start < (prev_end - 0.05):
+                    errors.append(f"Ch {ch_num} {uid}: sentence overlap (starts at {start:.2f}s before previous ended at {prev_end:.2f}s)")
+                prev_end = max(prev_end or 0.0, end)
 
             # Check for adjacent duplicate word timestamps on observed words
             text_part = u.split('<div class="inspect-panel"')[0]

@@ -390,8 +390,15 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 h_class += " chapter-intext-heading"
             elif raw_text.strip().startswith(("—", "–", "--", "- ")):
                 h_class += " epigraph-citation"
+            is_reorder = 1 if s.get("alignment_method") in {
+                "leading_epigraph_attribution",
+                "chapter_heading_numeric_variant",
+                "opening_speaker_attribution",
+                "dialogue_attribution_reorder",
+            } else 0
+            reorder_attr = ' data-reorder="1"' if is_reorder else ''
             html_head += f"""
-      <div class="sentence-unit" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" data-audio-order="{s.get('audio_order', '')}" data-epigraph="{1 if s.get('alignment_method') == 'leading_epigraph_attribution' else 0}" data-matched="{has_match}" data-text="{html.escape(raw_text)}" data-trans="{trans}" data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}">
+      <div class="sentence-unit" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" data-audio-order="{s.get('audio_order', '')}" data-epigraph="{1 if s.get('alignment_method') == 'leading_epigraph_attribution' else 0}"{reorder_attr} data-matched="{has_match}" data-text="{html.escape(raw_text)}" data-trans="{trans}" data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}">
         <div class="sentence-text{h_class}" onclick="handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})">
           <span class="s-content">{sentence_text_html}</span>{unmatched_tag}
         </div>
