@@ -44,6 +44,7 @@ ASR_PHRASE_VARIANTS = (
     ("how did training with carr go", "out of training with cargo"),
     ("exxon mobil", "exxonmobil"),
     ("wal mart", "walmart"),
+    ("tool kit", "toolkit"),
 )
 
 ASR_TOKEN_VARIANTS = {
@@ -83,7 +84,9 @@ NUMBER_PHRASE_VARIANTS = (
 )
 
 def tokenize_clean(text):
-    normalized = str(text).lower().replace("’", "'").replace("…", " ")
+    # Strip footnote reference citations attached to punctuation (e.g. Reserve.1, business.”2, Doddsville.3)
+    normalized = re.sub(r'(?<=[.!?\"\'”’\)])\d+\b', '', str(text))
+    normalized = normalized.lower().replace("’", "'").replace("…", " ").replace("%", " percent ")
     normalized = re.sub(r"\s+", " ", normalized).strip()
     for phrase, canonical in ASR_PHRASE_VARIANTS + NUMBER_PHRASE_VARIANTS:
         normalized = re.sub(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", canonical, normalized)
@@ -100,22 +103,33 @@ def tokenize_clean(text):
 def _source_tokens_with_words(text):
     """Return normalized source tokens together with their original-word indexes."""
     raw_words = str(text).split()
-    tokens = tokenize_clean(text)
-    if not tokens:
+    if not raw_words:
         return [], []
-    if len(raw_words) == 1:
-        return tokens, [0] * len(tokens)
-    # Tokenize the complete source string so observed multi-word renderings
-    # such as “twenty percent” -> “20 percent” and “hundred and seven” ->
-    # “107” remain matchable. Map the normalized sequence back to printed
-    # words proportionally; unmapped printed words receive interpolated spans
-    # later in _build_word_spans rather than fabricated audio tokens.
-    if len(tokens) == 1:
-        return tokens, [0]
-    word_indexes = [
-        min(len(raw_words) - 1, round(index * (len(raw_words) - 1) / (len(tokens) - 1)))
-        for index in range(len(tokens))
-    ]
+    tokens = []
+    word_indexes = []
+    index = 0
+    phrase_variants = ASR_PHRASE_VARIANTS + NUMBER_PHRASE_VARIANTS
+    while index < len(raw_words):
+        consumed = False
+        for raw_phrase, canonical in phrase_variants:
+            width = len(raw_phrase.split())
+            if index + width <= len(raw_words):
+                phrase = " ".join(raw_words[index:index + width])
+                if tokenize_clean(phrase) == tokenize_clean(raw_phrase):
+                    canonical_tokens = tokenize_clean(canonical)
+                    tokens.extend(canonical_tokens)
+                    for t_idx, tok in enumerate(canonical_tokens):
+                        target_word = index + min(width - 1, int(t_idx * width / max(1, len(canonical_tokens))))
+                        word_indexes.append(target_word)
+                    index += width
+                    consumed = True
+                    break
+        if consumed:
+            continue
+        w_tokens = tokenize_clean(raw_words[index])
+        tokens.extend(w_tokens)
+        word_indexes.extend([index] * len(w_tokens))
+        index += 1
     return tokens, word_indexes
 
 
@@ -859,6 +873,32 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 } if non_narrated else None,
             })
             
+    # Guarantee strictly monotonic sentence boundaries: a preceding sentence must not overlap into the next sentence's start
+    for idx in range(len(aligned_results) - 1):
+        cur = aligned_results[idx]
+        nxt = aligned_results[idx + 1]
+        if (
+            cur.get("has_audio_match")
+            and nxt.get("has_audio_match")
+            and cur.get("end") is not None
+            and nxt.get("start") is not None
+            and cur["end"] > nxt["start"]
+            and cur.get("start") is not None
+            and cur["start"] < nxt["start"]
+        ):
+            clamped_end = nxt["start"]
+            cur["end"] = clamped_end
+            if cur.get("audio_end") is not None:
+                cur["audio_end"] = min(cur["audio_end"], clamped_end)
+            if cur.get("raw_end") is not None:
+                cur["raw_end"] = min(cur["raw_end"], clamped_end)
+            if cur.get("word_spans"):
+                for w in cur["word_spans"]:
+                    if w.get("start") is not None and w["start"] > clamped_end:
+                        w["start"] = clamped_end
+                    if w.get("end") is not None and w["end"] > clamped_end:
+                        w["end"] = clamped_end
+
     atomic_write_json(aligned_out_path, aligned_results)
         
     matched_count = len(matched_sentences)

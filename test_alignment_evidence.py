@@ -158,3 +158,33 @@ class AlignmentEvidenceTests(unittest.TestCase):
             {"id": "s-3", "text": "Tairn!"},
         ])
         self.assertTrue(all(item["alignment_status"] == "validated" for item in result))
+
+    def test_word_spans_do_not_drift_with_contractions_and_punctuation(self):
+        # Regression: proportional linear mapping previously caused contractions (It's -> it is)
+        # and punctuation to distort word indices, causing cursor to jump ahead by 1-3 words.
+        spoken = "It is impossible to overpay the truly extraordinary CEO".split()
+        words = [{"word": word, "start": 40.0 + index, "end": 40.0 + index + 0.8} for index, word in enumerate(spoken)]
+        # Text has contraction "It's" and footnote citation "CEO.1"
+        result = self.run_alignment(words, [
+            {"id": "s-1", "text": "It’s impossible to overpay the truly extraordinary CEO.1"}
+        ])[0]
+        self.assertEqual(result["alignment_status"], "validated")
+        spans = result["word_spans"]
+        self.assertEqual(len(spans), 8)
+        self.assertEqual(spans[0]["word"], "It’s")
+        self.assertEqual(spans[0]["start"], 40.0)
+        self.assertEqual(spans[3]["word"], "overpay")
+        self.assertEqual(spans[3]["start"], 44.0)
+        self.assertEqual(spans[7]["word"], "CEO.1")
+        self.assertEqual(spans[7]["start"], 48.0)
+
+    def test_adjacent_sentences_strictly_monotonic_without_overlap(self):
+        # Guarantee that sentence end timestamps never exceed next sentence start timestamps
+        spoken = "First sentence ends here Second sentence starts here".split()
+        words = [{"word": word, "start": index * 2.0, "end": index * 2.0 + 1.5} for index, word in enumerate(spoken)]
+        result = self.run_alignment(words, [
+            {"id": "s-1", "text": "First sentence ends here."},
+            {"id": "s-2", "text": "Second sentence starts here."},
+        ])
+        self.assertLessEqual(result[0]["audio_end"], result[1]["audio_start"])
+
