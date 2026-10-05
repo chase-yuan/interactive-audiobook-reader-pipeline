@@ -611,12 +611,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             first_b = best_cluster[0]
             last_b = best_cluster[-1]
             t_start = max(0, min(len(ac_tokens) - 1, first_b.b))
-            if best_score == len(clean_s) and len(_exact_candidate_starts(clean_s, ac_tokens)) == 1:
-                # Exact matches are already bounded; never consume tokens from
-                # the following sentence while reserving this anchor.
-                t_end = last_b.b + last_b.size - 1
-            else:
-                t_end = max(t_start, min(len(ac_tokens) - 1, last_b.b + last_b.size + (len(clean_s) - last_b.a - last_b.size) - 1))
+            t_end = last_b.b + last_b.size - 1
             w_start = ac_map[t_start]
             w_end = ac_map[t_end]
             st = acoustic_words[w_start]["start"]
