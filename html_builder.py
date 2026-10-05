@@ -675,27 +675,23 @@ function switchChapter(chNum, autoPlay) {
           currentActiveWordEl = null;
         }
         if (wasPlaying) {
-          let playTriggered = false;
-          const doPlay = function() {
-            if (playTriggered) return;
-            playTriggered = true;
-            try { audio.currentTime = 0; } catch(e) {}
-            const p = audio.play();
-            if (p && p.catch) p.catch(function(e) { if (e.name !== 'AbortError') console.warn("Auto-play error:", e); });
-            if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
-          };
-          if (audio.readyState >= 1) {
-            doPlay();
-          } else {
-            audio.addEventListener('loadedmetadata', doPlay, { once: true });
-            audio.addEventListener('canplay', doPlay, { once: true });
-            audio.load();
+          try { audio.currentTime = 0; } catch(e) {}
+          const p = audio.play();
+          if (p && p.catch) {
+            p.catch(function(e) {
+              if (e.name !== 'AbortError') console.warn("Auto-play error:", e);
+            });
           }
+          if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
         }
       } else if (autoPlay && audio.paused) {
         try { audio.currentTime = 0; } catch(e) {}
         const p = audio.play();
-        if (p && p.catch) p.catch(function(e) { if (e.name !== 'AbortError') console.warn("Auto-play error:", e); });
+        if (p && p.catch) {
+          p.catch(function(e) {
+            if (e.name !== 'AbortError') console.warn("Auto-play error:", e);
+          });
+        }
         if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
       }
       const firstSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
