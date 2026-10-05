@@ -64,7 +64,7 @@ def split_into_atomic_sentences(text):
     return sentences
 
 class ChapterParser(HTMLParser):
-    BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote"}
+    BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "div"}
 
     def __init__(self):
         super().__init__()
@@ -85,6 +85,11 @@ class ChapterParser(HTMLParser):
             return
 
         if tag == "img":
+            return
+
+        if tag == "br":
+            if self.stack and not self.in_figure:
+                self.stack[-1][2].append(" ")
             return
 
         if tag in self.BLOCK_TAGS:

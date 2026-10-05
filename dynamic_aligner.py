@@ -55,6 +55,7 @@ ASR_TOKEN_VARIANTS = {
     "basgayeth": "basgiath", "orisha": "aretia",
     "rhiannon": "rian", "matthias": "mateus",
     "kalista": "kallista", "nima": "neema",
+    "sturrets": "stiritz",
 }
 
 # Whole-word audio renderings that cannot be handled safely by a per-word

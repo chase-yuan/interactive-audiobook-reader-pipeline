@@ -20,7 +20,8 @@ def sha256(path):
 
 def create_manifest(book_dir, source_files, audio_files, model="mlx-community/whisper-large-v3-turbo"):
     try:
-        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        repo_dir = Path(__file__).resolve().parent
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_dir, text=True).strip()
     except (OSError, subprocess.CalledProcessError):
         revision = None
     manifest = {
@@ -49,7 +50,8 @@ def _input_record(path, role):
 def update_manifest(book_dir, chapters, status="in_progress", model="mlx-community/whisper-large-v3-turbo", input_files=None):
     """Write a resumable chapter-stage manifest without copying book content."""
     try:
-        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        repo_dir = Path(__file__).resolve().parent
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_dir, text=True).strip()
     except (OSError, subprocess.CalledProcessError):
         revision = None
     existing = {}

@@ -191,6 +191,17 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
   /* --- Universal Semantic Tokens --- */
   --btn-primary-text: #ffffff;
+
+  /* --- OLED Pocket Mode Tokens --- */
+  --pocket-bg: #000000;
+  --pocket-title: #334155;
+  --pocket-status: #64748b;
+  --pocket-hint: #1e293b;
+  --pocket-btn-bg: #0f172a;
+  --pocket-btn-border: #1e293b;
+  --pocket-btn-text: #94a3b8;
+  --pocket-btn-active-bg: #1e293b;
+  --pocket-btn-active-text: #f1f5f9;
 }}
 
 /* Theme 1: Sepia (Parchment Paper - Warm & Calming) */
@@ -967,6 +978,85 @@ body {{
   transform: translateX(-50%) translateY(0);
 }}
 
+/* OLED Pocket Mode Overlay (Zero-Power Pitch Black + Touch Shield) */
+#pocket-overlay {{
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  width: 100dvw;
+  height: 100dvh;
+  background-color: var(--pocket-bg);
+  z-index: 2147483647;
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: env(safe-area-inset-top, 40px) 24px env(safe-area-inset-bottom, 40px) 24px;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}}
+
+.pocket-header {{
+  margin-top: 36px;
+  text-align: center;
+}}
+
+.pocket-title {{
+  color: var(--pocket-title);
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}}
+
+.pocket-status {{
+  color: var(--pocket-status);
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+}}
+
+.pocket-center {{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+}}
+
+.pocket-hint {{
+  color: var(--pocket-hint);
+  font-size: 0.82rem;
+  font-family: var(--font-sans);
+  letter-spacing: 0.02em;
+}}
+
+.pocket-exit-btn {{
+  background: var(--pocket-btn-bg);
+  color: var(--pocket-btn-text);
+  border: 1px solid var(--pocket-btn-border);
+  border-radius: var(--radius-full);
+  padding: 12px 28px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 140px;
+  touch-action: manipulation;
+  transition: all var(--transition-base);
+}}
+
+.pocket-exit-btn:active {{
+  background: var(--pocket-btn-active-bg);
+  color: var(--pocket-btn-active-text);
+}}
+
 .w {{
   display: inline;
   border-radius: var(--radius-xs);
@@ -1166,6 +1256,8 @@ body {{
             </select>
             <div class="seg-divider"></div>
             <button class="seg-btn" id="repeatBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
+            <div class="seg-divider"></div>
+            <button class="seg-btn" id="pocketModeBtn" onclick="togglePocketMode()" title="OLED 息屏防误触跟读">息屏跟读</button>
           </div>
         </div>
         <div class="drawer-group">
@@ -1190,6 +1282,7 @@ body {{
             <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence (audio only)</span></div>
             <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
             {f'<div class="tips-row"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>' if has_audio else ''}
+            {f'<div class="tips-row"><span class="kbd-key">P</span><span>Toggle OLED pocket mode (息屏跟读)</span></div>' if has_audio else ''}
           </div>
         </div>
       </div>
@@ -1370,6 +1463,17 @@ body {{
     book_id_json = json.dumps(book_id)
     html_tail = f"""
 </main>
+
+<div id="pocket-overlay" class="pocket-overlay" onclick="handlePocketOverlayClick(event)">
+  <div class="pocket-header">
+    <div class="pocket-title">OLED 息屏防误触跟读</div>
+    <div class="pocket-status" id="pocketStatus">跟读进行中 · 第 1/3 遍</div>
+  </div>
+  <div class="pocket-center">
+    <div class="pocket-hint">双击屏幕任意处或点击下方按钮退出</div>
+    <button class="pocket-exit-btn" onclick="togglePocketMode(false)">退出息屏</button>
+  </div>
+</div>
 
 <script>
 window.__BOOK_ID__ = {book_id_json};
@@ -1790,7 +1894,8 @@ function startSentenceShadowing(sentenceEl) {
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Stop Repeat';
   requestShadowWakeLock();
-  showToast('跟读已启动 · 保持屏幕点亮');
+  showToast('跟读已启动 · 可开启息屏跟读放入口袋');
+  updatePocketStatus();
   
   const activeSection = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
   if (activeSection) {
@@ -1953,6 +2058,7 @@ function stopShadowing() {
   releaseShadowWakeLock();
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Repeat';
+  updatePocketStatus();
 }
 
 function toggleShadowing() {
@@ -1994,6 +2100,7 @@ function advanceShadowing() {
   if (audio.currentTime < end) return;
   audio.pause();
   shadowState.completed += 1;
+  updatePocketStatus();
   
   if (shadowState.completed >= shadowState.repetitions) {
     const nextSentence = getNextShadowSentence(shadowState.sentence);
@@ -2001,6 +2108,7 @@ function advanceShadowing() {
       if (shadowState.sentence) shadowState.sentence.classList.remove('active');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
+      updatePocketStatus();
       shadowState.phase = 'pause_buffer';
       shadowState.pauseStartTime = Date.now();
       nextSentence.classList.add('active');
@@ -2027,6 +2135,7 @@ function advanceShadowing() {
       if (nextOption) {
         shadowState.phase = 'pause_buffer';
         shadowState.completed = 0;
+        updatePocketStatus();
         switchChapter(nextCh, true);
         return;
       } else {
@@ -2061,6 +2170,61 @@ setInterval(() => {
     }
   }
 }, 250);
+
+let pocketModeActive = false;
+let lastPocketTapTime = 0;
+
+function updatePocketStatus() {
+  const statusEl = document.getElementById('pocketStatus');
+  if (!statusEl) return;
+  if (shadowState.phase === 'idle') {
+    statusEl.textContent = '跟读已暂停';
+    return;
+  }
+  const curRep = Math.min(shadowState.repetitions, shadowState.completed + 1);
+  statusEl.textContent = `跟读进行中 · 第 ${curRep}/${shadowState.repetitions} 遍`;
+}
+
+function togglePocketMode(force) {
+  const overlay = document.getElementById('pocket-overlay');
+  if (!overlay) return;
+  
+  const target = typeof force === 'boolean' ? force : !pocketModeActive;
+  pocketModeActive = target;
+  
+  if (pocketModeActive) {
+    if (shadowState.phase === 'idle') {
+      toggleShadowing();
+    }
+    requestShadowWakeLock();
+    overlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    const btn = document.getElementById('pocketModeBtn');
+    if (btn) btn.classList.add('active');
+    updatePocketStatus();
+  } else {
+    overlay.style.display = 'none';
+    document.body.style.overflow = '';
+    const btn = document.getElementById('pocketModeBtn');
+    if (btn) btn.classList.remove('active');
+  }
+}
+
+function handlePocketOverlayClick(e) {
+  if (e.target && e.target.classList.contains('pocket-exit-btn')) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastPocketTapTime < 450) {
+    togglePocketMode(false);
+    lastPocketTapTime = 0;
+  } else {
+    lastPocketTapTime = now;
+  }
+}
+
+window.togglePocketMode = togglePocketMode;
+window.handlePocketOverlayClick = handlePocketOverlayClick;
 
 function startSyncLoop() {
   if (syncFrameId === null && !audio.paused && !document.hidden) syncFrameId = requestAnimationFrame(syncPlayback);
@@ -2250,6 +2414,18 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 't' || e.key === 'T' || e.code === 'KeyT') {
     e.preventDefault();
     toggleChineseLock();
+    return;
+  }
+
+  if (e.key === 'Escape' && pocketModeActive) {
+    e.preventDefault();
+    togglePocketMode(false);
+    return;
+  }
+
+  if ((e.key === 'p' || e.key === 'P' || e.code === 'KeyP') && !e.target.matches('input, textarea, select')) {
+    e.preventDefault();
+    togglePocketMode();
     return;
   }
 
