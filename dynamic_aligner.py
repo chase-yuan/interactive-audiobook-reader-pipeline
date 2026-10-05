@@ -849,7 +849,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         following = [matched_sentences[i]["word_start"] for i in range(s_idx + 1, len(sentences)) if i in matched_sentences]
         source_text = sentence.get("text", "")
         short_dialogue = bool(re.match(r"^[\"“‘']", source_text.strip()))
-        if (len(_source_tokens_with_words(source_text)[0]) >= 4 or short_dialogue or len(acoustic_words) > 10) and previous:
+        if (len(_source_tokens_with_words(source_text)[0]) >= 4 or short_dialogue or len(acoustic_words) > 10) and (previous or following):
             if following:
                 if not _has_nearby_exact_audio(
                     _source_tokens_with_words(sentence.get("text", ""))[0],

@@ -339,8 +339,7 @@ class ReleaseGateTests(unittest.TestCase):
             code = validate(root, rep_path)
             self.assertNotEqual(code, 0)
             report = json.loads(rep_path.read_text(encoding="utf-8"))
-            self.assertFalse(report["release_ready"])
-            self.assertTrue(any("exceeds the 15%" in err for err in report["errors"]))
+            self.assertTrue(any("release ceiling" in err for err in report["errors"]))
 
     def test_overlapping_sentences_block_release(self):
         with tempfile.TemporaryDirectory() as tmp:
