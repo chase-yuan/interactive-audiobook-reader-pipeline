@@ -274,10 +274,18 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             for group in gap_groups:
                 prev_idx = group[0] - 1
                 next_idx = group[-1] + 1
-                t_prev = (csents[prev_idx].get("audio_end", csents[prev_idx].get("end")) or 0.0) if prev_idx >= 0 and valid_flags[prev_idx] else 0.0
+                has_prev = prev_idx >= 0 and valid_flags[prev_idx]
                 has_next = next_idx < len(csents) and valid_flags[next_idx]
-                t_next = (csents[next_idx].get("audio_start", csents[next_idx].get("start")) or (t_prev + 3.0 * len(group))) if has_next else (t_prev + 3.0 * len(group))
-                if t_next <= t_prev:
+                if not has_prev or not has_next:
+                    for g_idx in group:
+                        csents[g_idx]["audio_start"] = None
+                        csents[g_idx]["audio_end"] = None
+                        csents[g_idx]["has_audio_match"] = False
+                        csents[g_idx]["word_spans"] = []
+                    continue
+                t_prev = csents[prev_idx].get("audio_end", csents[prev_idx].get("end"))
+                t_next = csents[next_idx].get("audio_start", csents[next_idx].get("start"))
+                if not isinstance(t_prev, (int, float)) or not isinstance(t_next, (int, float)) or t_next <= t_prev:
                     # Invariant: No physical acoustic gap exists between surrounding spoken sentences.
                     # Unnarrated footnotes/dividers MUST NOT fabricate artificial timestamps that collide with t_next.
                     for g_idx in group:

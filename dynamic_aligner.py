@@ -45,6 +45,8 @@ ASR_PHRASE_VARIANTS = (
     ("exxon mobil", "exxonmobil"),
     ("wal mart", "walmart"),
     ("tool kit", "toolkit"),
+    ("home buyers", "homebuyers"),
+    ("home buyer", "homebuyer"),
 )
 
 ASR_TOKEN_VARIANTS = {
