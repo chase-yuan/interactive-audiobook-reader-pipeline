@@ -463,8 +463,8 @@ const playerTotalTime = document.getElementById('playerTotalTime');
 const playerScrubber = document.getElementById('playerScrubber');
 let isUserScrubbing = false;
 
-const SPEED_PRESETS = [1.0, 1.25, 1.5, 1.75, 2.0, 0.75];
-const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 1.75: '1.75×', 2.0: '2.0×', 0.75: '0.75×' };
+const SPEED_PRESETS = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 0.75];
+const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 1.75: '1.75×', 2.0: '2.0×', 2.25: '2.25×', 2.5: '2.5×', 2.75: '2.75×', 3.0: '3.0×', 0.75: '0.75×' };
 let currentPlaybackSpeed = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'playback_speed') || '1.0');
 if (!SPEED_PRESETS.includes(currentPlaybackSpeed)) currentPlaybackSpeed = 1.0;
 
