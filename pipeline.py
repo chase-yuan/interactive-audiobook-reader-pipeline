@@ -34,8 +34,12 @@ from content_profile import COMPLETE, load_content_profile
 
 
 def _run_align_worker(task):
-    acoustic_path, analysis_path, aligned_path, prefix = task
-    align_sentences_with_audio(acoustic_path, analysis_path, aligned_path)
+    if len(task) >= 5:
+        acoustic_path, analysis_path, aligned_path, prefix, audio_path = task[:5]
+        align_sentences_with_audio(acoustic_path, analysis_path, aligned_path, audio_path=audio_path)
+    else:
+        acoustic_path, analysis_path, aligned_path, prefix = task[:4]
+        align_sentences_with_audio(acoustic_path, analysis_path, aligned_path)
     return prefix
 
 
@@ -284,7 +288,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
                     needs_align = True
                     
             if needs_align:
-                align_tasks.append((acoustic_path, analysis_path, aligned_path, prefix))
+                align_tasks.append((acoustic_path, analysis_path, aligned_path, prefix, audio_file))
                 
         ready_chapters_data.append({
             "has_data": has_analysis and has_acoustic,
@@ -300,7 +304,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
         if len(align_tasks) == 1:
             task = align_tasks[0]
             print(f"--> Aligning {task[3]} with Full-Chapter Non-Monotonic Aligner...")
-            align_sentences_with_audio(task[0], task[1], task[2])
+            align_sentences_with_audio(task[0], task[1], task[2], audio_path=task[4] if len(task) > 4 else None)
         else:
             print(f"\n⚡ [PARALLEL ALIGN] Aligning {len(align_tasks)} chapters in parallel across {workers} CPU workers...")
             with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
