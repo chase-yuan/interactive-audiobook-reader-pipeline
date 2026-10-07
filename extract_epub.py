@@ -64,15 +64,13 @@ def split_into_atomic_sentences(text):
     return sentences
 
 class ChapterParser(HTMLParser):
+    BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "div"}
+
     def __init__(self):
         super().__init__()
         self.elements = []
-        self.current_tag = None
-        self.current_attrs = {}
-        self.current_text = []
-        self.recording = False
+        self.stack = []  # list of (tag, attrs_dict, text_chunks)
         self.in_figure = False
-        self.in_caption = False
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -80,42 +78,53 @@ class ChapterParser(HTMLParser):
 
         if tag in ["figure", "figcaption"]:
             self.in_figure = True
-        if any(w in cls for w in ["caption", "photo", "credit", "illustr", "calibre_26"]):
-            self.in_caption = True
+            return
+
+        if any(w in cls for w in ["caption", "photocredit", "photo-credit", "illustr"]):
+            self.in_figure = True
+            return
 
         if tag == "img":
             return
 
-        if tag in ["h1", "h2", "h3", "h4", "p", "blockquote", "li"]:
-            self.current_tag = tag
-            self.current_attrs = attrs_dict
-            self.current_text = []
-            self.recording = True
+        if tag == "br":
+            if self.stack and not self.in_figure:
+                self.stack[-1][2].append(" ")
+            return
+
+        if tag in self.BLOCK_TAGS:
+            # If we are already inside a block tag and have accumulated text, flush it before nesting subblock
+            if self.stack and self.stack[-1][2]:
+                text = "".join(self.stack[-1][2]).strip()
+                if text and not self.in_figure:
+                    parent_tag, parent_attrs, _ = self.stack[-1]
+                    self.elements.append({
+                        "tag": parent_tag,
+                        "class": parent_attrs.get("class", ""),
+                        "text": re.sub(r"\s+", " ", text)
+                    })
+                self.stack[-1][2].clear()
+
+            self.stack.append((tag, attrs_dict, []))
 
     def handle_endtag(self, tag):
         if tag in ["figure", "figcaption"]:
             self.in_figure = False
-        if self.recording and tag == self.current_tag:
-            full_text = "".join(self.current_text).strip()
-            cls = self.current_attrs.get("class", "").lower()
-            is_caption = (
-                self.in_caption or
-                self.in_figure or
-                any(w in cls for w in ["caption", "photo", "credit", "illustr", "calibre_26"])
-            )
-            if full_text and not is_caption:
+            return
+
+        if self.stack and tag == self.stack[-1][0]:
+            popped_tag, popped_attrs, text_chunks = self.stack.pop()
+            text = "".join(text_chunks).strip()
+            if text and not self.in_figure:
                 self.elements.append({
-                    "tag": self.current_tag,
-                    "class": self.current_attrs.get("class", ""),
-                    "text": re.sub(r"\s+", " ", full_text)
+                    "tag": popped_tag,
+                    "class": popped_attrs.get("class", ""),
+                    "text": re.sub(r"\s+", " ", text)
                 })
-            self.recording = False
-            self.current_tag = None
-            self.in_caption = False
 
     def handle_data(self, data):
-        if self.recording:
-            self.current_text.append(data)
+        if self.stack and not self.in_figure:
+            self.stack[-1][2].append(data)
 
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     with zipfile.ZipFile(epub_path, 'r') as z:

@@ -1,9 +1,11 @@
 """Independent quality checks for compiled readers and human semantic review."""
 
 import argparse
+import os
 import json
 import re
 from pathlib import Path
+from dynamic_aligner import decode_audio_to_pcm, detect_voice_onset
 
 
 REQUIRED_IDS = (
@@ -21,7 +23,119 @@ REQUIRED_FUNCTIONS = (
 )
 
 
-def smoke_check_html(html_path: Path, expected_chapters=None):
+def _check_temporal_integrity(content: str) -> list:
+    """Audit compiled HTML for sentence timeline overlaps and duplicate word timestamps."""
+    errors = []
+    chapter_blocks = re.findall(r'<section\b[^>]*class="chapter-section[^>]*data-ch="(\d+)"[^>]*>(.*?)</section>', content, re.DOTALL)
+    word_re = re.compile(r'<span class="w"[^>]*?data-s="([^"]+)"[^>]*?data-e="([^"]+)"[^>]*?(?:data-timing-source="([^"]+)")?[^>]*?>([^<]*)</span>')
+    sent_re = re.compile(r'<div class="sentence-unit"[^>]*?id="([^"]+)"[^>]*?data-start="([^"]+)"[^>]*?data-end="([^"]+)"[^>]*?data-matched="([^"]+)"', re.DOTALL)
+
+    for ch_num, ch_content in chapter_blocks:
+        units = ch_content.split('<div class="sentence-unit"')
+        prev_end = None
+        for u in units[1:]:
+            m = sent_re.search('<div class="sentence-unit"' + u[:400])
+            if not m:
+                continue
+            uid, s_str, e_str, matched_str = m.group(1), m.group(2), m.group(3), m.group(4)
+            if matched_str != "1" or s_str == "null" or e_str == "null":
+                continue
+            try:
+                start = float(s_str)
+                end = float(e_str)
+            except ValueError:
+                continue
+            if end < start:
+                errors.append(f"Ch {ch_num} {uid}: end {end:.2f}s precedes start {start:.2f}s")
+            is_reordered = 'data-reorder="1"' in u[:500] or 'data-epigraph="1"' in u[:500]
+            if not is_reordered:
+                if prev_end is not None and start < (prev_end - 0.05):
+                    errors.append(f"Ch {ch_num} {uid}: sentence overlap (starts at {start:.2f}s before previous ended at {prev_end:.2f}s)")
+                prev_end = max(prev_end or 0.0, end)
+
+            # Check for adjacent duplicate word timestamps on observed words
+            text_part = u.split('<div class="inspect-panel"')[0]
+            span_tags = re.findall(r'<span class="w"([^>]*)>([^<]*)</span>', text_part)
+            prev_s = None
+            prev_w = None
+            prev_src = None
+            for attrs, text in span_tags:
+                m_s = re.search(r'data-s="([^"]+)"', attrs)
+                m_src = re.search(r'data-timing-source="([^"]+)"', attrs)
+                s_val = m_s.group(1) if m_s else None
+                src_val = m_src.group(1) if m_src else "observed"
+                is_lexical = bool(re.search(r'[a-zA-Z0-9]', text))
+                prev_is_lexical = bool(re.search(r'[a-zA-Z0-9]', prev_w or ""))
+                if s_val is not None and s_val != "null" and s_val == prev_s and (src_val == "observed" or prev_src == "observed") and is_lexical and prev_is_lexical:
+                    errors.append(f"Ch {ch_num} {uid}: duplicate word start timestamp ({s_val}s) between '{prev_w}' and '{text}'")
+                    break
+                prev_s = s_val
+                prev_w = text
+                prev_src = src_val
+    return errors
+
+
+def check_acoustic_lead_silence(units_or_html, audio_path, max_lead=0.10, sample_size=15):
+    """
+    Validate that speech onset occurs with natural acoustic headroom (mean lead <= 0.10s).
+    Rejects builds with Whisper silence absorption / dead air lag.
+    """
+    if not audio_path or not os.path.exists(str(audio_path)):
+        return {"status": "skipped", "reason": "audio file not found"}
+    pcm = decode_audio_to_pcm(str(audio_path))
+    if pcm is None:
+        return {"status": "skipped", "reason": "pcm decoding unavailable"}
+    
+    sr = 16000
+    audio_dur = len(pcm) / sr
+    
+    # Extract timestamps from aligned dicts or HTML
+    candidates = []
+    if isinstance(units_or_html, list):
+        for item in units_or_html:
+            if item.get("has_audio_match") and isinstance(item.get("start"), (int, float)) and isinstance(item.get("end"), (int, float)):
+                candidates.append((float(item["start"]), float(item["end"])))
+    elif isinstance(units_or_html, (str, Path)):
+        content = Path(units_or_html).read_text(encoding="utf-8") if isinstance(units_or_html, Path) or os.path.exists(str(units_or_html)) else str(units_or_html)
+        matches = re.findall(r'class="sentence-unit"[^>]*\bdata-start="([0-9.]+)"\s+data-end="([0-9.]+)"', content)
+        for s_str, e_str in matches:
+            candidates.append((float(s_str), float(e_str)))
+            
+    if not candidates:
+        return {"status": "skipped", "reason": "no audio-matched sentence units"}
+        
+    step = max(1, len(candidates) // sample_size)
+    sampled = candidates[::step][:sample_size]
+    
+    leads = []
+    for st, et in sampled:
+        search_start = max(0.0, st - 0.08)
+        search_end = min(audio_dur, min(et, st + 2.0))
+        if search_end <= search_start + 0.05:
+            search_end = min(audio_dur, st + 1.0)
+        onset_t = detect_voice_onset(pcm, search_start, search_end, sr)
+        lead = onset_t - st
+        leads.append(lead)
+        
+    if not leads:
+        return {"status": "skipped", "reason": "no valid samples"}
+        
+    mean_lead = float(sum(leads) / len(leads))
+    if mean_lead > max_lead:
+        return {
+            "status": "failed",
+            "mean_lead": round(mean_lead, 3),
+            "max_lead_tolerance": max_lead,
+            "error": f"Acoustic lead silence ({mean_lead:.3f}s) exceeds gate tolerance ({max_lead:.2f}s)"
+        }
+    return {
+        "status": "passed",
+        "mean_lead": round(mean_lead, 3),
+        "sample_count": len(leads)
+    }
+
+
+def smoke_check_html(html_path: Path, expected_chapters=None, audio_path=None):
     """Check the static reader contract without pretending to be a real browser."""
     html_path = Path(html_path)
     errors = []
@@ -52,6 +166,11 @@ def smoke_check_html(html_path: Path, expected_chapters=None):
     for idx, css in enumerate(style_blocks, 1):
         if css.count("{") != css.count("}"):
             errors.append(f"style block {idx} has unbalanced braces (open={css.count('{')}, close={css.count('}')})")
+    errors.extend(_check_temporal_integrity(content))
+    if audio_path:
+        lead_res = check_acoustic_lead_silence(html_path, audio_path)
+        if lead_res.get("status") == "failed":
+            errors.append(lead_res["error"])
     return {
         "status": "passed" if not errors else "failed",
         "errors": errors,

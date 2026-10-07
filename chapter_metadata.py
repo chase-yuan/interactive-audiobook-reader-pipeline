@@ -12,7 +12,7 @@ from typing import Dict, Iterable
 
 
 SCHEMA_VERSION = 1
-ROLES = {"preface", "introduction", "chapter", "afterword", "appendix", "other"}
+ROLES = {"preface", "introduction", "chapter", "afterword", "appendix", "conclusion", "epilogue", "prologue", "other"}
 
 
 def load_chapter_metadata(path: Path, expected_chapters: Iterable[int] | None = None) -> Dict[int, dict]:

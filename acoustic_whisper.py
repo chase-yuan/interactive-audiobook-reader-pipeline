@@ -25,20 +25,26 @@ def run_mlx_acoustic_extraction(
     model_name="mlx-community/whisper-large-v3-turbo",
     *,
     transcribe_fn=None,
+    transcription_options=None,
 ):
     if transcribe_fn is None:
         import mlx_whisper
         transcribe_fn = mlx_whisper.transcribe
     
+    options = dict(ACOUSTIC_TRANSCRIPTION_OPTIONS)
+    if transcription_options:
+        options.update(transcription_options)
+
     print(f"Starting MLX Whisper acoustic extraction on {audio_path} using {model_name}...")
     start_t = time.time()
     
+    call_options = {k: v for k, v in options.items() if v is not None}
     result = transcribe_fn(
         audio_path,
         path_or_hf_repo=model_name,
         word_timestamps=True,
         verbose=False,
-        **ACOUSTIC_TRANSCRIPTION_OPTIONS,
+        **call_options,
     )
     
     words_list = []

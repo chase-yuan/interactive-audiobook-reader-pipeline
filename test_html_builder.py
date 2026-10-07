@@ -137,7 +137,7 @@ class HTMLBuilderTests(unittest.TestCase):
                 }], str(output), release_token=token, release_report_path=report_path,
             )
             rendered = output.read_text(encoding="utf-8")
-            self.assertIn("Test Book · <span id=\"currentChapterLabel\">Ch. 1</span>", rendered)
+            self.assertIn("<span id=\"currentChapterLabel\">Ch. 1</span> · <span class=\"book-pill-title\">Test Book</span>", rendered)
             self.assertNotIn("📖", rendered)
 
     def test_zero_jitter_css_invariants(self):
@@ -383,5 +383,30 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn('<span class="kbd-key">R</span><span>Repeat sentence loop</span>', rendered)
             self.assertIn('快捷键 T', rendered)
             self.assertIn('快捷键 R', rendered)
+
+    def test_unaligned_footnote_without_audio_gap_remains_unmatched_without_overlap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            # Create 3 sentences: s-1 (10-15s), s-2 (footnote, unaligned), s-3 (starts at 14.8s <= s-1 end)
+            aligned_path = tmp_path / "book_ch01_aligned_sentences.json"
+            sentences = [
+                {"id": "s-1", "text": "First spoken sentence.", "audio_start": 10.0, "audio_end": 15.0, "has_audio_match": True, "word_spans": [{"word": "First", "start": 10.0, "end": 11.0}]},
+                {"id": "s-2", "text": "Unnarrated footnote.", "audio_start": None, "audio_end": None, "has_audio_match": False, "word_spans": [], "alignment_status": "not-applicable"},
+                {"id": "s-3", "text": "Next spoken sentence.", "audio_start": 14.9, "audio_end": 20.0, "has_audio_match": True, "word_spans": [{"word": "Next", "start": 14.9, "end": 16.0}]},
+            ]
+            aligned_path.write_text(json.dumps(sentences), encoding="utf-8")
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Footnote Gap Test", "Test", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(aligned_path),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # Invariant: s-2 must NOT have fake timestamps extending past s-3's start
+            self.assertIn('id="c1-s-2" data-start="null" data-end="null" data-audio-order="" data-epigraph="0" data-matched="0"', rendered)
+            self.assertIn('id="c1-s-3" data-start="14.9" data-end="20.0"', rendered)
+
 
 

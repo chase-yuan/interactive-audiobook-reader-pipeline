@@ -15,6 +15,7 @@ import hashlib
 import contextlib
 import fcntl
 import subprocess
+import concurrent.futures
 from pathlib import Path
 
 PIPELINE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,12 +33,22 @@ from chapter_metadata import load_chapter_metadata
 from content_profile import COMPLETE, load_content_profile
 
 
+def _run_align_worker(task):
+    if len(task) >= 5:
+        acoustic_path, analysis_path, aligned_path, prefix, audio_path = task[:5]
+        align_sentences_with_audio(acoustic_path, analysis_path, aligned_path, audio_path=audio_path)
+    else:
+        acoustic_path, analysis_path, aligned_path, prefix = task[:4]
+        align_sentences_with_audio(acoustic_path, analysis_path, aligned_path)
+    return prefix
+
+
 @contextlib.contextmanager
 def _book_run_lock(book_dir):
     """Prevent two processes from mutating one book's artifacts concurrently."""
     lock_path = Path(book_dir) / ".reader-pipeline.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("w", encoding="utf-8") as handle:
+    with lock_path.open("a", encoding="utf-8") as handle:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
@@ -204,6 +215,8 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
         
     aligned_configs = []
     manifest_chapters = []
+    align_tasks = []
+    ready_chapters_data = []
     previous_manifest = _existing_manifest(book_dir)
     previous_chapters = {
         item.get("chapter"): item
@@ -259,6 +272,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
             "audio_sha256": audio_sha256,
         })
         
+        needs_align = False
         if has_analysis and has_acoustic:
             needs_align = force_realign or not os.path.exists(aligned_path)
             previous = previous_chapters.get(ch_num, {})
@@ -274,37 +288,63 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
                     needs_align = True
                     
             if needs_align:
-                print(f"--> Aligning {prefix} with Full-Chapter Non-Monotonic Aligner...")
-                align_sentences_with_audio(acoustic_path, analysis_path, aligned_path)
+                align_tasks.append((acoustic_path, analysis_path, aligned_path, prefix, audio_file))
                 
-            # Extract Chapter Title
-            with open(c_path, 'r', encoding='utf-8') as f:
-                c_data = json.load(f)
-            h_texts = [d["text"] for d in c_data if d.get("is_heading")]
-            metadata = chapter_metadata.get(ch_num) if chapter_metadata else None
-            if metadata:
-                title = metadata["title"]
-            elif ch_num == 0:
-                title = "Preface"
-            elif len(h_texts) >= 2:
-                title = h_texts[1]
-            elif len(h_texts) >= 1:
-                title = h_texts[0]
-            else:
-                title = f"Chapter {ch_num}"
-                
-            chapter_config = {
-                "num": ch_num,
-                "title": title,
-                # A verified public URL is authoritative for published readers;
-                # local paths are only a preview fallback when no URL exists.
-                "audio": audio_file_rel,
-                "public_audio": public_audio_url,
-                "aligned_json": aligned_path
-            }
-            if metadata:
-                chapter_config.update(metadata)
-            aligned_configs.append(chapter_config)
+        ready_chapters_data.append({
+            "has_data": has_analysis and has_acoustic,
+            "c_path": c_path,
+            "ch_num": ch_num,
+            "audio_file_rel": audio_file_rel,
+            "public_audio_url": public_audio_url,
+            "aligned_path": aligned_path,
+        })
+
+    if align_tasks:
+        workers = min(8, os.cpu_count() or 4)
+        if len(align_tasks) == 1:
+            task = align_tasks[0]
+            print(f"--> Aligning {task[3]} with Full-Chapter Non-Monotonic Aligner...")
+            align_sentences_with_audio(task[0], task[1], task[2], audio_path=task[4] if len(task) > 4 else None)
+        else:
+            print(f"\n⚡ [PARALLEL ALIGN] Aligning {len(align_tasks)} chapters in parallel across {workers} CPU workers...")
+            with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+                list(executor.map(_run_align_worker, align_tasks))
+            print("⚡ [PARALLEL ALIGN] All parallel alignment tasks completed!\n")
+
+    for rec in ready_chapters_data:
+        if not rec["has_data"]:
+            continue
+        c_path = rec["c_path"]
+        ch_num = rec["ch_num"]
+        aligned_path = rec["aligned_path"]
+        # Extract Chapter Title
+        with open(c_path, 'r', encoding='utf-8') as f:
+            c_data = json.load(f)
+        h_texts = [d["text"] for d in c_data if d.get("is_heading")]
+        metadata = chapter_metadata.get(ch_num) if chapter_metadata else None
+        if metadata:
+            title = metadata["title"]
+        elif ch_num == 0:
+            title = "Preface"
+        elif len(h_texts) >= 2:
+            title = h_texts[1]
+        elif len(h_texts) >= 1:
+            title = h_texts[0]
+        else:
+            title = f"Chapter {ch_num}"
+            
+        chapter_config = {
+            "num": ch_num,
+            "title": title,
+            # A verified public URL is authoritative for published readers;
+            # local paths are only a preview fallback when no URL exists.
+            "audio": rec["audio_file_rel"],
+            "public_audio": rec["public_audio_url"],
+            "aligned_json": aligned_path
+        }
+        if metadata:
+            chapter_config.update(metadata)
+        aligned_configs.append(chapter_config)
             
     for entry in manifest_chapters:
         aligned_file = Path(book_dir) / entry["aligned"]
