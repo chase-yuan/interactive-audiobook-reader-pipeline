@@ -1061,8 +1061,6 @@ body {
   color: var(--text-sub);
   font-size: var(--font-size-sub);
   margin-bottom: var(--space-3xl);
-  padding-left: var(--space-2xl);
-  border-left: var(--space-2xs) solid var(--accent-light);
 }
 
 /* Mobile Specific Refinements */
