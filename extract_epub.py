@@ -70,25 +70,30 @@ class ChapterParser(HTMLParser):
         super().__init__()
         self.elements = []
         self.stack = []  # list of (tag, attrs_dict, text_chunks)
-        self.in_figure = False
+        self.ignored_tags = []
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
         cls = attrs_dict.get("class", "").lower()
+        elem_id = attrs_dict.get("id", "").lower()
+        epub_type = attrs_dict.get("epub:type", "").lower()
 
-        if tag in ["figure", "figcaption"]:
-            self.in_figure = True
-            return
-
-        if any(w in cls for w in ["caption", "photocredit", "photo-credit", "illustr"]):
-            self.in_figure = True
+        if (
+            self.ignored_tags
+            or tag in ["figure", "figcaption"]
+            or any(w in cls for w in ["caption", "photocredit", "photo-credit", "illustr", "pagebreak"])
+            or elem_id.startswith("page_")
+            or elem_id.startswith("page-")
+            or epub_type == "pagebreak"
+        ):
+            self.ignored_tags.append(tag)
             return
 
         if tag == "img":
             return
 
         if tag == "br":
-            if self.stack and not self.in_figure:
+            if self.stack:
                 self.stack[-1][2].append(" ")
             return
 
@@ -96,7 +101,7 @@ class ChapterParser(HTMLParser):
             # If we are already inside a block tag and have accumulated text, flush it before nesting subblock
             if self.stack and self.stack[-1][2]:
                 text = "".join(self.stack[-1][2]).strip()
-                if text and not self.in_figure:
+                if text:
                     parent_tag, parent_attrs, _ = self.stack[-1]
                     self.elements.append({
                         "tag": parent_tag,
@@ -108,14 +113,15 @@ class ChapterParser(HTMLParser):
             self.stack.append((tag, attrs_dict, []))
 
     def handle_endtag(self, tag):
-        if tag in ["figure", "figcaption"]:
-            self.in_figure = False
+        if self.ignored_tags:
+            if tag == self.ignored_tags[-1]:
+                self.ignored_tags.pop()
             return
 
         if self.stack and tag == self.stack[-1][0]:
             popped_tag, popped_attrs, text_chunks = self.stack.pop()
             text = "".join(text_chunks).strip()
-            if text and not self.in_figure:
+            if text:
                 self.elements.append({
                     "tag": popped_tag,
                     "class": popped_attrs.get("class", ""),
@@ -123,7 +129,7 @@ class ChapterParser(HTMLParser):
                 })
 
     def handle_data(self, data):
-        if self.stack and not self.in_figure:
+        if self.stack and not self.ignored_tags:
             self.stack[-1][2].append(data)
 
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
