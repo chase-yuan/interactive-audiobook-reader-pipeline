@@ -282,8 +282,9 @@ def run_parallel_linguistic_analysis(
     chapters_meta: List[Dict[str, Any]],
     prefix: str,
     concurrency: int = 8,
+    max_workers_per_chapter: int = 4,
 ) -> None:
-    print(f"\n=== [Stage 2: High-Throughput Linguistic Analysis ({concurrency} parallel workers)] ===", flush=True)
+    print(f"\n=== [Stage 2: High-Throughput Linguistic Analysis ({concurrency} parallel chapters, {max_workers_per_chapter} workers/chapter)] ===", flush=True)
     base_prompt = PROMPT_PATH.read_text(encoding="utf-8")
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -295,7 +296,7 @@ def run_parallel_linguistic_analysis(
                 prefix,
                 book_dir,
                 base_prompt,
-                1,
+                max_workers_per_chapter,
             ): item
             for item in chapters_meta
         }
