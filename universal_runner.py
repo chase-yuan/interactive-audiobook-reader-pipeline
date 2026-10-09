@@ -265,7 +265,7 @@ def process_linguistics_track(
             cwd=book_dir,
             chunk_size=40,
             timeout=3600,
-            max_batch_attempts=3,
+            max_batch_attempts=5,
             max_workers=max_workers_per_chapter,
         )
         atomic_write_json(ana_path, analyzed_data)

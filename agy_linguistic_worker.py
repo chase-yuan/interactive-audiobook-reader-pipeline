@@ -153,7 +153,7 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
 
     default_model = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
     fallback_models = [default_model]
-    for alt in ("gemini-3.7-flash-high", "gemini-3.8-flash-medium"):
+    for alt in ("gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium", "claude-sonnet-4-6"):
         if alt not in fallback_models:
             fallback_models.append(alt)
 
