@@ -11,7 +11,7 @@ from audio_resolver import resolve_chapter_audio
 from acoustic_whisper import ACOUSTIC_PROFILE_VERSION
 from artifact_io import atomic_write_json
 from release_token import issue_release_token
-from content_profile import COMPLETE, TEXT_ONLY, load_content_profile
+from content_profile import COMPLETE, TEXT_ONLY, SYNTHETIC, load_content_profile
 
 MULTI_BOUNDARY = re.compile(r"(?:[.!?][\"'”’)]*|\*)\s+[A-Z]")
 ABBREVIATION_BEFORE_CAPITAL = re.compile(
@@ -244,9 +244,9 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
         chapter_units = content_profile["units_by_chapter"].get(number, [])
         scoped_ids = {sentence_id for unit in chapter_units for sentence_id in unit["sentence_ids"]}
         audio_resolution = resolve_chapter_audio(book_dir / "audio", number) if number is not None else None
-        if number is not None and content_mode not in (COMPLETE, TEXT_ONLY) and not chapter_units:
+        if number is not None and content_mode not in (COMPLETE, TEXT_ONLY, SYNTHETIC) and not chapter_units:
             errors.append(f"{label}: non-complete profile has no declared audio units")
-        if number is not None and content_mode == COMPLETE:
+        if number is not None and content_mode in (COMPLETE, SYNTHETIC):
             if audio_resolution.status == "missing":
                 errors.append(f"{label}: chapter audio file missing")
             elif audio_resolution.status == "ambiguous":
@@ -338,7 +338,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             )
             non_narrated = item.get("alignment_status") == "not-applicable" and item.get("alignment_reason") in {"non_narrated_content", "non_narrated_text", "duplicate_source_fragment", "out_of_scope_reference"}
             out_of_scope = item.get("alignment_reason") == "out_of_scope_reference"
-            if content_mode != COMPLETE and not is_heading:
+            if content_mode not in (COMPLETE, SYNTHETIC) and not is_heading:
                 if item_id in scoped_ids and out_of_scope:
                     errors.append(f"{label} {item_id}: declared playable sentence is marked out of scope")
                 if item_id not in scoped_ids and not out_of_scope:
@@ -423,7 +423,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
                     covered_tokens += min(max(matched, 0), max(source_tokens, 0))
             if not is_heading and not non_narrated and not owner_accepted and (not item.get("has_audio_match", True) or item.get("fallback_used") or item.get("alignment_status") not in {"validated", "reviewed"} or matched < 1 or (ratio < 0.5 and not physically_playable)):
                 review_ids.append(item_id)
-        if content_mode != COMPLETE:
+        if content_mode not in (COMPLETE, SYNTHETIC):
             unknown_scope_ids = scoped_ids - set(ids)
             if unknown_scope_ids:
                 errors.append(f"{label}: profile references unknown sentence IDs ({', '.join(sorted(unknown_scope_ids)[:8])})")
@@ -447,7 +447,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             non_narrated_records > MAX_NON_NARRATED_CHAPTER_COUNT
             or (len(aligned_data) >= 15 and non_narrated_records > 3 and non_narrated_ratio > MAX_NON_NARRATED_CHAPTER_RATIO)
         )
-        if content_mode == COMPLETE and is_excessive_omission:
+        if content_mode in (COMPLETE, SYNTHETIC) and is_excessive_omission:
             errors.append(
                 f"{label}: non-narrated omission ratio {non_narrated_ratio:.1%} "
                 f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {MAX_NON_NARRATED_CHAPTER_COUNT}-sentence release ceiling; "

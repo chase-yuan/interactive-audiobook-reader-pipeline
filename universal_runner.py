@@ -38,7 +38,8 @@ from agy_linguistic_worker import process_canonical_sentences, PROMPT_PATH, veri
 from validate_outputs import validate
 from release_token import issue_release_token
 from html_builder import build_master_reader
-from quality_gate import smoke_check_html
+from quality_gate import smoke_check_html, check_audio_physical_integrity
+from kokoro_synthesizer import synthesize_chapter
 from artifact_io import atomic_write_json, atomic_write_text
 
 DEFAULT_EXCLUDE_PATTERNS = [
@@ -343,6 +344,59 @@ def synthesize_text_only_aligned_sentences(
     print("[Stage 3] Aligned sentences synthesized.")
 
 
+def synthesize_synthetic_voice_chapters(
+    book_dir: Path,
+    chapters_meta: List[Dict[str, Any]],
+    prefix: str,
+    voice: str = "am_adam",
+    speed: float = 1.0,
+    concurrency: int = 3,
+) -> None:
+    print(f"\n=== [Stage 3: Kokoro Neural Voice Synthesis (voice={voice}, speed={speed}x)] ===", flush=True)
+    audio_dir = book_dir / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    def _synth_track(item: Dict[str, Any]) -> bool:
+        num = item["num"]
+        label = item["label"]
+        can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
+        ana_path = book_dir / f"{prefix}_ch{num:02d}_full_analysis.json"
+        alg_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
+        mp3_path = audio_dir / f"chapter_{num:02d}.mp3"
+
+        if not can_path.is_file():
+            print(f"[TTS ERROR] Track {num:02d} missing canonical: {can_path}", file=sys.stderr)
+            return False
+
+        t0 = time.time()
+        print(f"[TTS] Synthesizing Track {num:02d} ({label})...", flush=True)
+        try:
+            synthesize_chapter(
+                canonical_path=can_path,
+                analysis_path=ana_path,
+                aligned_output_path=alg_path,
+                audio_output_path=mp3_path,
+                voice=voice,
+                speed=speed,
+            )
+            elapsed = time.time() - t0
+            print(f"[TTS] Track {num:02d} complete in {elapsed:.1f}s -> {mp3_path.name}", flush=True)
+            return True
+        except Exception as exc:
+            print(f"[TTS ERROR] Track {num:02d} failed: {exc}", file=sys.stderr, flush=True)
+            return False
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = {executor.submit(_synth_track, item): item for item in chapters_meta}
+        for f in as_completed(futures):
+            item = futures[f]
+            ok = f.result()
+            if not ok:
+                raise RuntimeError(f"TTS synthesis failed on track {item['num']:02d} ({item['label']})")
+
+    print("[Stage 3] Kokoro neural voice synthesis completed.")
+
+
 def build_and_verify_reader(
     book_dir: Path,
     chapters_meta: List[Dict[str, Any]],
@@ -376,7 +430,7 @@ def build_and_verify_reader(
         aligned_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
 
         audio_src = ""
-        if mode == "complete" and audio_dir:
+        if mode in ("complete", "synthetic") and audio_dir:
             audio_candidate = audio_dir / f"chapter_{num:02d}.mp3"
             if audio_candidate.exists():
                 audio_src = f"./audio/{audio_candidate.name}"
@@ -404,7 +458,7 @@ def build_and_verify_reader(
         book_id=slug_id,
     )
 
-    print(f"\n=== [Stage 6: Static Smoke Check] ===", flush=True)
+    print(f"\n=== [Stage 6: Static Smoke Check & Audio Probes] ===", flush=True)
     smoke = smoke_check_html(out_html, expected_chapters=len(chapters_meta))
     if smoke["status"] != "passed":
         raise RuntimeError(f"HTML smoke check failed: {smoke['errors']}")
@@ -412,6 +466,20 @@ def build_and_verify_reader(
         f"[Stage 6] Smoke check passed: 100% compliant "
         f"({smoke['chapter_count']} chapters, {out_html.stat().st_size:,} bytes)"
     )
+
+    if mode == "synthetic" and audio_dir:
+        for item in chapters_meta:
+            num = item["num"]
+            c_mp3 = audio_dir / f"chapter_{num:02d}.mp3"
+            c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
+            if c_mp3.is_file() and c_alg.is_file():
+                alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
+                last_end = alg_data[-1]["end"] if alg_data else 0.0
+                probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=0.45)
+                if probe["status"] != "passed":
+                    raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
+        print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
+
     return out_html
 
 
@@ -420,6 +488,8 @@ def build_reader_pipeline(
     book_dir: Optional[Path] = None,
     audio_dir: Optional[Path] = None,
     text_only: bool = False,
+    auto_voice: Optional[str] = None,
+    voice_speed: float = 1.0,
     concurrency: int = 8,
     min_chars: int = 300,
     exclude_patterns: Optional[List[str]] = None,
@@ -435,7 +505,12 @@ def build_reader_pipeline(
         raise FileNotFoundError(f"EPUB file not found: {epub_path}")
 
     # Mode determination
-    mode = "text_only" if (text_only or not audio_dir) else "complete"
+    if auto_voice:
+        mode = "synthetic"
+    elif text_only or not audio_dir:
+        mode = "text_only"
+    else:
+        mode = "complete"
 
     # Discover metadata and chapters
     raw_meta, raw_chapters, cover_member = discover_epub_chapters(
@@ -446,7 +521,10 @@ def build_reader_pipeline(
 
     title = title_override or raw_meta.get("title") or epub_path.stem
     author = author_override or raw_meta.get("creator") or "Unknown Author"
-    subtitle = subtitle_override or ("Bilingual Interactive Reader" if mode == "text_only" else "Bilingual Synchronized Reader")
+    subtitle = subtitle_override or (
+        "Bilingual Synchronized Audiobook" if mode == "synthetic"
+        else ("Bilingual Interactive Reader" if mode == "text_only" else "Bilingual Synchronized Reader")
+    )
     slug_id = sanitize_slug(title).replace("_", "-")
 
     # Set up book directory
@@ -456,6 +534,8 @@ def build_reader_pipeline(
         target_dir = book_dir.expanduser().resolve()
 
     target_dir.mkdir(parents=True, exist_ok=True)
+    if mode == "synthetic":
+        audio_dir = target_dir / "audio"
 
     # Determine chapter metadata
     metadata_file = target_dir / "chapter_metadata.json"
@@ -534,6 +614,15 @@ def build_reader_pipeline(
 
     if mode == "text_only":
         synthesize_text_only_aligned_sentences(target_dir, chapters_meta, prefix)
+    elif mode == "synthetic":
+        synthesize_synthetic_voice_chapters(
+            book_dir=target_dir,
+            chapters_meta=chapters_meta,
+            prefix=prefix,
+            voice=auto_voice,
+            speed=voice_speed,
+            concurrency=min(concurrency, 3),
+        )
     else:
         raise NotImplementedError("Complete audio mode integration requires audio tracks in audio_dir")
 
@@ -577,6 +666,8 @@ def main():
     parser.add_argument("--book-dir", type=str, default=None, help="Destination directory for book artifacts")
     parser.add_argument("--audio-dir", type=str, default=None, help="Directory containing audio tracks")
     parser.add_argument("--text-only", action="store_true", help="Force text-only interactive reader mode")
+    parser.add_argument("--auto-voice", type=str, default=None, help="Automatically synthesize chapter audio with Kokoro voice (e.g. am_adam)")
+    parser.add_argument("--voice-speed", type=float, default=1.0, help="Speech rate multiplier for auto-voice (default: 1.0)")
     parser.add_argument("--concurrency", "-c", "--workers", type=int, default=8, help="Max parallel workers for linguistic analysis")
     parser.add_argument("--min-chars", type=int, default=300, help="Minimum character length for auto-detected chapters")
     parser.add_argument("--exclude", type=str, default=None, help="Comma-separated patterns to exclude in spine hrefs")
@@ -598,6 +689,8 @@ def main():
         book_dir=Path(args.book_dir) if args.book_dir else None,
         audio_dir=Path(args.audio_dir) if args.audio_dir else None,
         text_only=args.text_only,
+        auto_voice=args.auto_voice,
+        voice_speed=args.voice_speed,
         concurrency=args.concurrency,
         min_chars=args.min_chars,
         exclude_patterns=exclude_patterns,
