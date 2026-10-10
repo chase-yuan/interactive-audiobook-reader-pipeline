@@ -1,11 +1,17 @@
 """Unit and integration tests for universal_runner.py."""
 
 import json
+import shutil
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 from universal_runner import (
     sanitize_slug,
@@ -185,6 +191,8 @@ class UniversalRunnerTests(unittest.TestCase):
             self.assertTrue(rep["release_ready"])
             self.assertEqual(rep["audio_content_mode"], "text_only")
 
+    @unittest.skipIf(np is None, "numpy not installed in environment")
+    @unittest.skipIf(shutil.which("ffmpeg") is None and not Path("/opt/homebrew/bin/ffmpeg").exists(), "ffmpeg not available")
     @patch("universal_runner.process_canonical_sentences")
     @patch("universal_runner.synthesize_chapter")
     def test_build_reader_pipeline_auto_voice_synthetic_end_to_end(self, mock_synth, mock_process_linguistics):
@@ -204,7 +212,6 @@ class UniversalRunnerTests(unittest.TestCase):
 
         def fake_synth(canonical_path, analysis_path, aligned_output_path, audio_output_path, **kwargs):
             import subprocess
-            import numpy as np
             can_data = json.loads(Path(canonical_path).read_text(encoding="utf-8"))
             ana_data = json.loads(Path(analysis_path).read_text(encoding="utf-8"))
             ana_map = {row["id"]: row for row in ana_data}
@@ -243,8 +250,9 @@ class UniversalRunnerTests(unittest.TestCase):
             sr = 16000
             t = np.linspace(0, cur_t, int(sr * cur_t), endpoint=False)
             sine = (np.sin(2 * np.pi * 440 * t) * 8000).astype(np.int16)
+            ffmpeg_bin = shutil.which("ffmpeg") or ("/opt/homebrew/bin/ffmpeg" if Path("/opt/homebrew/bin/ffmpeg").exists() else "ffmpeg")
             cmd = [
-                "/opt/homebrew/bin/ffmpeg", "-y", "-f", "s16le", "-ar", "16000", "-ac", "1",
+                ffmpeg_bin, "-y", "-f", "s16le", "-ar", "16000", "-ac", "1",
                 "-i", "pipe:0", "-b:a", "128k", str(audio_output_path)
             ]
             subprocess.run(cmd, input=sine.tobytes(), check=True, capture_output=True)
