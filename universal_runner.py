@@ -663,7 +663,11 @@ def build_reader_pipeline(
     setup_book_directory(target_dir, epub_path, chapters_meta, cover_member, mode=mode)
     extract_chapters_sentences(target_dir, epub_path, chapters_meta, prefix, force=force_extract)
     validate_extracted_sentences_gate(target_dir, chapters_meta, prefix)
-    run_parallel_linguistic_analysis(target_dir, chapters_meta, prefix, concurrency=concurrency)
+    model_name = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
+    workers_per_ch = 4 if model_name == "deepseek" else 2
+    run_parallel_linguistic_analysis(
+        target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
+    )
 
     if mode == "text_only":
         synthesize_text_only_aligned_sentences(target_dir, chapters_meta, prefix)
