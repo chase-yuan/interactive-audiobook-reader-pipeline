@@ -163,42 +163,43 @@ def _synthesize_sentence_with_recovery(
     sr: int,
 ) -> np.ndarray:
     """Synthesize sentence audio with 3-tier adaptive recovery to eliminate silent dropouts."""
-    # Attempt 1: Direct neural synthesis
-    try:
-        samples, _ = tts.create(acoustic_text, voice=voice, speed=speed, lang="en-us")
-        return samples.astype(np.float32)
-    except Exception as exc1:
-        logger.warning("Kokoro attempt 1 failed on '%s...': %s; attempting punctuation normalization", acoustic_text[:40], exc1)
-
-    # Attempt 2: Aggressive punctuation and typography normalization
-    clean_text = re.sub(r"[^\w\s.,!?'\"-]", " ", acoustic_text)
-    clean_text = re.sub(r"\s+", " ", clean_text).strip()
-    if clean_text:
+    with _KOKORO_LOCK:
+        # Attempt 1: Direct neural synthesis
         try:
-            samples, _ = tts.create(clean_text, voice=voice, speed=speed, lang="en-us")
+            samples, _ = tts.create(acoustic_text, voice=voice, speed=speed, lang="en-us")
             return samples.astype(np.float32)
-        except Exception as exc2:
-            logger.warning("Kokoro attempt 2 failed on normalized text: %s; attempting clause split", exc2)
+        except Exception as exc1:
+            logger.warning("Kokoro attempt 1 failed on '%s...': %s; attempting punctuation normalization", acoustic_text[:40], exc1)
 
-    # Attempt 3: Clause splitting for long/complex sentences
-    if len(acoustic_text) > 120:
-        parts = [p.strip() for p in re.split(r"[,;—]", acoustic_text) if p.strip()]
-        if len(parts) >= 2:
+        # Attempt 2: Aggressive punctuation and typography normalization
+        clean_text = re.sub(r"[^\w\s.,!?'\"-]", " ", acoustic_text)
+        clean_text = re.sub(r"\s+", " ", clean_text).strip()
+        if clean_text:
             try:
-                sub_samples = []
-                for part in parts:
-                    sam, _ = tts.create(part, voice=voice, speed=speed, lang="en-us")
-                    sub_samples.append(sam.astype(np.float32))
-                    sub_samples.append(np.zeros(int(sr * 0.10), dtype=np.float32))
-                return np.concatenate(sub_samples)
-            except Exception as exc3:
-                logger.error("Kokoro attempt 3 clause split failed: %s", exc3)
+                samples, _ = tts.create(clean_text, voice=voice, speed=speed, lang="en-us")
+                return samples.astype(np.float32)
+            except Exception as exc2:
+                logger.warning("Kokoro attempt 2 failed on normalized text: %s; attempting clause split", exc2)
 
-    # Hard Failure Gate: Never emit silent dropouts pretending to be valid audio
-    raise RuntimeError(
-        f"Kokoro neural synthesis fatal error on sentence: '{acoustic_text[:60]}...'. "
-        "Audio synthesis halted to prevent silent audio dropouts."
-    )
+        # Attempt 3: Clause splitting for long/complex sentences
+        if len(acoustic_text) > 120:
+            parts = [p.strip() for p in re.split(r"[,;—]", acoustic_text) if p.strip()]
+            if len(parts) >= 2:
+                try:
+                    sub_samples = []
+                    for part in parts:
+                        sam, _ = tts.create(part, voice=voice, speed=speed, lang="en-us")
+                        sub_samples.append(sam.astype(np.float32))
+                        sub_samples.append(np.zeros(int(sr * 0.10), dtype=np.float32))
+                    return np.concatenate(sub_samples)
+                except Exception as exc3:
+                    logger.error("Kokoro attempt 3 clause split failed: %s", exc3)
+
+        # Hard Failure Gate: Never emit silent dropouts pretending to be valid audio
+        raise RuntimeError(
+            f"Kokoro neural synthesis fatal error on sentence: '{acoustic_text[:60]}...'. "
+            "Audio synthesis halted to prevent silent audio dropouts."
+        )
 
 
 def synthesize_chapter(
