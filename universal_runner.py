@@ -483,7 +483,7 @@ def build_and_verify_reader(
         if mode in ("complete", "synthetic") and audio_dir:
             audio_candidate = audio_dir / f"chapter_{num:02d}.mp3"
             if audio_candidate.exists():
-                audio_src = f"./audio/{audio_candidate.name}"
+                audio_src = f"./audio/{audio_candidate.name}?v={int(audio_candidate.stat().st_mtime)}"
 
         cfg = {
             "num": num,

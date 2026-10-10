@@ -125,12 +125,53 @@ def get_kokoro(
         return _KOKORO_INSTANCE
 
 
+# Number expander for English reading
+_ONES = {0: "zero", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}
+_TEENS = {10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen", 15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen"}
+_TENS = {2: "twenty", 3: "thirty", 4: "forty", 5: "fifty", 6: "sixty", 7: "seventy", 8: "eighty", 9: "ninety"}
+
+def _expand_number_token(s: str) -> str:
+    """Expand numeric strings into spoken English words for accurate acoustic duration estimation."""
+    s = s.replace(",", "")
+    if "." in s:
+        parts = s.split(".", 1)
+        int_exp = _expand_number_token(parts[0])
+        dec = parts[1]
+        if len(dec) == 2 and dec[0] != "0":
+            dec_exp = _expand_number_token(dec)
+        else:
+            dec_exp = " ".join(_ONES.get(int(d), d) for d in dec)
+        return f"{int_exp} point {dec_exp}"
+    try:
+        val = int(s)
+    except ValueError:
+        return s
+    if val < 10:
+        return _ONES.get(val, str(val))
+    if val < 20:
+        return _TEENS.get(val, str(val))
+    if val < 100:
+        rem = val % 10
+        return _TENS.get(val // 10, "") + (" " + _ONES.get(rem, "") if rem else "")
+    if val < 1000:
+        rem = val % 100
+        return _ONES.get(val // 100, "") + " hundred" + (" and " + _expand_number_token(str(rem)) if rem else "")
+    if val < 1000000:
+        rem = val % 1000
+        return _expand_number_token(str(val // 1000)) + " thousand" + (" " + _expand_number_token(str(rem)) if rem else "")
+    return s
+
+_FUNCTION_WORDS = {
+    "a", "an", "the", "of", "in", "on", "at", "to", "for", "with",
+    "and", "or", "but", "is", "was", "are", "were", "it", "its", "as", "by", "that", "this"
+}
+
 def compute_word_spans(
     text: str,
     start_time: float,
     end_time: float,
 ) -> List[Dict[str, Any]]:
-    """Derive strictly monotonic continuous word spans proportional to word length."""
+    """Derive strictly monotonic continuous word spans proportional to word acoustic weight."""
     words = text.split()
     if not words:
         return []
@@ -138,15 +179,37 @@ def compute_word_spans(
     duration = max(0.01, end_time - start_time)
 
     def _word_weight(w: str) -> float:
-        letters = re.sub(r"[^\w]", "", w)
-        base = max(1.0, float(len(letters)))
-        if re.search(r"[,，—–\-]$", w):
-            base += 2.5
-        elif re.search(r"[;:；：]$", w):
-            base += 3.5
+        # 1. Expand numbers/currencies/percentages to spoken words
+        w_expanded = re.sub(r"\b\d+(?:\.\d+)?\b", lambda m: _expand_number_token(m.group(0)), w)
+        
+        # 2. Count syllables & letters in expanded form
+        tokens = w_expanded.lower().split()
+        total_base = 0.0
+        for tok in tokens:
+            clean = re.sub(r"[^a-z]", "", tok)
+            if not clean:
+                continue
+            if clean in _FUNCTION_WORDS and len(tokens) == 1:
+                base = max(1.2, float(len(clean)) * 0.8)
+            else:
+                vowels = len(re.findall(r"[aeiouy]+", clean))
+                if clean.endswith("e") and not clean.endswith("le") and len(clean) > 2:
+                    vowels = max(1, vowels - 1)
+                syllables = max(1, vowels)
+                base = max(1.5, float(len(clean)) * 0.7 + syllables * 1.8)
+            total_base += base
+
+        # 3. Punctuation pause modeling
+        if re.search(r"[;:；：]$", w):
+            total_base += 4.5
+        elif re.search(r"[,，—–\-]$", w):
+            total_base += 2.8
         elif re.search(r"[.?!。？！]$", w):
-            base += 4.0
-        return base
+            total_base += 5.0
+        elif re.search(r"[\"”’]$", w):
+            total_base += 1.0
+
+        return max(1.0, total_base)
 
     char_weights = [_word_weight(w) for w in words]
     total_weight = sum(char_weights)
@@ -199,19 +262,26 @@ def _synthesize_sentence_with_recovery(
             except Exception as exc2:
                 logger.warning("Kokoro attempt 2 failed on normalized text: %s; attempting clause split", exc2)
 
-        # Attempt 3: Clause splitting for long/complex sentences
-        if len(acoustic_text) > 120:
-            parts = [p.strip() for p in re.split(r"[,;—]", acoustic_text) if p.strip()]
-            if len(parts) >= 2:
-                try:
-                    sub_samples = []
-                    for part in parts:
-                        sam, _ = tts.create(part, voice=voice, speed=speed, lang="en-us")
-                        sub_samples.append(sam.astype(np.float32))
-                        sub_samples.append(np.zeros(int(sr * 0.10), dtype=np.float32))
+        # Attempt 3: Sub-chunk splitting for long/complex or run-on sentences (exceeding Kokoro 510-phoneme limit)
+        words = clean_text.split() if clean_text else acoustic_text.split()
+        if len(words) >= 2:
+            try:
+                parts = [p.strip() for p in re.split(r"[,;—\n]", clean_text if clean_text else acoustic_text) if p.strip()]
+                if len(parts) < 2 or any(len(p.split()) > 25 for p in parts):
+                    max_words = 20
+                    parts = [" ".join(words[i : i + max_words]) for i in range(0, len(words), max_words)]
+                
+                sub_samples = []
+                for part in parts:
+                    if not part.strip():
+                        continue
+                    sam, _ = tts.create(part.strip(), voice=voice, speed=speed, lang="en-us")
+                    sub_samples.append(sam.astype(np.float32))
+                    sub_samples.append(np.zeros(int(sr * 0.10), dtype=np.float32))
+                if sub_samples:
                     return np.concatenate(sub_samples)
-                except Exception as exc3:
-                    logger.error("Kokoro attempt 3 clause split failed: %s", exc3)
+            except Exception as exc3:
+                logger.error("Kokoro attempt 3 chunk split failed: %s", exc3)
 
         # Hard Failure Gate: Never emit silent dropouts pretending to be valid audio
         raise RuntimeError(
