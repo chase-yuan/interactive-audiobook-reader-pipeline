@@ -433,11 +433,15 @@ def synthesize_synthetic_voice_chapters(
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         futures = {executor.submit(_synth_track, item): item for item in chapters_meta}
-        for f in as_completed(futures):
-            item = futures[f]
-            ok = f.result()
-            if not ok:
-                raise RuntimeError(f"TTS synthesis failed on track {item['num']:02d} ({item['label']})")
+        try:
+            for f in as_completed(futures):
+                item = futures[f]
+                ok = f.result()
+                if not ok:
+                    raise RuntimeError(f"TTS synthesis failed on track {item['num']:02d} ({item['label']})")
+        except Exception:
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
 
     print("[Stage 3] Kokoro neural voice synthesis completed.")
 

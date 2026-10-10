@@ -16,6 +16,7 @@ Physical Invariants:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -284,15 +285,19 @@ def synthesize_chapter(
         words = text.split()
         word_count = len(words)
 
-        # Check sentence cache on disk
-        cache_file = cache_dir / f"{cid}.npz"
+        # Check parameterized sentence cache on disk (incorporating voice, speed, text)
+        content_sig = hashlib.sha256(f"{voice}:{speed:.2f}:{text}".encode("utf-8")).hexdigest()[:10]
+        cache_file = cache_dir / f"{cid}_{voice}_{content_sig}.npz"
+        legacy_file = cache_dir / f"{cid}.npz"
         audio_samples = None
-        if cache_file.is_file():
-            try:
-                cached_np = np.load(cache_file)
-                audio_samples = cached_np["samples"]
-            except Exception:
-                audio_samples = None
+        for candidate in (cache_file, legacy_file):
+            if candidate.is_file():
+                try:
+                    cached_np = np.load(candidate)
+                    audio_samples = cached_np["samples"]
+                    break
+                except Exception:
+                    audio_samples = None
 
         if audio_samples is None:
             if is_standalone_divider(text):
@@ -363,9 +368,10 @@ def synthesize_chapter(
         str(audio_output_path),
     ]
 
-    proc = subprocess.run(cmd, input=full_audio.tobytes(), check=True, capture_output=True)
+    proc = subprocess.run(cmd, input=full_audio.tobytes(), check=False, capture_output=True)
     if proc.returncode != 0:
-        raise RuntimeError(f"FFmpeg encoding failed: {proc.stderr.decode('utf-8', errors='replace')}")
+        err_msg = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"FFmpeg encoding failed (exit code {proc.returncode}): {err_msg}")
 
     atomic_write_json(aligned_output_path, aligned_items)
     return aligned_output_path, audio_output_path
