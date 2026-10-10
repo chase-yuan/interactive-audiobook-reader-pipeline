@@ -782,8 +782,37 @@ def generate_marketing_copy(
 
     summary = meta.get("summary") or "经典原版巨作，带你领略原汁原味的英文思想力量。"
 
-    # Detail description tailored strictly to book introduction, objective pain-point solutions & instant web delivery
-    detail_text = f"""《{title_cn}》（{title_en}）原版有声交互点读精读站：
+    if book_id == "beyond-feelings":
+        keywords = f"{title_cn} {clean_en_compact} 李笑来推荐 批判性思维 英文原版 英语精读 有声书 影子跟读 纯英双语切换 考研英语 托福雅思 听力口语磨耳朵"
+        detail_text = f"""《{title_cn}》（{title_en}）原版有声交互点读精读站：
+
+【关于本书 · 内容简介】
+李笑来在《把时间当作朋友》及 2026 最新分享中反复强调：出版 51 年的《Beyond Feelings》是每个人建立独立思考、防忽悠与驾驭 AI 的底层思维操作系统。不读透这本书的论证框架，给你再强大的 AI 也会被绕进去。
+
+【针对原版硬啃痛点定制】
+很多读者慕名硬啃这本书，却卡在查词典打断心流、用机翻抓不住主旨。
+按照李笑来推崇的“只字不差阅读法”与“边听边看双轨输入”，我们专门把原著做成了专属网页交互点读站：
+• 告别频繁查词：核心高阶生词、音标与地道精翻直接内嵌，保持深度沉浸。
+• 告别听力走神：真人录音室原声与文本毫秒级逐字高亮，眼睛耳朵双输入。
+
+【四大核心特色】
+1. 【点哪读哪 · 字音同步】：录音室真人原声伴读，单词实时高亮，轻松跟上语速。
+2. 【难词音标全内置】：轻点句子直接展开地道精翻与高阶词汇音标，告别反复切屏。
+3. 【纯英双语秒切】：想练语感看纯英文，遇到难句一键切双语对照，节奏自主掌控。
+4. 【双击单句循环跟读】：双击任意句子瞬间循环复读磨耳朵，口语听力精进利器。
+
+【极简交付 · 开箱即用】
+拍下自动秒发：专属在线阅读网址 + 专属激活码。
+手机 / iPad / 电脑浏览器打开即读，免装任何软件，永久有效。
+
+关键词：{keywords}"""
+
+        opt1 = "李笑来力荐《超越感觉》原版有声点读站 纯英双语 影子跟读"
+        opt2 = "《超越感觉》原版有声点读精读站 视听双轨 难词音标全内置"
+        opt3 = "李笑来推荐《超越感觉》原声点读站 手机电脑免装软件即读"
+    else:
+        # Detail description tailored strictly to book introduction, objective pain-point solutions & instant web delivery
+        detail_text = f"""《{title_cn}》（{title_en}）原版有声交互点读精读站：
 
 【关于本书 · 内容简介】
 {summary}
@@ -804,33 +833,33 @@ def generate_marketing_copy(
 
 关键词：{keywords}"""
 
-    # 3 High-converting SEO titles strictly obeying Xianyu 30-character limit
-    cand1 = [
-        f"《{title_cn}》英文原版有声点读精读站 纯英双语秒切 影子跟读",
-        f"《{title_cn}》原版有声点读精读站 纯英双语秒切 影子跟读",
-        f"《{title_cn}》原声点读精读站 纯英双语秒切 影子跟读",
-        f"《{title_cn}》原声点读站 纯英双语秒切 影子跟读",
-        f"《{title_cn}》点读精读站 双语秒切 影子跟读",
-    ]
-    opt1 = next((c for c in cand1 if len(c) <= 30), cand1[-1][:30])
+        # 3 High-converting SEO titles strictly obeying Xianyu 30-character limit
+        cand1 = [
+            f"《{title_cn}》英文原版有声点读精读站 纯英双语秒切 影子跟读",
+            f"《{title_cn}》原版有声点读精读站 纯英双语秒切 影子跟读",
+            f"《{title_cn}》原声点读精读站 纯英双语秒切 影子跟读",
+            f"《{title_cn}》原声点读站 纯英双语秒切 影子跟读",
+            f"《{title_cn}》点读精读站 双语秒切 影子跟读",
+        ]
+        opt1 = next((c for c in cand1 if len(c) <= 30), cand1[-1][:30])
 
-    cand2 = [
-        f"《{title_cn}》英文原版有声交互点读站 视听双轨 难词全内置",
-        f"《{title_cn}》原版有声交互点读站 视听双轨 难词全内置",
-        f"《{title_cn}》原版有声点读精读站 视听双轨 难词全内置",
-        f"《{title_cn}》原版点读精读站 视听双轨 难词全内置",
-        f"《{title_cn}》有声点读精读站 难词音标全内置",
-    ]
-    opt2 = next((c for c in cand2 if len(c) <= 30), cand2[-1][:30])
+        cand2 = [
+            f"《{title_cn}》英文原版有声交互点读站 视听双轨 难词全内置",
+            f"《{title_cn}》原版有声交互点读站 视听双轨 难词全内置",
+            f"《{title_cn}》原版有声点读精读站 视听双轨 难词全内置",
+            f"《{title_cn}》原版点读精读站 视听双轨 难词全内置",
+            f"《{title_cn}》有声点读精读站 难词音标全内置",
+        ]
+        opt2 = next((c for c in cand2 if len(c) <= 30), cand2[-1][:30])
 
-    cand3 = [
-        f"《{title_cn}》原声点读精读站 手机平板电脑免装软件即读",
-        f"《{title_cn}》原声点读精读站 手机电脑免装软件即读",
-        f"《{title_cn}》原声点读精读站 免装软件即开即读",
-        f"《{title_cn}》点读精读站 浏览器免装软件即读",
-        f"《{title_cn}》原版有声点读站 免装软件即读",
-    ]
-    opt3 = next((c for c in cand3 if len(c) <= 30), cand3[-1][:30])
+        cand3 = [
+            f"《{title_cn}》原声点读精读站 手机平板电脑免装软件即读",
+            f"《{title_cn}》原声点读精读站 手机电脑免装软件即读",
+            f"《{title_cn}》原声点读精读站 免装软件即开即读",
+            f"《{title_cn}》点读精读站 浏览器免装软件即读",
+            f"《{title_cn}》原版有声点读站 免装软件即读",
+        ]
+        opt3 = next((c for c in cand3 if len(c) <= 30), cand3[-1][:30])
 
     title_options = f"""1. {opt1}
 2. {opt2}
