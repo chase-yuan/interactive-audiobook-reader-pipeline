@@ -221,7 +221,7 @@ def _load_review_ledger(book_dir: Path, errors: list[str]) -> dict[tuple[int, st
     return decisions
 
 
-def validate(book_dir: Path, report_path=None, *, require_provenance=False):
+def validate(book_dir: Path, report_path=None, *, require_provenance=False, allowed_chapters=None):
     errors, warnings, diagnostics, chapters = [], [], [], []
     review_ledger = _load_review_ledger(book_dir, errors)
     content_profile = load_content_profile(book_dir, errors)
@@ -251,6 +251,8 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
     for canonical in canonical_files:
         match = re.search(r"ch(\d+)", canonical.name)
         number = int(match.group(1)) if match else None
+        if allowed_chapters is not None and number not in allowed_chapters:
+            continue
         label = f"Ch {number:02d}" if number is not None else canonical.name
         try:
             data = json.loads(canonical.read_text(encoding="utf-8"))

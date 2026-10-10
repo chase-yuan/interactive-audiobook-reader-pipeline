@@ -200,24 +200,25 @@ def setup_book_directory(
         "audio_content_mode": mode
     })
 
-    # Write chapter_metadata.json
-    metadata_rows = []
-    for item in chapters_meta:
-        row = {
-            "chapter": item["num"],
-            "role": item["role"],
-            "title": item["title"],
-            "label": item["label"],
-        }
-        if item.get("display_number") is not None:
-            row["display_number"] = item["display_number"]
-        metadata_rows.append(row)
-
+    # Write chapter_metadata.json if not present
     metadata_path = book_dir / "chapter_metadata.json"
-    atomic_write_json(metadata_path, {
-        "schema_version": 1,
-        "chapters": metadata_rows
-    })
+    if not metadata_path.exists():
+        metadata_rows = []
+        for item in chapters_meta:
+            row = {
+                "chapter": item["num"],
+                "role": item["role"],
+                "title": item["title"],
+                "label": item["label"],
+            }
+            if item.get("display_number") is not None:
+                row["display_number"] = item["display_number"]
+            metadata_rows.append(row)
+
+        atomic_write_json(metadata_path, {
+            "schema_version": 1,
+            "chapters": metadata_rows
+        })
 
 
 def extract_chapters_sentences(
@@ -454,7 +455,8 @@ def build_and_verify_reader(
 ) -> Path:
     print(f"\n=== [Stage 4: Quality Gate & Release Validation] ===", flush=True)
     rep_path = book_dir / "reader_validation_report.json"
-    code = validate(book_dir, rep_path)
+    allowed_ch = {item["num"] for item in chapters_meta}
+    code = validate(book_dir, rep_path, allowed_chapters=allowed_ch)
     if code != 0:
         raise RuntimeError(f"Validation report failed quality gate (exit code {code})")
     report = json.loads(rep_path.read_text(encoding="utf-8"))
@@ -462,7 +464,7 @@ def build_and_verify_reader(
     print(f"[Stage 4] ReleaseToken issued: nonce={token.nonce[:16]}... (report sha256: {token.report_sha256[:10]}...)")
 
     print(f"\n=== [Stage 5: Master Interactive Reader Compilation] ===", flush=True)
-    existing_readers = sorted(book_dir.glob("*_Interactive_Reader.html"))
+    existing_readers = sorted([p for p in book_dir.glob("*_Interactive_Reader.html") if not p.is_symlink()])
     if existing_readers:
         out_html = existing_readers[0]
     else:
@@ -544,6 +546,7 @@ def build_reader_pipeline(
     open_in_browser: bool = True,
     force_extract: bool = False,
     llm_model: Optional[str] = None,
+    chapters_filter: Optional[List[int]] = None,
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
@@ -646,6 +649,11 @@ def build_reader_pipeline(
     if not chapters_meta:
         raise ValueError("No chapters selected for build")
 
+    if chapters_filter is not None:
+        chapters_meta = [c for c in chapters_meta if c["num"] in chapters_filter]
+        if not chapters_meta:
+            raise ValueError(f"No chapters matched filter: {chapters_filter}")
+
     # Determine filename prefix
     prefix = detect_book_prefix(target_dir, sanitize_slug(title))
 
@@ -734,6 +742,7 @@ def main():
     parser.add_argument("--author", type=str, default=None, help="Override book author")
     parser.add_argument("--no-browser", action="store_true", help="Do not open HTML in browser upon completion")
     parser.add_argument("--force-extract", action="store_true", help="Force re-extraction of canonical sentences even if already present")
+    parser.add_argument("--chapters", type=str, default=None, help="Comma-separated track numbers to build (e.g. 0,1,2)")
     parser.add_argument("--llm-model", type=str, default=None, help="LLM model for linguistic analysis (e.g. deepseek, gemini-3.8-flash-high)")
 
     args = parser.parse_args()
@@ -742,6 +751,7 @@ def main():
         parser.error("EPUB path is required (positional or --epub)")
 
     exclude_patterns = [p.strip() for p in args.exclude.split(",")] if args.exclude else None
+    chapters_filter = [int(x.strip()) for x in args.chapters.split(",") if x.strip()] if args.chapters else None
 
     build_reader_pipeline(
         epub_path=Path(epub_target),
@@ -760,6 +770,7 @@ def main():
         open_in_browser=not args.no_browser,
         force_extract=args.force_extract,
         llm_model=args.llm_model,
+        chapters_filter=chapters_filter,
     )
 
 
