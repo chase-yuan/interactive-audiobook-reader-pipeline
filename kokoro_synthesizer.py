@@ -107,10 +107,11 @@ def get_kokoro(
         if not v_path.is_file():
             raise FileNotFoundError(f"Kokoro voices binary not found at: {v_path}")
 
-        # Thermal Throttling: Bounded ONNX threads prevent 650% CPU thermal runaway
+        # Full-Speed Performance Mode: Utilize Apple Silicon performance cores
         if rt is not None and hasattr(Kokoro, "from_session"):
+            threads = int(os.getenv("KOKORO_THREADS", "4"))
             sess_options = rt.SessionOptions()
-            sess_options.intra_op_num_threads = 2
+            sess_options.intra_op_num_threads = threads
             sess_options.inter_op_num_threads = 1
             session = rt.InferenceSession(str(m_path), sess_options=sess_options)
             _KOKORO_INSTANCE = Kokoro.from_session(session, str(v_path))

@@ -686,7 +686,7 @@ def build_reader_pipeline(
             prefix=prefix,
             voice=auto_voice,
             speed=voice_speed,
-            concurrency=min(concurrency, 3),
+            concurrency=min(concurrency, 4),
         )
     else:
         raise NotImplementedError("Complete audio mode integration requires audio tracks in audio_dir")
