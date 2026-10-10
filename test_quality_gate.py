@@ -90,8 +90,17 @@ function syncPlayback() {{}}
             self.assertTrue(any("duplicate word start timestamp" in err for err in result["errors"]))
 
     def test_check_audio_physical_integrity(self):
+        import shutil
         import subprocess
-        import numpy as np
+        try:
+            import numpy as np
+        except ImportError:
+            self.skipTest("numpy not installed in environment")
+
+        ffmpeg_bin = shutil.which("ffmpeg") or ("/opt/homebrew/bin/ffmpeg" if Path("/opt/homebrew/bin/ffmpeg").exists() else None)
+        if not ffmpeg_bin:
+            self.skipTest("ffmpeg not available in environment")
+
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             audio_path = tmp_path / "test.mp3"
@@ -100,7 +109,7 @@ function syncPlayback() {{}}
             t = np.linspace(0, 2.0, int(sr * 2.0), endpoint=False)
             sine = (np.sin(2 * np.pi * 440 * t) * 10000).astype(np.int16)
             cmd = [
-                "/opt/homebrew/bin/ffmpeg", "-y", "-f", "s16le", "-ar", "16000", "-ac", "1",
+                ffmpeg_bin, "-y", "-f", "s16le", "-ar", "16000", "-ac", "1",
                 "-i", "pipe:0", "-b:a", "128k", str(audio_path)
             ]
             subprocess.run(cmd, input=sine.tobytes(), check=True, capture_output=True)

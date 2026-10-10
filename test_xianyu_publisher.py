@@ -17,6 +17,9 @@ class TestXianyuPublisher(unittest.TestCase):
         self.assertIn("beyond-feelings", THEMATIC_HOOKS)
 
     def test_resolve_book_metadata_beyond_feelings(self):
+        from xianyu_publisher import AUDIBLE_ROOT
+        if not AUDIBLE_ROOT.exists():
+            self.skipTest("AUDIBLE_ROOT not mounted on current host")
         meta = resolve_book_metadata("beyond-feelings")
         self.assertEqual(meta["id"], "beyond-feelings")
         self.assertEqual(meta["title_cn"], "超越感觉")

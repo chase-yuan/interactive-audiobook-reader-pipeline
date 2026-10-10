@@ -26,7 +26,10 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 try:
     from kokoro_onnx import Kokoro

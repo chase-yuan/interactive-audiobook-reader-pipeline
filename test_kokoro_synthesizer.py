@@ -42,6 +42,15 @@ class KokoroSynthesizerTests(unittest.TestCase):
         self.assertIn("In addition,", cleaned)
 
     def test_synthesize_chapter_end_to_end(self):
+        try:
+            import numpy as np
+            from kokoro_onnx import Kokoro
+            from kokoro_synthesizer import DEFAULT_MODEL_PATH
+        except ImportError:
+            self.skipTest("numpy or kokoro-onnx not installed")
+        if not DEFAULT_MODEL_PATH.exists():
+            self.skipTest("Kokoro ONNX model not cached locally")
+
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             can_path = tmp_path / "test_ch01_canonical_sentences.json"
