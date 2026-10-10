@@ -56,6 +56,24 @@ CANONICAL_CHINESE_TITLES: Dict[str, str] = {
     "the-21-success-secrets-of-self-made-millionaires": "白手起家的21个成功秘诀",
 }
 
+# Well-known Chinese subtitles / category hooks
+CANONICAL_CHINESE_SUBTITLES: Dict[str, str] = {
+    "beyond-feelings": "批判性思考指南",
+    "48-laws": "现实权谋与人性法则",
+    "elon-musk": "硅谷钢铁侠的硬核传奇",
+    "range": "为什么通才能战胜专才",
+    "the-housemaid": "反转不断的高分悬疑小说",
+    "confidence-game": "骗局背后的心理操纵术",
+    "influence": "人人必读的说服心理学",
+    "story": "好莱坞故事教父编剧圣经",
+    "denationalisation-of-money": "哈耶克货币终极思考",
+    "competing-against-luck": "创新与商业成功密码",
+    "deng-xiaoping": "当代中国转型的历史密码",
+    "the-psychology-of-money": "关于财富、贪婪与幸福的智慧",
+    "build": "iPod之父非传统做物指南",
+    "the-21-success-secrets-of-self-made-millionaires": "白手起家百万富翁思维习惯",
+}
+
 # Thematic hooks tailored to learning science
 THEMATIC_HOOKS: Dict[str, str] = {
     "beyond-feelings": "走出感觉与主观偏见，建立真正严密、独立的批判性思考逻辑框架。",
@@ -128,47 +146,56 @@ HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
   .title-group {
     display: flex;
     align-items: baseline;
-    gap: 14px;
-    margin-top: 4px;
+    gap: 12px;
+    margin-top: 2px;
+    flex-wrap: nowrap;
   }
 
   .title-cn {
-    font-size: 42px;
+    font-size: 38px;
     font-weight: 900;
     color: #2b1d14;
     letter-spacing: -0.5px;
     line-height: 1.1;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .title-en {
-    font-size: 32px;
+    font-size: 26px;
     font-weight: 800;
     color: #8c4e28;
     letter-spacing: 0.5px;
-    max-width: 440px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex-shrink: 1;
   }
 
   .subtitle {
-    font-size: 16px;
+    font-size: 15px;
     color: #6e5a4d;
-    font-weight: 500;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .header-tag {
     background: #fdf5ec;
     border: 1.5px solid #d4a373;
     color: #8c4e28;
-    padding: 8px 18px;
+    padding: 7px 16px;
     border-radius: 999px;
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 800;
     box-shadow: 0 4px 12px rgba(212, 163, 115, 0.15);
     display: flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: 16px;
   }
 
   /* Main Split Stage */
@@ -370,7 +397,7 @@ HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
         </div>
         <div class="subtitle">__SUBTITLE__ ｜ 录音室原声 · 毫秒级字音同步</div>
       </div>
-      <div class="header-tag">专属卡密授权解锁 · 网页免装即读</div>
+      <div class="header-tag">专属激活码 · 网页即开即读</div>
     </div>
 
     <!-- Main Stage: 50/50 Split -->
@@ -549,8 +576,20 @@ def resolve_book_metadata(
                 break
 
     # Fallback default values
-    title_en = (matched_entry or {}).get("title") or (local_dir.name if local_dir else book_id.replace("-", " ").title())
-    subtitle = (matched_entry or {}).get("subtitle") or "英文原声交互点读精读工作站"
+    raw_title = (matched_entry or {}).get("title") or (local_dir.name if local_dir else book_id.replace("-", " ").title())
+    if ":" in raw_title:
+        title_en, auto_sub = [p.strip() for p in raw_title.split(":", 1)]
+    elif " - " in raw_title:
+        title_en, auto_sub = [p.strip() for p in raw_title.split(" - ", 1)]
+    else:
+        title_en = raw_title
+        auto_sub = ""
+
+    subtitle = CANONICAL_CHINESE_SUBTITLES.get(book_id) or (matched_entry or {}).get("subtitle") or auto_sub or "原版有声交互点读精读工作站"
+    subtitle = re.sub(r",?\s*(?:Ninth|9th|Eighth|8th|Tenth|10th)\s+Edition", "", subtitle, flags=re.I).strip()
+    if not subtitle:
+        subtitle = "原版有声交互点读精读工作站"
+
     author = (matched_entry or {}).get("author") or "经典原著"
     total_duration = (matched_entry or {}).get("totalDuration") or "完整章节"
     chapters_count = (matched_entry or {}).get("chaptersCount") or 21
