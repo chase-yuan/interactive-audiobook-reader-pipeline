@@ -1356,9 +1356,9 @@ function syncPlayback() {
           localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id);
           
           activeSection.querySelectorAll('.sentence-unit.active').forEach(u => {
-            if (u !== activeUnit) u.classList.remove('active');
+            if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
           });
-          activeUnit.classList.add('active');
+          activeUnit.classList.add('active', 'card-collapsed');
 
           if (autoScrollEnabled) {
             const rect = activeUnit.getBoundingClientRect();
@@ -1371,10 +1371,11 @@ function syncPlayback() {
         
         const wordEls = activeUnit.querySelectorAll('.w');
         let foundWord = null;
-        for (let w of wordEls) {
+        for (let i = 0; i < wordEls.length; i++) {
+          const w = wordEls[i];
           const ws = parseFloat(w.dataset.s);
-          const we = parseFloat(w.dataset.e);
-          if (ws < we && curTime >= ws && curTime < we) {
+          const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
+          if (curTime >= ws && curTime < we) {
             foundWord = w;
             break;
           }

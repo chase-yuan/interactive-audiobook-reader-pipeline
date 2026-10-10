@@ -130,7 +130,19 @@ def compute_word_spans(
         return []
 
     duration = max(0.01, end_time - start_time)
-    char_weights = [max(1, len(w)) for w in words]
+
+    def _word_weight(w: str) -> float:
+        letters = re.sub(r"[^\w]", "", w)
+        base = max(1.0, float(len(letters)))
+        if re.search(r"[,，—–\-]$", w):
+            base += 2.5
+        elif re.search(r"[;:；：]$", w):
+            base += 3.5
+        elif re.search(r"[.?!。？！]$", w):
+            base += 4.0
+        return base
+
+    char_weights = [_word_weight(w) for w in words]
     total_weight = sum(char_weights)
 
     spans = []
