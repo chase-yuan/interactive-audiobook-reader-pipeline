@@ -81,6 +81,10 @@ def clean_acoustic_text(text: str) -> str:
     t = re.sub(r"[\*†‡§¶•◦▪▫‣#~_]", " ", t)
     # 4. Strip markdown heading hashes: e.g. # Chapter 1 -> Chapter 1
     t = re.sub(r"^\s*#+\s*", "", t)
+    # 4b. Strip digit-grouping commas in numbers (e.g. 150,000 -> 150000, 7,500 -> 7500, $1,000,000 -> $1000000)
+    # Kokoro's G2P tokenizer splits on commas, which improperly reads "150,000" as "one hundred fifty zero zero zero".
+    while re.search(r"(\d),(\d{3}(?:\b|\D))", t):
+        t = re.sub(r"(\d),(\d{3}(?:\b|\D))", r"\1\2", t)
     # 5. Fix spaces before punctuation created by stripping citations
     t = re.sub(r"\s+([,.:;?!])", r"\1", t)
     # 6. Normalize whitespace

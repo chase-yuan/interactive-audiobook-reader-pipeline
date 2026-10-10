@@ -29,6 +29,18 @@ class KokoroSynthesizerTests(unittest.TestCase):
         self.assertEqual(compute_word_spans("", 0.0, 1.0), [])
         self.assertEqual(compute_word_spans("   ", 0.0, 1.0), [])
 
+    def test_clean_acoustic_text_digit_grouping_commas(self):
+        from kokoro_synthesizer import clean_acoustic_text
+        raw = 'In addition, by 1950 over 150,000 supposedly "defective" children, and 7,500 women, raised $1,000,000.'
+        cleaned = clean_acoustic_text(raw)
+        self.assertIn("150000", cleaned)
+        self.assertIn("7500", cleaned)
+        self.assertIn("$1000000", cleaned)
+        self.assertNotIn("150,000", cleaned)
+        self.assertNotIn("7,500", cleaned)
+        # Verify ordinary clause commas are preserved
+        self.assertIn("In addition,", cleaned)
+
     def test_synthesize_chapter_end_to_end(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
