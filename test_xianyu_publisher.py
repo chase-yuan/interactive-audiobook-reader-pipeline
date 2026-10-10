@@ -38,17 +38,20 @@ class TestXianyuPublisher(unittest.TestCase):
         try:
             detail = generate_marketing_copy(meta, tmp_dir)
 
-            # Contract Invariants: Zero Baidu Netdisk / Zero MP3 download baggage
-            self.assertNotIn("百度网盘备份", detail)
-            self.assertNotIn("MP3 完整章节", detail)
-            self.assertNotIn("EPUB 原版精排电子书", detail)
+            # Contract Invariants: Zero Netdisk / Zero Free-trial bounce / Zero Developer-preaching
+            self.assertNotIn("网盘", detail)
+            self.assertNotIn("免费试读", detail)
+            self.assertNotIn("公开试读", detail)
+            self.assertNotIn("为什么做", detail)
+            self.assertNotIn("MP3", detail)
+            self.assertNotIn("EPUB", detail)
 
             # High-conversion value propositions present
-            self.assertIn("视听双轨协同", detail)
-            self.assertIn("必要难度", detail)
-            self.assertIn("单词动态跳动", detail)
-            self.assertIn("专属激活卡密", detail)
-            self.assertIn("浏览器即开即读", detail)
+            self.assertIn("字音同步", detail)
+            self.assertIn("难词音标全内置", detail)
+            self.assertIn("纯英双语秒切", detail)
+            self.assertIn("专属激活码", detail)
+            self.assertIn("浏览器打开即读", detail)
 
             # Verify files emitted
             self.assertTrue((tmp_dir / "beyond-feelings_Marketing_Copy.md").is_file())

@@ -387,7 +387,7 @@ HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
       <div class="feature-container">
         
         <div class="station-header">
-          <div class="station-eyebrow">LEARNING SCIENCE · 视听双轨认知设计</div>
+          <div class="station-eyebrow">INTERACTIVE READER · 原版有声点读站</div>
           <div class="station-claim">沉浸点读 · 视听双轨同频</div>
         </div>
 
@@ -397,10 +397,10 @@ HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
             <div class="feature-num">01</div>
             <div class="feature-info">
               <div class="feature-headline">
-                <span class="feature-title">视听双轨协同</span>
-                <span class="feature-badge">锁定专注心流</span>
+                <span class="feature-title">视听双轨伴读</span>
+                <span class="feature-badge">告别走神</span>
               </div>
-              <div class="feature-caption">边看文本边听录音室原声伴读，杜绝单看走神与纯听滑水</div>
+              <div class="feature-caption">边看文本边听真人原声伴读，眼睛耳朵双输入，告别走神</div>
             </div>
           </div>
 
@@ -409,9 +409,9 @@ HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
             <div class="feature-info">
               <div class="feature-headline">
                 <span class="feature-title">字音同频跳动</span>
-                <span class="feature-badge">动态视觉锚定</span>
+                <span class="feature-badge">绝不脱节</span>
               </div>
-              <div class="feature-caption">朗读走到哪、单词实时跳动高亮，视线紧紧咬住听觉流动</div>
+              <div class="feature-caption">声音读到哪、单词实时高亮，视线紧扣音频，彻底告别滑水</div>
             </div>
           </div>
 
@@ -420,9 +420,9 @@ HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
             <div class="feature-info">
               <div class="feature-headline">
                 <span class="feature-title">纯英双语秒切</span>
-                <span class="feature-badge">引入必要难度</span>
+                <span class="feature-badge">随时减负</span>
               </div>
-              <div class="feature-caption">默认纯英浸润练语感；遇到晦涩长难句一键切双语对照减负</div>
+              <div class="feature-caption">想练语感看纯英，遇到晦涩长难句一键展开双语对照</div>
             </div>
           </div>
 
@@ -430,38 +430,38 @@ HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
             <div class="feature-num">04</div>
             <div class="feature-info">
               <div class="feature-headline">
-                <span class="feature-title">语境难词全内置</span>
-                <span class="feature-badge">音标释义即查</span>
+                <span class="feature-title">难词音标全内置</span>
+                <span class="feature-badge">即点即查</span>
               </div>
-              <div class="feature-caption">轻点自然句展开地道语境精翻；CEFR高阶核心词、音标即点即查</div>
+              <div class="feature-caption">轻点句子直接看地道精翻与核心词音标，无需跳出查词</div>
             </div>
           </div>
 
         </div>
 
         <div class="station-meta-pill">
-          <span>⚡️ 双击单句循环跟读 · 影子跟读磨耳朵</span>
+          <span>⚡️ 双击单句循环复读 · 随时随地跟读磨耳朵</span>
           <span class="dot">·</span>
-          <span>全端无缝自适应</span>
+          <span>全端自适应</span>
         </div>
 
       </div>
 
     </div>
 
-    <!-- Bottom Ribbon (Zero Baidu Netdisk, Pure Instant Cloud Web) -->
+    <!-- Bottom Ribbon -->
     <div class="bottom-ribbon">
       <div class="ribbon-item">
         <span class="ribbon-check">✓</span>
-        <span>免装 App · 免下数十G网盘</span>
+        <span>手机 / iPad / 电脑全端秒开</span>
       </div>
       <div class="ribbon-item">
         <span class="ribbon-check">✓</span>
-        <span>手机 / iPad / 电脑浏览器即读</span>
+        <span>免装任何软件 · 浏览器打开即读</span>
       </div>
       <div class="ribbon-item">
         <span class="ribbon-check">✓</span>
-        <span>拍下秒发专属网址 + 激活卡密</span>
+        <span>拍下秒发专属网址 + 激活码</span>
       </div>
     </div>
 
@@ -643,56 +643,40 @@ def generate_marketing_copy(
     clean_en_compact = re.sub(r"[^\w]", "", title_en)
     keywords = f"{title_cn} {clean_en_compact} 英文原版 英语精读 有声书 影子跟读 纯英双语切换 考研英语 托福雅思 听力口语磨耳朵 沉浸式阅读"
 
-    # Detail description tailored strictly to learning science & web-only passkey delivery
-    detail_text = f"""《{title_cn}》（{title_en}）专属原声交互点读精读工作站：
+    # Detail description tailored strictly to pain points & instant web passkey delivery
+    detail_text = f"""《{title_cn}》（{title_en}）原版有声交互点读精读站：
 {hook}
 
-【为什么做这个交互点读工作站？】
-学英语买过原版书的朋友，几乎都踩过这三个痛点：
-1. 单纯看原版书：生词密密麻麻，查词典切来切去打断心流，硬啃几页就想放弃；
-2. 单纯听有声书：走神几秒钟就完全不知道读到了哪，只能当背景白噪音滑水；
-3. 传统网盘资源：动辄几十个G的大文件，下载慢、解压烦、导入设备折腾半天，最后躺在硬盘里吃灰。
+你是不是也这样：
+自己硬啃原版书，满页生词，查两次词典就走神读不下去？
+听原版有声书，听着听着就成了白噪音，完全不知道读到了哪？
 
-为了彻底解决这些痛点，我们按照学习科学（认知心理学“视听双轨协同”与“必要难度理论”），专门打造了这个随时随地开箱即用的沉浸式双语点读精读工作站：
+这个网页版交互点读精读站，就是专门解决这些痛点的：
 
-【核心功能亮点】
-1. 【视听双轨协同 · 锁定深度专注】：
-边看文本边聆听专业录音室原声朗读，双感官通道协同输入，大脑迅速进入高度专注的沉浸心流状态。
+【四大核心特色】
+1. 【点哪读哪 · 字音同步】：录音室真人原声伴读，读到哪、单词高亮到哪，眼睛耳朵双输入，告别走神滑水。
+2. 【难词音标全内置】：轻点句子直接展开地道精翻与核心高阶词汇音标，告别反复切屏查词典。
+3. 【纯英双语秒切】：想练语感看纯英文，遇到难句一键切双语对照，阅读节奏自己掌控。
+4. 【双击单句循环跟读】：双击任意句子瞬间循环复读磨耳朵，口语跟读与听力精听利器。
 
-2. 【单词动态跳动 · 视觉流动锚定】：
-朗读声走到哪，文字伴随节奏实时跳动高亮，视听双轨紧密咬合，彻底杜绝“听着听着不知道读到哪”或视线溜号走神的脱节痛点。
-
-3. 【纯英 / 双语秒切 · 引入“必要难度”】：
-默认纯英文浸润，不让大脑过早依赖中文翻译这一拐杖，逼出原语语感；遇到晦涩长难句随时一键展开双语对照，即时为大脑减负。
-
-4. 【内置语境精翻与 CEFR 高阶词卡】：
-点击任意自然句即刻展开地道语境中文翻译；内置核心高阶词汇、国际音标 (IPA) 与词性辨析，读到哪学到哪，无需频繁跳转查词典。
-
-5. 【双击单句影子跟读】：
-双击任意句子瞬间进入循环复读磨耳朵模式，口语发音与听力精听的随身沉浸练习场。
-
-6. 【轻量纯净 · 浏览器即开即读】：
-Safari / Chrome 等浏览器打开直接学，手机 / iPad / 电脑全端无缝自适应。免装任何 App 或插件，免下载动辄数G的音频文件，零设备存储负担！
-
-【全套交付内容】：
-拍下后自动秒发【专属在线阅读网址】+【专属激活卡密】。
-无需百度网盘，无需下载大文件，打开浏览器直接读。
-前 2 章支持免费公开试读试听体验，输入专属卡密即可永久授权解锁全书完整内容。
+【极简交付 · 开箱即用】
+拍下自动秒发：专属在线阅读网址 + 专属激活码。
+手机 / iPad / 电脑浏览器打开即读，免装任何软件，永久有效。
 
 关键词：{keywords}"""
 
     # 3 High-converting SEO titles strictly obeying Xianyu 30-character limit
-    opt1 = f"《{title_cn}》英文原版有声点读精读站 纯英双语秒切 影子跟读 浏览器即读"
+    opt1 = f"《{title_cn}》英文原版有声点读精读站 纯英双语秒切 影子跟读"
     if len(opt1) > 30:
         opt1 = f"《{title_cn}》原版有声点读精读站 纯英双语秒切 影子跟读"
     
-    opt2 = f"{title_en} {title_cn}原版有声交互点读站 视听双轨 难词全内置"
+    opt2 = f"《{title_cn}》英文原版有声交互点读站 视听双轨 难词全内置"
     if len(opt2) > 30:
-        opt2 = f"《{title_cn}》英文原版点读精读站 视听双轨 难词全内置"
+        opt2 = f"《{title_cn}》原版有声点读精读站 视听双轨 难词全内置"
         
-    opt3 = f"《{title_cn}》（{title_en}）专属原声点读精读站 随时随地想读就读"
+    opt3 = f"《{title_cn}》原声点读精读站 手机平板电脑免装软件即读"
     if len(opt3) > 30:
-        opt3 = f"《{title_cn}》专属原声点读精读工作站 随时随地想读就读"
+        opt3 = f"《{title_cn}》原声点读精读工作站 随时随地想读就读"
 
     title_options = f"""1. {opt1}
 2. {opt2}
@@ -721,9 +705,9 @@ Safari / Chrome 等浏览器打开直接学，手机 / iPad / 电脑全端无缝
 ## 配套交付物资检查清单
 
 - [x] 主图海报：`cover_promo.png`（1:1 纯净正方形、原书封面 100% 完整无遮挡、零牛皮癣）
-- [x] 在线阅读地址：`{url}`（前 2 章免费公开试读试听）
+- [x] 在线阅读地址：`{url}`
 - [x] 密钥生成工具：`keygen.py`（单本密钥格式：`KEY-...`）
-- [x] 交付模式：纯网页 + 专属卡密免密直读（无百度网盘、无大文件下载）
+- [x] 交付模式：纯网页 + 专属激活码即开即读（免装软件、零等待）
 """
 
     out_dir.mkdir(parents=True, exist_ok=True)
