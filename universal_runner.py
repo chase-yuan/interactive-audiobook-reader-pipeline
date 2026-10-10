@@ -35,7 +35,7 @@ sys.path.insert(0, str(PIPELINE_DIR))
 from intake_reconciler import parse_epub
 from extract_epub import extract_chapter_from_epub
 from agy_linguistic_worker import process_canonical_sentences, PROMPT_PATH, verify_analysis
-from validate_outputs import validate
+from validate_outputs import validate, validate_canonical_sentences
 from release_token import issue_release_token
 from html_builder import build_master_reader
 from quality_gate import smoke_check_html, check_audio_physical_integrity
@@ -225,16 +225,59 @@ def extract_chapters_sentences(
     epub_path: Path,
     chapters_meta: List[Dict[str, Any]],
     prefix: str,
+    force: bool = False,
 ) -> None:
     print(f"\n=== [Stage 1: EPUB Sentence Extraction ({len(chapters_meta)} tracks)] ===", flush=True)
     for item in chapters_meta:
         num = item["num"]
         href = item["href"]
         can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
-        if can_path.is_file() and can_path.stat().st_size > 50:
+        if not force and can_path.is_file() and can_path.stat().st_size > 50:
             continue
         extract_chapter_from_epub(str(epub_path), href, str(can_path))
     print("[Stage 1] Sentence extraction completed.")
+
+
+def validate_extracted_sentences_gate(
+    book_dir: Path,
+    chapters_meta: List[Dict[str, Any]],
+    prefix: str,
+) -> None:
+    print(f"\n=== [Stage 1.5: Shift-Left Sentence Quality Gate ({len(chapters_meta)} tracks)] ===", flush=True)
+    all_gate_failures = []
+    total_sentences = 0
+    for item in chapters_meta:
+        num = item["num"]
+        label = item["label"]
+        can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
+        if not can_path.is_file():
+            all_gate_failures.append(f"Track {num:02d} ({label}): canonical sentences file missing: {can_path}")
+            continue
+        try:
+            data = json.loads(can_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            all_gate_failures.append(f"Track {num:02d} ({label}): invalid JSON ({exc})")
+            continue
+        total_sentences += len(data)
+        issues = validate_canonical_sentences(data)
+        if issues:
+            for iss in issues[:10]:
+                all_gate_failures.append(f"Track {num:02d} ({label}) {iss}")
+            if len(issues) > 10:
+                all_gate_failures.append(f"Track {num:02d} ({label}): ... and {len(issues) - 10} more sentence defects")
+
+    if all_gate_failures:
+        print("\n[CRITICAL FAILURE] Shift-Left Sentence Gate BLOCKED pipeline execution:", file=sys.stderr)
+        for fail in all_gate_failures[:25]:
+            print(f"  ❌ {fail}", file=sys.stderr)
+        if len(all_gate_failures) > 25:
+            print(f"  ... and {len(all_gate_failures) - 25} additional defects.", file=sys.stderr)
+        raise RuntimeError(
+            f"Stage 1.5 Shift-Left Sentence Gate failed with {len(all_gate_failures)} defects. "
+            "Downstream linguistic analysis and neural audio synthesis have been HALTED to prevent compute waste."
+        )
+
+    print(f"[Stage 1.5] Shift-Left Sentence Quality Gate PASSED: 100% verified across {total_sentences} sentences in {len(chapters_meta)} tracks.")
 
 
 def process_linguistics_track(
@@ -499,6 +542,7 @@ def build_reader_pipeline(
     subtitle_override: Optional[str] = None,
     author_override: Optional[str] = None,
     open_in_browser: bool = True,
+    force_extract: bool = False,
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
@@ -610,7 +654,8 @@ def build_reader_pipeline(
     print(f"Concurrency:     {concurrency} parallel workers\n")
 
     setup_book_directory(target_dir, epub_path, chapters_meta, cover_member, mode=mode)
-    extract_chapters_sentences(target_dir, epub_path, chapters_meta, prefix)
+    extract_chapters_sentences(target_dir, epub_path, chapters_meta, prefix, force=force_extract)
+    validate_extracted_sentences_gate(target_dir, chapters_meta, prefix)
     run_parallel_linguistic_analysis(target_dir, chapters_meta, prefix, concurrency=concurrency)
 
     if mode == "text_only":
@@ -677,6 +722,7 @@ def main():
     parser.add_argument("--subtitle", type=str, default=None, help="Override book subtitle")
     parser.add_argument("--author", type=str, default=None, help="Override book author")
     parser.add_argument("--no-browser", action="store_true", help="Do not open HTML in browser upon completion")
+    parser.add_argument("--force-extract", action="store_true", help="Force re-extraction of canonical sentences even if already present")
 
     args = parser.parse_args()
     epub_target = args.epub or args.epub_flag
@@ -700,6 +746,7 @@ def main():
         subtitle_override=args.subtitle,
         author_override=args.author,
         open_in_browser=not args.no_browser,
+        force_extract=args.force_extract,
     )
 
 

@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -30,6 +31,11 @@ try:
     from kokoro_onnx import Kokoro
 except ImportError:
     Kokoro = None
+
+try:
+    import onnxruntime as rt
+except ImportError:
+    rt = None
 
 from artifact_io import atomic_write_json
 
@@ -41,6 +47,41 @@ KOKORO_SAMPLE_RATE = 24000
 TARGET_SAMPLE_RATE = 44100
 
 _KOKORO_INSTANCE: Optional[Kokoro] = None
+_KOKORO_LOCK = threading.Lock()
+
+
+def is_standalone_divider(text: str) -> bool:
+    """Return True if text consists only of decorative divider glyphs (*, -, —, •, etc.)."""
+    s = text.strip()
+    return bool(re.fullmatch(r"[\*\-–—•·#\s]{2,}", s) and not re.search(r"[a-zA-Z0-9]", s))
+
+
+def clean_acoustic_text(text: str) -> str:
+    """
+    Purify text before sending to neural TTS phonemizer:
+    - Strips markdown formatting: **bold**, *italic*, __italic__, ~~strike~~
+    - Strips bracketed numeric citations: [1], [2, 3], [12-15]
+    - Strips footnote asterisks and glyphs: *, **, †, ‡, §, ¶, •, ◦, ▪, ▫, ‣
+    - Strips markdown headers: # Chapter -> Chapter
+    - Preserves semantic punctuation: currency ($100), percent (50%), em-dash, ellipses, quotes
+    """
+    t = text
+    # 1. Strip markdown bold / italic formatting: **word** -> word, *word* -> word
+    t = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+    t = re.sub(r"\*([^*]+)\*", r"\1", t)
+    t = re.sub(r"__([^_]+)__", r"\1", t)
+    t = re.sub(r"~~([^~]+)~~", r"\1", t)
+    # 2. Strip bracketed numeric citations: [1], [2, 3], [1-4]
+    t = re.sub(r"\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]", "", t)
+    # 3. Strip standalone asterisks and footnote markers: *, **, †, ‡, §, ¶, •, ◦, ▪, ▫, ‣
+    t = re.sub(r"[\*†‡§¶•◦▪▫‣]", "", t)
+    # 4. Strip markdown heading hashes: e.g. # Chapter 1 -> Chapter 1
+    t = re.sub(r"^\s*#+\s*", "", t)
+    # 5. Fix spaces before punctuation created by stripping citations
+    t = re.sub(r"\s+([,.:;?!])", r"\1", t)
+    # 6. Normalize whitespace
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
 
 
 def get_kokoro(
@@ -48,22 +89,31 @@ def get_kokoro(
     voices_path: Optional[Path] = None,
 ) -> Kokoro:
     global _KOKORO_INSTANCE
-    if _KOKORO_INSTANCE is not None:
+    with _KOKORO_LOCK:
+        if _KOKORO_INSTANCE is not None:
+            return _KOKORO_INSTANCE
+
+        if Kokoro is None:
+            raise RuntimeError("kokoro-onnx is not installed. Run `pip install kokoro-onnx`.")
+
+        m_path = Path(model_path or DEFAULT_MODEL_PATH).expanduser().resolve()
+        v_path = Path(voices_path or DEFAULT_VOICES_PATH).expanduser().resolve()
+
+        if not m_path.is_file():
+            raise FileNotFoundError(f"Kokoro ONNX model weights not found at: {m_path}")
+        if not v_path.is_file():
+            raise FileNotFoundError(f"Kokoro voices binary not found at: {v_path}")
+
+        # Thermal Throttling: Bounded ONNX threads prevent 650% CPU thermal runaway
+        if rt is not None and hasattr(Kokoro, "from_session"):
+            sess_options = rt.SessionOptions()
+            sess_options.intra_op_num_threads = 2
+            sess_options.inter_op_num_threads = 1
+            session = rt.InferenceSession(str(m_path), sess_options=sess_options)
+            _KOKORO_INSTANCE = Kokoro.from_session(session, str(v_path))
+        else:
+            _KOKORO_INSTANCE = Kokoro(str(m_path), str(v_path))
         return _KOKORO_INSTANCE
-
-    if Kokoro is None:
-        raise RuntimeError("kokoro-onnx is not installed. Run `pip install kokoro-onnx`.")
-
-    m_path = Path(model_path or DEFAULT_MODEL_PATH).expanduser().resolve()
-    v_path = Path(voices_path or DEFAULT_VOICES_PATH).expanduser().resolve()
-
-    if not m_path.is_file():
-        raise FileNotFoundError(f"Kokoro ONNX model weights not found at: {m_path}")
-    if not v_path.is_file():
-        raise FileNotFoundError(f"Kokoro voices binary not found at: {v_path}")
-
-    _KOKORO_INSTANCE = Kokoro(str(m_path), str(v_path))
-    return _KOKORO_INSTANCE
 
 
 def compute_word_spans(
@@ -159,29 +209,39 @@ def synthesize_chapter(
 
         words = text.split()
         word_count = len(words)
-        has_alphanumeric = any(c.isalnum() for c in text)
-
-        if not has_alphanumeric:
-            # Defensive padding: 0.3s silence for separators/symbols
-            silence_samples = int(sr * 0.30)
+        if is_standalone_divider(text):
+            # Decorative divider: 0.5s pure silence without invoking TTS
+            silence_samples = int(sr * 0.50)
             audio_samples = np.zeros(silence_samples, dtype=np.float32)
             sent_start = current_sample / sr
             sent_end = (current_sample + silence_samples) / sr
             current_sample += silence_samples
             word_spans = compute_word_spans(text, sent_start, sent_end) if words else []
         else:
-            try:
-                samples, out_sr = tts.create(
-                    text,
-                    voice=voice,
-                    speed=speed,
-                    lang="en-us",
-                )
-                audio_samples = samples.astype(np.float32)
-            except Exception as exc:
-                logger.warning("Kokoro failed on %s: %s; falling back to silence", cid, exc)
-                silence_samples = int(sr * 0.40)
+            acoustic_text = clean_acoustic_text(text)
+            has_alphanumeric = any(c.isalnum() for c in acoustic_text)
+
+            if not has_alphanumeric:
+                # Defensive padding: 0.3s silence for separators/symbols
+                silence_samples = int(sr * 0.30)
                 audio_samples = np.zeros(silence_samples, dtype=np.float32)
+                sent_start = current_sample / sr
+                sent_end = (current_sample + silence_samples) / sr
+                current_sample += silence_samples
+                word_spans = compute_word_spans(text, sent_start, sent_end) if words else []
+            else:
+                try:
+                    samples, out_sr = tts.create(
+                        acoustic_text,
+                        voice=voice,
+                        speed=speed,
+                        lang="en-us",
+                    )
+                    audio_samples = samples.astype(np.float32)
+                except Exception as exc:
+                    logger.warning("Kokoro failed on %s: %s; falling back to silence", cid, exc)
+                    silence_samples = int(sr * 0.40)
+                    audio_samples = np.zeros(silence_samples, dtype=np.float32)
 
             sent_start = current_sample / sr
             sent_end = (current_sample + len(audio_samples)) / sr

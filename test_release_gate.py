@@ -178,8 +178,8 @@ class ReleaseGateTests(unittest.TestCase):
             (root / "audio").mkdir()
             (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
             sentences = [
-                {"id": "s-1", "text": "first exact phrase", "trans": "第一个准确短语", "vocab": []},
-                {"id": "s-2", "text": "second exact phrase", "trans": "第二个准确短语", "vocab": []},
+                {"id": "s-1", "text": "First exact phrase.", "trans": "第一个准确短语", "vocab": []},
+                {"id": "s-2", "text": "Second exact phrase.", "trans": "第二个准确短语", "vocab": []},
             ]
             analysis_path = root / "book_ch01_full_analysis.json"
             analysis_path.write_text(json.dumps(sentences), encoding="utf-8")

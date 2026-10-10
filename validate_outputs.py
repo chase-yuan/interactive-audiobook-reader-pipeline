@@ -95,6 +95,66 @@ def _suspicious_sentence_boundaries(text: str) -> list[str]:
         suspicious.append(match.group(0))
     return suspicious
 
+
+def check_sentence_orthography(text: str, is_heading: bool = False, check_standalone_quotes: bool = False) -> list[str]:
+    """Check a single sentence for physical orthographic defects."""
+    issues = []
+    text_s = text.strip()
+    if not text_s:
+        return ["Empty text content"]
+
+    # 1. Trailing hyphen (broken word split across line ends)
+    if re.search(r"\b[a-zA-Z]+-\s*$", text_s):
+        issues.append("Trailing hyphen at line boundary (chopped word)")
+
+    if not is_heading:
+        # 2. Lowercase start (unmerged sentence fragment)
+        if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
+            issues.append("Sentence starts with lowercase continuation letter")
+
+        # 3. Orphan single word without terminal punctuation
+        words = text_s.split()
+        if len(words) == 1 and not re.search(r"[.!?…”\")\]]$", text_s):
+            issues.append("Orphan word fragment without terminal punctuation")
+
+    if check_standalone_quotes:
+        open_curly = text_s.count("“") - text_s.count("”")
+        if open_curly > 0 or text_s.count('"') % 2 != 0:
+            issues.append("Unclosed quote (unmatched quotation marks)")
+
+    return issues
+
+
+def validate_canonical_sentences(items: list[dict]) -> list[str]:
+    """Validate a list of canonical sentence items against the Shift-Left gate with discourse quote tracking."""
+    errors = []
+    open_curly = 0
+    open_straight = 0
+    open_quote_origin = None
+
+    for idx, item in enumerate(items):
+        item_id = item.get("id", f"item-{idx}")
+        text = item.get("text", "")
+        is_heading = item.get("is_heading", False)
+        item_issues = check_sentence_orthography(text, is_heading=is_heading, check_standalone_quotes=False)
+        for iss in item_issues:
+            errors.append(f"{item_id}: {iss}")
+
+        open_curly += text.count("“") - text.count("”")
+        open_straight = (open_straight + text.count('"')) % 2
+
+        if (text.count("“") > text.count("”") or text.count('"') % 2 == 1) and open_quote_origin is None:
+            open_quote_origin = item_id
+
+        if open_curly <= 0 and open_straight == 0:
+            open_quote_origin = None
+
+    if open_curly > 0 or open_straight > 0:
+        origin = open_quote_origin or (items[-1].get("id") if items else "end")
+        errors.append(f"{origin}: Unclosed quote (unmatched quotation marks at chapter end)")
+
+    return errors
+
 def _chapter_audio_exists(audio_dir: Path, number: int) -> bool:
     """Return true only when the shared resolver finds exactly one candidate."""
     return resolve_chapter_audio(audio_dir, number).status == "ok"
@@ -205,7 +265,10 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
         suspicious = [item.get("id") for item in data if not item.get("is_heading") and _suspicious_sentence_boundaries(item.get("text", "")) and (number, item.get("id")) not in review_ledger]
         if suspicious:
             diagnostics.append(f"{label}: {len(suspicious)} suspicious sentence boundaries ({', '.join(suspicious[:8])})")
-        record = {"chapter": number, "canonical_records": len(data), "suspicious_records": len(suspicious)}
+        ortho_issues = validate_canonical_sentences(data)
+        if ortho_issues:
+            errors.extend([f"{label} {iss}" for iss in ortho_issues])
+        record = {"chapter": number, "canonical_records": len(data), "suspicious_records": len(suspicious), "ortho_issues": len(ortho_issues)}
 
         analysis = book_dir / canonical.name.replace("_canonical_sentences.json", "_full_analysis.json")
         if not analysis.exists():
