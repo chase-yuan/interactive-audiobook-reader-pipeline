@@ -152,6 +152,52 @@ def compute_word_spans(
     return spans
 
 
+def _synthesize_sentence_with_recovery(
+    tts: Kokoro,
+    acoustic_text: str,
+    voice: str,
+    speed: float,
+    sr: int,
+) -> np.ndarray:
+    """Synthesize sentence audio with 3-tier adaptive recovery to eliminate silent dropouts."""
+    # Attempt 1: Direct neural synthesis
+    try:
+        samples, _ = tts.create(acoustic_text, voice=voice, speed=speed, lang="en-us")
+        return samples.astype(np.float32)
+    except Exception as exc1:
+        logger.warning("Kokoro attempt 1 failed on '%s...': %s; attempting punctuation normalization", acoustic_text[:40], exc1)
+
+    # Attempt 2: Aggressive punctuation and typography normalization
+    clean_text = re.sub(r"[^\w\s.,!?'\"-]", " ", acoustic_text)
+    clean_text = re.sub(r"\s+", " ", clean_text).strip()
+    if clean_text:
+        try:
+            samples, _ = tts.create(clean_text, voice=voice, speed=speed, lang="en-us")
+            return samples.astype(np.float32)
+        except Exception as exc2:
+            logger.warning("Kokoro attempt 2 failed on normalized text: %s; attempting clause split", exc2)
+
+    # Attempt 3: Clause splitting for long/complex sentences
+    if len(acoustic_text) > 120:
+        parts = [p.strip() for p in re.split(r"[,;—]", acoustic_text) if p.strip()]
+        if len(parts) >= 2:
+            try:
+                sub_samples = []
+                for part in parts:
+                    sam, _ = tts.create(part, voice=voice, speed=speed, lang="en-us")
+                    sub_samples.append(sam.astype(np.float32))
+                    sub_samples.append(np.zeros(int(sr * 0.10), dtype=np.float32))
+                return np.concatenate(sub_samples)
+            except Exception as exc3:
+                logger.error("Kokoro attempt 3 clause split failed: %s", exc3)
+
+    # Hard Failure Gate: Never emit silent dropouts pretending to be valid audio
+    raise RuntimeError(
+        f"Kokoro neural synthesis fatal error on sentence: '{acoustic_text[:60]}...'. "
+        "Audio synthesis halted to prevent silent audio dropouts."
+    )
+
+
 def synthesize_chapter(
     canonical_path: Path,
     analysis_path: Path,
@@ -165,7 +211,7 @@ def synthesize_chapter(
     heading_pause: float = 0.50,
 ) -> Tuple[Path, Path]:
     """
-    Synthesize audio and aligned sentences for a chapter.
+    Synthesize audio and aligned sentences for a chapter with sentence-level checkpointing.
     Returns (aligned_output_path, audio_output_path).
     """
     canonical_path = Path(canonical_path).resolve()
@@ -177,7 +223,7 @@ def synthesize_chapter(
     analysis_data = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.is_file() else []
     analysis_map = {row["id"]: row for row in analysis_data}
 
-    # Checkpoint check
+    # Chapter-level Checkpoint
     if (
         aligned_output_path.is_file()
         and audio_output_path.is_file()
@@ -192,6 +238,10 @@ def synthesize_chapter(
 
     audio_output_path.parent.mkdir(parents=True, exist_ok=True)
     aligned_output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Sentence-level persistent checkpoint cache directory
+    cache_dir = audio_output_path.parent / ".tts_cache" / audio_output_path.stem
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     tts = get_kokoro(model_path, voices_path)
 
@@ -209,44 +259,39 @@ def synthesize_chapter(
 
         words = text.split()
         word_count = len(words)
-        if is_standalone_divider(text):
-            # Decorative divider: 0.5s pure silence without invoking TTS
-            silence_samples = int(sr * 0.50)
-            audio_samples = np.zeros(silence_samples, dtype=np.float32)
-            sent_start = current_sample / sr
-            sent_end = (current_sample + silence_samples) / sr
-            current_sample += silence_samples
-            word_spans = compute_word_spans(text, sent_start, sent_end) if words else []
-        else:
-            acoustic_text = clean_acoustic_text(text)
-            has_alphanumeric = any(c.isalnum() for c in acoustic_text)
 
-            if not has_alphanumeric:
-                # Defensive padding: 0.3s silence for separators/symbols
-                silence_samples = int(sr * 0.30)
+        # Check sentence cache on disk
+        cache_file = cache_dir / f"{cid}.npz"
+        audio_samples = None
+        if cache_file.is_file():
+            try:
+                cached_np = np.load(cache_file)
+                audio_samples = cached_np["samples"]
+            except Exception:
+                audio_samples = None
+
+        if audio_samples is None:
+            if is_standalone_divider(text):
+                # Decorative divider: 0.5s pure silence without invoking TTS
+                silence_samples = int(sr * 0.50)
                 audio_samples = np.zeros(silence_samples, dtype=np.float32)
-                sent_start = current_sample / sr
-                sent_end = (current_sample + silence_samples) / sr
-                current_sample += silence_samples
-                word_spans = compute_word_spans(text, sent_start, sent_end) if words else []
             else:
-                try:
-                    samples, out_sr = tts.create(
-                        acoustic_text,
-                        voice=voice,
-                        speed=speed,
-                        lang="en-us",
-                    )
-                    audio_samples = samples.astype(np.float32)
-                except Exception as exc:
-                    logger.warning("Kokoro failed on %s: %s; falling back to silence", cid, exc)
-                    silence_samples = int(sr * 0.40)
-                    audio_samples = np.zeros(silence_samples, dtype=np.float32)
+                acoustic_text = clean_acoustic_text(text)
+                has_alphanumeric = any(c.isalnum() for c in acoustic_text)
 
-            sent_start = current_sample / sr
-            sent_end = (current_sample + len(audio_samples)) / sr
-            current_sample += len(audio_samples)
-            word_spans = compute_word_spans(text, sent_start, sent_end)
+                if not has_alphanumeric:
+                    # Defensive padding: 0.3s silence for separators/symbols
+                    silence_samples = int(sr * 0.30)
+                    audio_samples = np.zeros(silence_samples, dtype=np.float32)
+                else:
+                    audio_samples = _synthesize_sentence_with_recovery(tts, acoustic_text, voice, speed, sr)
+
+            np.savez_compressed(cache_file, samples=audio_samples)
+
+        sent_start = current_sample / sr
+        sent_end = (current_sample + len(audio_samples)) / sr
+        current_sample += len(audio_samples)
+        word_spans = compute_word_spans(text, sent_start, sent_end) if words else []
 
         pcm_segments.append(audio_samples)
 

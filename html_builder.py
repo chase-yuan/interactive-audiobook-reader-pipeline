@@ -1355,6 +1355,11 @@ function syncPlayback() {
           currentPlayingId = activeUnit.id;
           localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id);
           
+          activeSection.querySelectorAll('.sentence-unit.active').forEach(u => {
+            if (u !== activeUnit) u.classList.remove('active');
+          });
+          activeUnit.classList.add('active');
+
           if (autoScrollEnabled) {
             const rect = activeUnit.getBoundingClientRect();
             const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);

@@ -543,11 +543,18 @@ def build_reader_pipeline(
     author_override: Optional[str] = None,
     open_in_browser: bool = True,
     force_extract: bool = False,
+    llm_model: Optional[str] = None,
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
     if not epub_path.is_file():
         raise FileNotFoundError(f"EPUB file not found: {epub_path}")
+
+    # Configure linguistic LLM provider
+    if llm_model:
+        os.environ["READER_AGY_MODEL"] = llm_model
+    elif os.getenv("DEEPSEEK_API_KEY") and not os.getenv("READER_AGY_MODEL"):
+        os.environ["READER_AGY_MODEL"] = "deepseek"
 
     # Mode determination
     if auto_voice:
@@ -723,6 +730,7 @@ def main():
     parser.add_argument("--author", type=str, default=None, help="Override book author")
     parser.add_argument("--no-browser", action="store_true", help="Do not open HTML in browser upon completion")
     parser.add_argument("--force-extract", action="store_true", help="Force re-extraction of canonical sentences even if already present")
+    parser.add_argument("--llm-model", type=str, default=None, help="LLM model for linguistic analysis (e.g. deepseek, gemini-3.8-flash-high)")
 
     args = parser.parse_args()
     epub_target = args.epub or args.epub_flag
@@ -747,6 +755,7 @@ def main():
         author_override=args.author,
         open_in_browser=not args.no_browser,
         force_extract=args.force_extract,
+        llm_model=args.llm_model,
     )
 
 
