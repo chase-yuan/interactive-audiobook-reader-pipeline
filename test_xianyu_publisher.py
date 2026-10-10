@@ -38,13 +38,15 @@ class TestXianyuPublisher(unittest.TestCase):
         try:
             detail = generate_marketing_copy(meta, tmp_dir)
 
-            # Contract Invariants: Zero Netdisk / Zero Free-trial bounce / Zero Developer-preaching
+            # Contract Invariants: Zero Netdisk / Zero Free-trial bounce / Zero Developer-preaching / Zero Rhetorical questions
             self.assertNotIn("网盘", detail)
             self.assertNotIn("免费试读", detail)
             self.assertNotIn("公开试读", detail)
             self.assertNotIn("为什么做", detail)
             self.assertNotIn("MP3", detail)
             self.assertNotIn("EPUB", detail)
+            self.assertNotIn("你是不是", detail)
+            self.assertNotIn("？", detail)
 
             # High-conversion value propositions present
             self.assertIn("【关于本书 · 内容简介】", detail)
