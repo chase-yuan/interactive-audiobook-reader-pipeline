@@ -227,7 +227,7 @@ def synthesize_chapter(
     analysis_data = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.is_file() else []
     analysis_map = {row["id"]: row for row in analysis_data}
 
-    # Chapter-level Checkpoint
+    # Chapter-level Checkpoint: only accept if it contains validated audio alignment
     if (
         aligned_output_path.is_file()
         and audio_output_path.is_file()
@@ -235,7 +235,14 @@ def synthesize_chapter(
     ):
         try:
             cached_aligned = json.loads(aligned_output_path.read_text(encoding="utf-8"))
-            if len(cached_aligned) == len(canonical_data):
+            if (
+                len(cached_aligned) == len(canonical_data)
+                and all(
+                    item.get("has_audio_match") is True and bool(item.get("word_spans"))
+                    for item in cached_aligned
+                    if not item.get("is_heading")
+                )
+            ):
                 return aligned_output_path, audio_output_path
         except Exception:
             pass
