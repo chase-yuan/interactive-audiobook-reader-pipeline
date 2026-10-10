@@ -6,7 +6,7 @@
 
 ## Context
 
-During the production build of *Beyond Feelings: A Guide to Critical Thinking* and subsequent 5-Lane Grill Red-Team Audit (`grill-report-2026-10-10.md`), several catastrophic systemic defects were uncovered:
+During the production build of *Beyond Feelings: A Guide to Critical Thinking* and subsequent 5-Lane Red-Team Codebase Audit, several catastrophic systemic defects were uncovered:
 1. **Post-Mortem Inverted Quality Gate**: Quality validation (`validate_outputs.py`) executed at Stage 4 *after* Stage 2 LLM translation and Stage 3 Kokoro TTS synthesis. Corrupted text from upstream extraction consumed 1.5–2 hours of high-intensity CPU computation and LLM token budgets before any validation occurred.
 2. **Quality Gate Blindspot**: `validate_outputs.py` categorized multi-boundary sentence splits as non-blocking `diagnostics` and completely ignored trailing line-break hyphens (`[a-zA-Z]-$`), lowercase-initial continuation fragments (`^[a-z]`), and orphan single-word lines. A dataset with 2,648 broken sentences received `release_ready: true`.
 3. **Lossy Print Ingestion & Paragraph Chopping**: Calibre/InDesign PDF-to-EPUB conversion wrapped individual visual print lines in `<p>` tags and hard-split words across lines. `extract_epub.py` treated each `<p>` tag as an isolated semantic block, never stitching broken sentences or de-hyphenating words.

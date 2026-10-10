@@ -13,3 +13,5 @@ __pycache__/
 venv/
 uv.lock
 bin/
+grill-report*.md
+*grill-report*.md
