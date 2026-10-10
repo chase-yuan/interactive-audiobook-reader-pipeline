@@ -73,8 +73,11 @@ def clean_acoustic_text(text: str) -> str:
     t = re.sub(r"~~([^~]+)~~", r"\1", t)
     # 2. Strip bracketed numeric citations: [1], [2, 3], [1-4]
     t = re.sub(r"\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]", "", t)
-    # 3. Strip standalone asterisks and footnote markers: *, **, †, ‡, §, ¶, •, ◦, ▪, ▫, ‣
-    t = re.sub(r"[\*†‡§¶•◦▪▫‣]", "", t)
+    # 2b. Unwrap editorial brackets around words: [Today's] -> Today's
+    t = re.sub(r"\[([^\]]+)\]", r"\1", t)
+    t = re.sub(r"[\[\]]", " ", t)
+    # 3. Strip standalone asterisks and footnote markers: *, **, †, ‡, §, ¶, •, ◦, ▪, ▫, ‣, ~, #, _
+    t = re.sub(r"[\*†‡§¶•◦▪▫‣#~_]", " ", t)
     # 4. Strip markdown heading hashes: e.g. # Chapter 1 -> Chapter 1
     t = re.sub(r"^\s*#+\s*", "", t)
     # 5. Fix spaces before punctuation created by stripping citations
