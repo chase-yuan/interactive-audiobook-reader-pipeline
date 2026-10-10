@@ -11,7 +11,7 @@ from audio_resolver import resolve_chapter_audio
 from acoustic_whisper import ACOUSTIC_PROFILE_VERSION
 from artifact_io import atomic_write_json
 from release_token import issue_release_token
-from content_profile import COMPLETE, TEXT_ONLY, load_content_profile
+from content_profile import COMPLETE, TEXT_ONLY, SYNTHETIC, load_content_profile
 
 MULTI_BOUNDARY = re.compile(r"(?:[.!?][\"'”’)]*|\*)\s+[A-Z]")
 ABBREVIATION_BEFORE_CAPITAL = re.compile(
@@ -95,6 +95,66 @@ def _suspicious_sentence_boundaries(text: str) -> list[str]:
         suspicious.append(match.group(0))
     return suspicious
 
+
+def check_sentence_orthography(text: str, is_heading: bool = False, check_standalone_quotes: bool = False) -> list[str]:
+    """Check a single sentence for physical orthographic defects."""
+    issues = []
+    text_s = text.strip()
+    if not text_s:
+        return ["Empty text content"]
+
+    # 1. Trailing hyphen (broken word split across line ends)
+    if re.search(r"\b[a-zA-Z]+-\s*$", text_s):
+        issues.append("Trailing hyphen at line boundary (chopped word)")
+
+    if not is_heading:
+        # 2. Lowercase start (unmerged sentence fragment)
+        if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
+            issues.append("Sentence starts with lowercase continuation letter")
+
+        # 3. Orphan single word without terminal punctuation
+        words = text_s.split()
+        if len(words) == 1 and not re.search(r"[.!?…”\")\]]$", text_s):
+            issues.append("Orphan word fragment without terminal punctuation")
+
+    if check_standalone_quotes:
+        open_curly = text_s.count("“") - text_s.count("”")
+        if open_curly > 0 or text_s.count('"') % 2 != 0:
+            issues.append("Unclosed quote (unmatched quotation marks)")
+
+    return issues
+
+
+def validate_canonical_sentences(items: list[dict]) -> list[str]:
+    """Validate a list of canonical sentence items against the Shift-Left gate with discourse quote tracking."""
+    errors = []
+    open_curly = 0
+    open_straight = 0
+    open_quote_origin = None
+
+    for idx, item in enumerate(items):
+        item_id = item.get("id", f"item-{idx}")
+        text = item.get("text", "")
+        is_heading = item.get("is_heading", False)
+        item_issues = check_sentence_orthography(text, is_heading=is_heading, check_standalone_quotes=False)
+        for iss in item_issues:
+            errors.append(f"{item_id}: {iss}")
+
+        open_curly += text.count("“") - text.count("”")
+        open_straight = (open_straight + text.count('"')) % 2
+
+        if (text.count("“") > text.count("”") or text.count('"') % 2 == 1) and open_quote_origin is None:
+            open_quote_origin = item_id
+
+        if open_curly <= 0 and open_straight == 0:
+            open_quote_origin = None
+
+    if open_curly > 0 or open_straight > 0:
+        origin = open_quote_origin or (items[-1].get("id") if items else "end")
+        errors.append(f"{origin}: Unclosed quote (unmatched quotation marks at chapter end)")
+
+    return errors
+
 def _chapter_audio_exists(audio_dir: Path, number: int) -> bool:
     """Return true only when the shared resolver finds exactly one candidate."""
     return resolve_chapter_audio(audio_dir, number).status == "ok"
@@ -161,7 +221,7 @@ def _load_review_ledger(book_dir: Path, errors: list[str]) -> dict[tuple[int, st
     return decisions
 
 
-def validate(book_dir: Path, report_path=None, *, require_provenance=False):
+def validate(book_dir: Path, report_path=None, *, require_provenance=False, allowed_chapters=None):
     errors, warnings, diagnostics, chapters = [], [], [], []
     review_ledger = _load_review_ledger(book_dir, errors)
     content_profile = load_content_profile(book_dir, errors)
@@ -191,6 +251,8 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
     for canonical in canonical_files:
         match = re.search(r"ch(\d+)", canonical.name)
         number = int(match.group(1)) if match else None
+        if allowed_chapters is not None and number not in allowed_chapters:
+            continue
         label = f"Ch {number:02d}" if number is not None else canonical.name
         try:
             data = json.loads(canonical.read_text(encoding="utf-8"))
@@ -205,7 +267,10 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
         suspicious = [item.get("id") for item in data if not item.get("is_heading") and _suspicious_sentence_boundaries(item.get("text", "")) and (number, item.get("id")) not in review_ledger]
         if suspicious:
             diagnostics.append(f"{label}: {len(suspicious)} suspicious sentence boundaries ({', '.join(suspicious[:8])})")
-        record = {"chapter": number, "canonical_records": len(data), "suspicious_records": len(suspicious)}
+        ortho_issues = validate_canonical_sentences(data)
+        if ortho_issues:
+            errors.extend([f"{label} {iss}" for iss in ortho_issues])
+        record = {"chapter": number, "canonical_records": len(data), "suspicious_records": len(suspicious), "ortho_issues": len(ortho_issues)}
 
         analysis = book_dir / canonical.name.replace("_canonical_sentences.json", "_full_analysis.json")
         if not analysis.exists():
@@ -244,9 +309,9 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
         chapter_units = content_profile["units_by_chapter"].get(number, [])
         scoped_ids = {sentence_id for unit in chapter_units for sentence_id in unit["sentence_ids"]}
         audio_resolution = resolve_chapter_audio(book_dir / "audio", number) if number is not None else None
-        if number is not None and content_mode not in (COMPLETE, TEXT_ONLY) and not chapter_units:
+        if number is not None and content_mode not in (COMPLETE, TEXT_ONLY, SYNTHETIC) and not chapter_units:
             errors.append(f"{label}: non-complete profile has no declared audio units")
-        if number is not None and content_mode == COMPLETE:
+        if number is not None and content_mode in (COMPLETE, SYNTHETIC):
             if audio_resolution.status == "missing":
                 errors.append(f"{label}: chapter audio file missing")
             elif audio_resolution.status == "ambiguous":
@@ -338,7 +403,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             )
             non_narrated = item.get("alignment_status") == "not-applicable" and item.get("alignment_reason") in {"non_narrated_content", "non_narrated_text", "duplicate_source_fragment", "out_of_scope_reference"}
             out_of_scope = item.get("alignment_reason") == "out_of_scope_reference"
-            if content_mode != COMPLETE and not is_heading:
+            if content_mode not in (COMPLETE, SYNTHETIC) and not is_heading:
                 if item_id in scoped_ids and out_of_scope:
                     errors.append(f"{label} {item_id}: declared playable sentence is marked out of scope")
                 if item_id not in scoped_ids and not out_of_scope:
@@ -423,7 +488,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
                     covered_tokens += min(max(matched, 0), max(source_tokens, 0))
             if not is_heading and not non_narrated and not owner_accepted and (not item.get("has_audio_match", True) or item.get("fallback_used") or item.get("alignment_status") not in {"validated", "reviewed"} or matched < 1 or (ratio < 0.5 and not physically_playable)):
                 review_ids.append(item_id)
-        if content_mode != COMPLETE:
+        if content_mode not in (COMPLETE, SYNTHETIC):
             unknown_scope_ids = scoped_ids - set(ids)
             if unknown_scope_ids:
                 errors.append(f"{label}: profile references unknown sentence IDs ({', '.join(sorted(unknown_scope_ids)[:8])})")
@@ -447,7 +512,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False):
             non_narrated_records > MAX_NON_NARRATED_CHAPTER_COUNT
             or (len(aligned_data) >= 15 and non_narrated_records > 3 and non_narrated_ratio > MAX_NON_NARRATED_CHAPTER_RATIO)
         )
-        if content_mode == COMPLETE and is_excessive_omission:
+        if content_mode in (COMPLETE, SYNTHETIC) and is_excessive_omission:
             errors.append(
                 f"{label}: non-narrated omission ratio {non_narrated_ratio:.1%} "
                 f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {MAX_NON_NARRATED_CHAPTER_COUNT}-sentence release ceiling; "

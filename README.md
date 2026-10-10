@@ -14,7 +14,7 @@
   <a href="https://apple.com"><img src="https://img.shields.io/badge/支持平台-macOS%2013%2B-0f172a?style=flat-square&logo=apple&logoColor=white" alt="Platform"></a>
   <a href="https://apple.com"><img src="https://img.shields.io/badge/硬件架构-Apple%20Silicon%20(M1--M5)-334155?style=flat-square" alt="Hardware"></a>
   <a href="https://github.com/ml-explore/mlx"><img src="https://img.shields.io/badge/声学引擎-Apple%20MLX%20Whisper-0284c7?style=flat-square" alt="Engine"></a>
-  <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/测试矩阵-138%20项全部通过-10b981?style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/测试矩阵-182%20项全部通过-10b981?style=flat-square" alt="Tests"></a>
   <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/发布门禁-密码学校验放行-475569?style=flat-square" alt="Quality Gate"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/开源协议-MIT-64748b?style=flat-square" alt="License"></a>
 </p>
@@ -149,6 +149,14 @@ pip install -e '.[acoustic]'
 python3 universal_runner.py --epub /path/to/book.epub --audio-dir /path/to/mp3s --book-dir ./my_book
 ```
 
+### 模式 3：自主神经语音合成点读书 (`Kokoro TTS`)
+针对无自带商业音频的原版 EPUB，直接调用本地轻量级 82M Kokoro 神经语音合成器，生成广播级自然人声旁白与高保真对齐数据：
+
+```bash
+# 自动生成自然语音并编译完整交互有声书
+python3 universal_runner.py /path/to/book.epub --book-dir ./my_book
+```
+
 ---
 
 ## CLI 全局命令行安装
@@ -191,9 +199,10 @@ my_book_sources/
 ## 生产放行门禁与质量保障体系
 
 本工程在合并和发布任何一本书前，必须通过由 `quality_gate.py` 和 `validate_outputs.py` 构筑的物理门禁：
+- **Stage 1.5 句子级左移质检门禁**：在进入耗时的 LLM 翻译和 TTS 阶段前，前置校验断行连字符、大小写连贯性及引号配对，杜绝脏文本污染下游；
 - **密码学 ReleaseToken**：只有当声学对齐覆盖率 ≥ 95%、无非单调时间戳、无空翻译记录时，系统才颁发基于 SHA-256 绑定的 ReleaseToken；
 - **防篡改与不可伪造**：单文件 HTML 编译期强制校验 ReleaseToken，严禁未经质检通过的半成品进入生产环境；
-- **全量单元测试矩阵**：运行覆盖 138 项断言的完整测试集：
+- **全量单元测试矩阵**：运行覆盖 182 项断言的完整测试集：
 
 ```bash
 python3 -m unittest discover
@@ -203,14 +212,16 @@ python3 -m unittest discover
 
 ## 代码仓库清单
 
-- `universal_runner.py`：主运行入口 (`reader-build`)
-- `extract_epub.py`：EPUB 句子级纯净边界提取器
-- `dynamic_aligner.py`：高精度动态时间规整声学对齐器
+- `universal_runner.py`：主运行入口 (`reader-build`)，支持纯文本、原声对齐与自主 TTS 三大模式
+- `extract_epub.py`：EPUB 句子级纯净边界提取器与段落缝合解连字符引擎
+- `kokoro_synthesizer.py`：本地神经语音合成、音素截断自愈与多线程声学合成器
+- `dynamic_aligner.py`：高精度动态时间规整声学对齐器与前后词边界回溯核查器
 - `html_builder.py`：Apple Books 级单文件静态 HTML 编译器
-- `content_profile.py`：工作模式调度器 (`text_only` vs `complete`)
-- `quality_gate.py`：密码学完整性质量放行门禁
+- `content_profile.py`：工作模式调度器 (`text_only` vs `complete` vs `synthetic`)
+- `quality_gate.py`：密码学完整性质量放行门禁与 Stage 1.5 句子完整性门禁
 - `validate_outputs.py`：产物不变式合规校验器
 - `acoustic_whisper.py`：Apple Silicon MLX Whisper 单词级特征提取器
+- `xianyu_publisher.py`：生产级分发物料生成器、卡密生成器与 Apple 设计规范海报渲染器
 - `demo/sample.epub`：5KB 公版示范 EPUB
 - `docs/images/`：交互流程实机演示 GIF
 - `docs/history/`：技术演进规范与基准报告存档

@@ -135,6 +135,63 @@ def check_acoustic_lead_silence(units_or_html, audio_path, max_lead=0.10, sample
     }
 
 
+def check_audio_physical_integrity(
+    audio_path: Path,
+    expected_duration: float,
+    max_duration_delta: float = 0.25,
+    max_silence_ratio: float = 0.35,
+) -> dict:
+    """Validate that audio file duration matches sentence timeline and is not a silent dummy."""
+    audio_path = Path(audio_path)
+    if not audio_path.is_file():
+        return {"status": "failed", "error": f"audio file not found: {audio_path}"}
+    pcm = decode_audio_to_pcm(str(audio_path), sr=16000)
+    if pcm is None or len(pcm) == 0:
+        return {"status": "failed", "error": f"cannot decode PCM from {audio_path}"}
+
+    audio_dur = len(pcm) / 16000.0
+    delta = abs(audio_dur - expected_duration)
+    if delta > max_duration_delta:
+        return {
+            "status": "failed",
+            "error": f"Audio duration ({audio_dur:.2f}s) deviates from timeline end ({expected_duration:.2f}s) by {delta:.2f}s (max allowed {max_duration_delta:.2f}s)",
+            "audio_duration": round(audio_dur, 3),
+            "expected_duration": round(expected_duration, 3),
+            "delta": round(delta, 3),
+        }
+
+    frame_len = int(16000 * 0.05)
+    total_frames = len(pcm) // frame_len
+    if total_frames > 0:
+        try:
+            import numpy as np
+            trimmed = pcm[:total_frames * frame_len].reshape(-1, frame_len).astype(np.float32)
+            rms = np.sqrt(np.mean(trimmed ** 2, axis=1))
+            # Calibrated dBFS relative to full scale: 20 * log10(rms / 32768.0)
+            rms_db = 20.0 * np.log10(np.maximum(rms, 1e-5) / 32768.0)
+            silent_count = int(np.sum(rms_db < -45.0))
+            silence_ratio = silent_count / total_frames
+        except Exception:
+            silence_ratio = 0.0
+
+        if silence_ratio > max_silence_ratio:
+            return {
+                "status": "failed",
+                "error": f"Audio silence ratio ({silence_ratio:.1%}) exceeds maximum threshold ({max_silence_ratio:.0%})",
+                "silence_ratio": round(silence_ratio, 3),
+            }
+    else:
+        silence_ratio = 0.0
+
+    return {
+        "status": "passed",
+        "audio_duration": round(audio_dur, 3),
+        "expected_duration": round(expected_duration, 3),
+        "delta": round(delta, 3),
+        "silence_ratio": round(silence_ratio, 3),
+    }
+
+
 def smoke_check_html(html_path: Path, expected_chapters=None, audio_path=None):
     """Check the static reader contract without pretending to be a real browser."""
     html_path = Path(html_path)

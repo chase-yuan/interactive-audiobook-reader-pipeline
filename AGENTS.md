@@ -19,7 +19,8 @@
 | **New EPUB -> Text Reader** | `python3 universal_runner.py /path/to/book.epub --text-only --concurrency 8` |
 | **New EPUB + Audio -> Audiobook** | `python3 universal_runner.py /path/to/book.epub --audio-dir /path/to/audio --concurrency 8` |
 | **Directory -> Full Chunked Release** | `python3 pipeline.py --book-dir /path/to/book_dir --publish` |
-| **Run Pipeline Test Suite** | `python3 -m unittest test_release_gate.py test_html_builder.py test_design_tokens.py` |
+| **Generate Xianyu Marketing Kit** | `python3 xianyu_publisher.py <book_id>` |
+| **Run Pipeline Test Suite** | `python3 -m unittest test_release_gate.py test_html_builder.py test_design_tokens.py test_shift_left_sentence_gate.py test_xianyu_publisher.py` |
 
 ---
 
@@ -30,3 +31,4 @@
 - `intake_reconciler.py`: EPUB chapter parser and metadata extractor.
 - `quality_gate.py`: Quality validation, acoustic coverage thresholds, and release report verification.
 - `publisher.py` / `local_publisher.py`: Chunked deployer, R2 uploader, and release sealer.
+- `xianyu_publisher.py`: Cloud-native Xianyu marketing copy and 1:1 Apple-Design WebKit poster generator.

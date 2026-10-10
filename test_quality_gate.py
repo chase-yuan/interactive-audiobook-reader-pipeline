@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from quality_gate import smoke_check_html
+from quality_gate import smoke_check_html, check_audio_physical_integrity
 
 
 class QualityGateSmokeTests(unittest.TestCase):
@@ -88,6 +88,52 @@ function syncPlayback() {{}}
             result = smoke_check_html(path, expected_chapters=1)
             self.assertEqual(result["status"], "failed")
             self.assertTrue(any("duplicate word start timestamp" in err for err in result["errors"]))
+
+    def test_check_audio_physical_integrity(self):
+        import shutil
+        import subprocess
+        try:
+            import numpy as np
+        except ImportError:
+            self.skipTest("numpy not installed in environment")
+
+        ffmpeg_bin = shutil.which("ffmpeg") or ("/opt/homebrew/bin/ffmpeg" if Path("/opt/homebrew/bin/ffmpeg").exists() else None)
+        if not ffmpeg_bin:
+            self.skipTest("ffmpeg not available in environment")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            audio_path = tmp_path / "test.mp3"
+            # Generate a 2.0s sine wave audio (440Hz)
+            sr = 16000
+            t = np.linspace(0, 2.0, int(sr * 2.0), endpoint=False)
+            sine = (np.sin(2 * np.pi * 440 * t) * 10000).astype(np.int16)
+            cmd = [
+                ffmpeg_bin, "-y", "-f", "s16le", "-ar", "16000", "-ac", "1",
+                "-i", "pipe:0", "-b:a", "128k", str(audio_path)
+            ]
+            subprocess.run(cmd, input=sine.tobytes(), check=True, capture_output=True)
+
+            # Test 1: Duration matches -> passed
+            res = check_audio_physical_integrity(audio_path, expected_duration=2.0, max_duration_delta=0.15)
+            self.assertEqual(res["status"], "passed", res)
+
+            # Test 2: Duration mismatch -> failed
+            res_bad_dur = check_audio_physical_integrity(audio_path, expected_duration=5.0, max_duration_delta=0.15)
+            self.assertEqual(res_bad_dur["status"], "failed")
+            self.assertIn("deviates from timeline end", res_bad_dur["error"])
+
+            # Test 3: Excessive silence -> failed
+            silence_path = tmp_path / "silence.mp3"
+            silence = np.zeros(int(sr * 2.0), dtype=np.int16)
+            cmd_silence = [
+                "/opt/homebrew/bin/ffmpeg", "-y", "-f", "s16le", "-ar", "16000", "-ac", "1",
+                "-i", "pipe:0", "-b:a", "128k", str(silence_path)
+            ]
+            subprocess.run(cmd_silence, input=silence.tobytes(), check=True, capture_output=True)
+            res_silent = check_audio_physical_integrity(silence_path, expected_duration=2.0, max_silence_ratio=0.30)
+            self.assertEqual(res_silent["status"], "failed")
+            self.assertIn("silence ratio", res_silent["error"])
 
 
 if __name__ == "__main__":

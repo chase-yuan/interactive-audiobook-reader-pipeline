@@ -35,10 +35,11 @@ sys.path.insert(0, str(PIPELINE_DIR))
 from intake_reconciler import parse_epub
 from extract_epub import extract_chapter_from_epub
 from agy_linguistic_worker import process_canonical_sentences, PROMPT_PATH, verify_analysis
-from validate_outputs import validate
+from validate_outputs import validate, validate_canonical_sentences
 from release_token import issue_release_token
 from html_builder import build_master_reader
-from quality_gate import smoke_check_html
+from quality_gate import smoke_check_html, check_audio_physical_integrity
+from kokoro_synthesizer import synthesize_chapter
 from artifact_io import atomic_write_json, atomic_write_text
 
 DEFAULT_EXCLUDE_PATTERNS = [
@@ -199,24 +200,25 @@ def setup_book_directory(
         "audio_content_mode": mode
     })
 
-    # Write chapter_metadata.json
-    metadata_rows = []
-    for item in chapters_meta:
-        row = {
-            "chapter": item["num"],
-            "role": item["role"],
-            "title": item["title"],
-            "label": item["label"],
-        }
-        if item.get("display_number") is not None:
-            row["display_number"] = item["display_number"]
-        metadata_rows.append(row)
-
+    # Write chapter_metadata.json if not present
     metadata_path = book_dir / "chapter_metadata.json"
-    atomic_write_json(metadata_path, {
-        "schema_version": 1,
-        "chapters": metadata_rows
-    })
+    if not metadata_path.exists():
+        metadata_rows = []
+        for item in chapters_meta:
+            row = {
+                "chapter": item["num"],
+                "role": item["role"],
+                "title": item["title"],
+                "label": item["label"],
+            }
+            if item.get("display_number") is not None:
+                row["display_number"] = item["display_number"]
+            metadata_rows.append(row)
+
+        atomic_write_json(metadata_path, {
+            "schema_version": 1,
+            "chapters": metadata_rows
+        })
 
 
 def extract_chapters_sentences(
@@ -224,16 +226,59 @@ def extract_chapters_sentences(
     epub_path: Path,
     chapters_meta: List[Dict[str, Any]],
     prefix: str,
+    force: bool = False,
 ) -> None:
     print(f"\n=== [Stage 1: EPUB Sentence Extraction ({len(chapters_meta)} tracks)] ===", flush=True)
     for item in chapters_meta:
         num = item["num"]
         href = item["href"]
         can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
-        if can_path.is_file() and can_path.stat().st_size > 50:
+        if not force and can_path.is_file() and can_path.stat().st_size > 50:
             continue
         extract_chapter_from_epub(str(epub_path), href, str(can_path))
     print("[Stage 1] Sentence extraction completed.")
+
+
+def validate_extracted_sentences_gate(
+    book_dir: Path,
+    chapters_meta: List[Dict[str, Any]],
+    prefix: str,
+) -> None:
+    print(f"\n=== [Stage 1.5: Shift-Left Sentence Quality Gate ({len(chapters_meta)} tracks)] ===", flush=True)
+    all_gate_failures = []
+    total_sentences = 0
+    for item in chapters_meta:
+        num = item["num"]
+        label = item["label"]
+        can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
+        if not can_path.is_file():
+            all_gate_failures.append(f"Track {num:02d} ({label}): canonical sentences file missing: {can_path}")
+            continue
+        try:
+            data = json.loads(can_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            all_gate_failures.append(f"Track {num:02d} ({label}): invalid JSON ({exc})")
+            continue
+        total_sentences += len(data)
+        issues = validate_canonical_sentences(data)
+        if issues:
+            for iss in issues[:10]:
+                all_gate_failures.append(f"Track {num:02d} ({label}) {iss}")
+            if len(issues) > 10:
+                all_gate_failures.append(f"Track {num:02d} ({label}): ... and {len(issues) - 10} more sentence defects")
+
+    if all_gate_failures:
+        print("\n[CRITICAL FAILURE] Shift-Left Sentence Gate BLOCKED pipeline execution:", file=sys.stderr)
+        for fail in all_gate_failures[:25]:
+            print(f"  ❌ {fail}", file=sys.stderr)
+        if len(all_gate_failures) > 25:
+            print(f"  ... and {len(all_gate_failures) - 25} additional defects.", file=sys.stderr)
+        raise RuntimeError(
+            f"Stage 1.5 Shift-Left Sentence Gate failed with {len(all_gate_failures)} defects. "
+            "Downstream linguistic analysis and neural audio synthesis have been HALTED to prevent compute waste."
+        )
+
+    print(f"[Stage 1.5] Shift-Left Sentence Quality Gate PASSED: 100% verified across {total_sentences} sentences in {len(chapters_meta)} tracks.")
 
 
 def process_linguistics_track(
@@ -264,7 +309,7 @@ def process_linguistics_track(
             cwd=book_dir,
             chunk_size=40,
             timeout=3600,
-            max_batch_attempts=3,
+            max_batch_attempts=5,
             max_workers=max_workers_per_chapter,
         )
         atomic_write_json(ana_path, analyzed_data)
@@ -281,8 +326,9 @@ def run_parallel_linguistic_analysis(
     chapters_meta: List[Dict[str, Any]],
     prefix: str,
     concurrency: int = 8,
+    max_workers_per_chapter: int = 4,
 ) -> None:
-    print(f"\n=== [Stage 2: High-Throughput Linguistic Analysis ({concurrency} parallel workers)] ===", flush=True)
+    print(f"\n=== [Stage 2: High-Throughput Linguistic Analysis ({concurrency} parallel chapters, {max_workers_per_chapter} workers/chapter)] ===", flush=True)
     base_prompt = PROMPT_PATH.read_text(encoding="utf-8")
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -294,7 +340,7 @@ def run_parallel_linguistic_analysis(
                 prefix,
                 book_dir,
                 base_prompt,
-                1,
+                max_workers_per_chapter,
             ): item
             for item in chapters_meta
         }
@@ -343,6 +389,63 @@ def synthesize_text_only_aligned_sentences(
     print("[Stage 3] Aligned sentences synthesized.")
 
 
+def synthesize_synthetic_voice_chapters(
+    book_dir: Path,
+    chapters_meta: List[Dict[str, Any]],
+    prefix: str,
+    voice: str = "am_adam",
+    speed: float = 1.0,
+    concurrency: int = 3,
+) -> None:
+    print(f"\n=== [Stage 3: Kokoro Neural Voice Synthesis (voice={voice}, speed={speed}x)] ===", flush=True)
+    audio_dir = book_dir / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    def _synth_track(item: Dict[str, Any]) -> bool:
+        num = item["num"]
+        label = item["label"]
+        can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
+        ana_path = book_dir / f"{prefix}_ch{num:02d}_full_analysis.json"
+        alg_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
+        mp3_path = audio_dir / f"chapter_{num:02d}.mp3"
+
+        if not can_path.is_file():
+            print(f"[TTS ERROR] Track {num:02d} missing canonical: {can_path}", file=sys.stderr)
+            return False
+
+        t0 = time.time()
+        print(f"[TTS] Synthesizing Track {num:02d} ({label})...", flush=True)
+        try:
+            synthesize_chapter(
+                canonical_path=can_path,
+                analysis_path=ana_path,
+                aligned_output_path=alg_path,
+                audio_output_path=mp3_path,
+                voice=voice,
+                speed=speed,
+            )
+            elapsed = time.time() - t0
+            print(f"[TTS] Track {num:02d} complete in {elapsed:.1f}s -> {mp3_path.name}", flush=True)
+            return True
+        except Exception as exc:
+            print(f"[TTS ERROR] Track {num:02d} failed: {exc}", file=sys.stderr, flush=True)
+            return False
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = {executor.submit(_synth_track, item): item for item in chapters_meta}
+        try:
+            for f in as_completed(futures):
+                item = futures[f]
+                ok = f.result()
+                if not ok:
+                    raise RuntimeError(f"TTS synthesis failed on track {item['num']:02d} ({item['label']})")
+        except Exception:
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+
+    print("[Stage 3] Kokoro neural voice synthesis completed.")
+
+
 def build_and_verify_reader(
     book_dir: Path,
     chapters_meta: List[Dict[str, Any]],
@@ -356,7 +459,8 @@ def build_and_verify_reader(
 ) -> Path:
     print(f"\n=== [Stage 4: Quality Gate & Release Validation] ===", flush=True)
     rep_path = book_dir / "reader_validation_report.json"
-    code = validate(book_dir, rep_path)
+    allowed_ch = {item["num"] for item in chapters_meta}
+    code = validate(book_dir, rep_path, allowed_chapters=allowed_ch)
     if code != 0:
         raise RuntimeError(f"Validation report failed quality gate (exit code {code})")
     report = json.loads(rep_path.read_text(encoding="utf-8"))
@@ -364,7 +468,7 @@ def build_and_verify_reader(
     print(f"[Stage 4] ReleaseToken issued: nonce={token.nonce[:16]}... (report sha256: {token.report_sha256[:10]}...)")
 
     print(f"\n=== [Stage 5: Master Interactive Reader Compilation] ===", flush=True)
-    existing_readers = sorted(book_dir.glob("*_Interactive_Reader.html"))
+    existing_readers = sorted([p for p in book_dir.glob("*_Interactive_Reader.html") if not p.is_symlink()])
     if existing_readers:
         out_html = existing_readers[0]
     else:
@@ -376,10 +480,10 @@ def build_and_verify_reader(
         aligned_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
 
         audio_src = ""
-        if mode == "complete" and audio_dir:
+        if mode in ("complete", "synthetic") and audio_dir:
             audio_candidate = audio_dir / f"chapter_{num:02d}.mp3"
             if audio_candidate.exists():
-                audio_src = f"./audio/{audio_candidate.name}"
+                audio_src = f"./audio/{audio_candidate.name}?v={int(audio_candidate.stat().st_mtime)}"
 
         cfg = {
             "num": num,
@@ -404,7 +508,7 @@ def build_and_verify_reader(
         book_id=slug_id,
     )
 
-    print(f"\n=== [Stage 6: Static Smoke Check] ===", flush=True)
+    print(f"\n=== [Stage 6: Static Smoke Check & Audio Probes] ===", flush=True)
     smoke = smoke_check_html(out_html, expected_chapters=len(chapters_meta))
     if smoke["status"] != "passed":
         raise RuntimeError(f"HTML smoke check failed: {smoke['errors']}")
@@ -412,6 +516,20 @@ def build_and_verify_reader(
         f"[Stage 6] Smoke check passed: 100% compliant "
         f"({smoke['chapter_count']} chapters, {out_html.stat().st_size:,} bytes)"
     )
+
+    if mode == "synthetic" and audio_dir:
+        for item in chapters_meta:
+            num = item["num"]
+            c_mp3 = audio_dir / f"chapter_{num:02d}.mp3"
+            c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
+            if c_mp3.is_file() and c_alg.is_file():
+                alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
+                last_end = alg_data[-1]["end"] if alg_data else 0.0
+                probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=0.45)
+                if probe["status"] != "passed":
+                    raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
+        print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
+
     return out_html
 
 
@@ -420,6 +538,8 @@ def build_reader_pipeline(
     book_dir: Optional[Path] = None,
     audio_dir: Optional[Path] = None,
     text_only: bool = False,
+    auto_voice: Optional[str] = None,
+    voice_speed: float = 1.0,
     concurrency: int = 8,
     min_chars: int = 300,
     exclude_patterns: Optional[List[str]] = None,
@@ -428,14 +548,28 @@ def build_reader_pipeline(
     subtitle_override: Optional[str] = None,
     author_override: Optional[str] = None,
     open_in_browser: bool = True,
+    force_extract: bool = False,
+    llm_model: Optional[str] = None,
+    chapters_filter: Optional[List[int]] = None,
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
     if not epub_path.is_file():
         raise FileNotFoundError(f"EPUB file not found: {epub_path}")
 
+    # Configure linguistic LLM provider
+    if llm_model:
+        os.environ["READER_AGY_MODEL"] = llm_model
+    elif os.getenv("DEEPSEEK_API_KEY") and not os.getenv("READER_AGY_MODEL"):
+        os.environ["READER_AGY_MODEL"] = "deepseek"
+
     # Mode determination
-    mode = "text_only" if (text_only or not audio_dir) else "complete"
+    if auto_voice:
+        mode = "synthetic"
+    elif text_only or not audio_dir:
+        mode = "text_only"
+    else:
+        mode = "complete"
 
     # Discover metadata and chapters
     raw_meta, raw_chapters, cover_member = discover_epub_chapters(
@@ -446,7 +580,10 @@ def build_reader_pipeline(
 
     title = title_override or raw_meta.get("title") or epub_path.stem
     author = author_override or raw_meta.get("creator") or "Unknown Author"
-    subtitle = subtitle_override or ("Bilingual Interactive Reader" if mode == "text_only" else "Bilingual Synchronized Reader")
+    subtitle = subtitle_override or (
+        "Bilingual Synchronized Audiobook" if mode == "synthetic"
+        else ("Bilingual Interactive Reader" if mode == "text_only" else "Bilingual Synchronized Reader")
+    )
     slug_id = sanitize_slug(title).replace("_", "-")
 
     # Set up book directory
@@ -456,6 +593,8 @@ def build_reader_pipeline(
         target_dir = book_dir.expanduser().resolve()
 
     target_dir.mkdir(parents=True, exist_ok=True)
+    if mode == "synthetic":
+        audio_dir = target_dir / "audio"
 
     # Determine chapter metadata
     metadata_file = target_dir / "chapter_metadata.json"
@@ -514,6 +653,11 @@ def build_reader_pipeline(
     if not chapters_meta:
         raise ValueError("No chapters selected for build")
 
+    if chapters_filter is not None:
+        chapters_meta = [c for c in chapters_meta if c["num"] in chapters_filter]
+        if not chapters_meta:
+            raise ValueError(f"No chapters matched filter: {chapters_filter}")
+
     # Determine filename prefix
     prefix = detect_book_prefix(target_dir, sanitize_slug(title))
 
@@ -529,11 +673,25 @@ def build_reader_pipeline(
     print(f"Concurrency:     {concurrency} parallel workers\n")
 
     setup_book_directory(target_dir, epub_path, chapters_meta, cover_member, mode=mode)
-    extract_chapters_sentences(target_dir, epub_path, chapters_meta, prefix)
-    run_parallel_linguistic_analysis(target_dir, chapters_meta, prefix, concurrency=concurrency)
+    extract_chapters_sentences(target_dir, epub_path, chapters_meta, prefix, force=force_extract)
+    validate_extracted_sentences_gate(target_dir, chapters_meta, prefix)
+    model_name = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
+    workers_per_ch = 4 if model_name == "deepseek" else 2
+    run_parallel_linguistic_analysis(
+        target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
+    )
 
     if mode == "text_only":
         synthesize_text_only_aligned_sentences(target_dir, chapters_meta, prefix)
+    elif mode == "synthetic":
+        synthesize_synthetic_voice_chapters(
+            book_dir=target_dir,
+            chapters_meta=chapters_meta,
+            prefix=prefix,
+            voice=auto_voice,
+            speed=voice_speed,
+            concurrency=min(concurrency, 4),
+        )
     else:
         raise NotImplementedError("Complete audio mode integration requires audio tracks in audio_dir")
 
@@ -577,6 +735,8 @@ def main():
     parser.add_argument("--book-dir", type=str, default=None, help="Destination directory for book artifacts")
     parser.add_argument("--audio-dir", type=str, default=None, help="Directory containing audio tracks")
     parser.add_argument("--text-only", action="store_true", help="Force text-only interactive reader mode")
+    parser.add_argument("--auto-voice", type=str, default=None, help="Automatically synthesize chapter audio with Kokoro voice (e.g. am_adam)")
+    parser.add_argument("--voice-speed", type=float, default=1.0, help="Speech rate multiplier for auto-voice (default: 1.0)")
     parser.add_argument("--concurrency", "-c", "--workers", type=int, default=8, help="Max parallel workers for linguistic analysis")
     parser.add_argument("--min-chars", type=int, default=300, help="Minimum character length for auto-detected chapters")
     parser.add_argument("--exclude", type=str, default=None, help="Comma-separated patterns to exclude in spine hrefs")
@@ -585,6 +745,9 @@ def main():
     parser.add_argument("--subtitle", type=str, default=None, help="Override book subtitle")
     parser.add_argument("--author", type=str, default=None, help="Override book author")
     parser.add_argument("--no-browser", action="store_true", help="Do not open HTML in browser upon completion")
+    parser.add_argument("--force-extract", action="store_true", help="Force re-extraction of canonical sentences even if already present")
+    parser.add_argument("--chapters", type=str, default=None, help="Comma-separated track numbers to build (e.g. 0,1,2)")
+    parser.add_argument("--llm-model", type=str, default=None, help="LLM model for linguistic analysis (e.g. deepseek, gemini-3.8-flash-high)")
 
     args = parser.parse_args()
     epub_target = args.epub or args.epub_flag
@@ -592,12 +755,15 @@ def main():
         parser.error("EPUB path is required (positional or --epub)")
 
     exclude_patterns = [p.strip() for p in args.exclude.split(",")] if args.exclude else None
+    chapters_filter = [int(x.strip()) for x in args.chapters.split(",") if x.strip()] if args.chapters else None
 
     build_reader_pipeline(
         epub_path=Path(epub_target),
         book_dir=Path(args.book_dir) if args.book_dir else None,
         audio_dir=Path(args.audio_dir) if args.audio_dir else None,
         text_only=args.text_only,
+        auto_voice=args.auto_voice,
+        voice_speed=args.voice_speed,
         concurrency=args.concurrency,
         min_chars=args.min_chars,
         exclude_patterns=exclude_patterns,
@@ -606,6 +772,9 @@ def main():
         subtitle_override=args.subtitle,
         author_override=args.author,
         open_in_browser=not args.no_browser,
+        force_extract=args.force_extract,
+        llm_model=args.llm_model,
+        chapters_filter=chapters_filter,
     )
 
 

@@ -12,7 +12,8 @@ COMPLETE = "complete"
 ABRIDGED = "abridged"
 COURSE = "course"
 TEXT_ONLY = "text_only"
-VALID_MODES = {COMPLETE, ABRIDGED, COURSE, TEXT_ONLY}
+SYNTHETIC = "synthetic"
+VALID_MODES = {COMPLETE, ABRIDGED, COURSE, TEXT_ONLY, SYNTHETIC}
 
 
 def _sha256(path: Path) -> str:
@@ -40,7 +41,7 @@ def load_content_profile(book_dir: Path, errors: list[str]) -> dict:
     if mode not in VALID_MODES:
         errors.append(f"{PROFILE_FILENAME}: invalid audio_content_mode")
         return {"audio_content_mode": None, "units_by_chapter": {}, "profile_sha256": _sha256(path)}
-    if mode in (COMPLETE, TEXT_ONLY):
+    if mode in (COMPLETE, TEXT_ONLY, SYNTHETIC):
         return {"audio_content_mode": mode, "units_by_chapter": {}, "profile_sha256": _sha256(path)}
     spoken = raw.get("spoken_source")
     if not isinstance(spoken, dict) or not isinstance(spoken.get("path"), str) or not isinstance(spoken.get("sha256"), str):

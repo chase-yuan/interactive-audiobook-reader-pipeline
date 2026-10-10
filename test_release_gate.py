@@ -178,8 +178,8 @@ class ReleaseGateTests(unittest.TestCase):
             (root / "audio").mkdir()
             (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
             sentences = [
-                {"id": "s-1", "text": "first exact phrase", "trans": "第一个准确短语", "vocab": []},
-                {"id": "s-2", "text": "second exact phrase", "trans": "第二个准确短语", "vocab": []},
+                {"id": "s-1", "text": "First exact phrase.", "trans": "第一个准确短语", "vocab": []},
+                {"id": "s-2", "text": "Second exact phrase.", "trans": "第二个准确短语", "vocab": []},
             ]
             analysis_path = root / "book_ch01_full_analysis.json"
             analysis_path.write_text(json.dumps(sentences), encoding="utf-8")
@@ -374,6 +374,37 @@ class ReleaseGateTests(unittest.TestCase):
             report = json.loads(rep_path.read_text(encoding="utf-8"))
             self.assertFalse(report["release_ready"])
             self.assertTrue(any("sentence overlap detected" in err for err in report["errors"]))
+
+    def test_allowed_chapters_filters_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+            # Chapter 1 valid
+            c1 = [{"id": "s-1", "text": "First sentence."}]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = [{
+                **a1[0], "word_spans": [{"word": "First", "start": 0.0, "end": 1.0, "timing_source": "observed"}],
+                "raw_start": 0.0, "raw_end": 1.0, "has_audio_match": True,
+                "fallback_used": False, "alignment_status": "validated", "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+            }]
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            # Chapter 2 has canonical but no audio file
+            c2 = [{"id": "s-2", "text": "Second sentence."}]
+            (root / f"book_ch02_canonical_sentences.json").write_text(json.dumps(c2), encoding="utf-8")
+
+            # Full validation without filter should fail due to missing Chapter 2 analysis/audio
+            self.assertNotEqual(validate(root), 0)
+
+            # Validation scoped to allowed_chapters={1} should pass
+            rep_path = root / "report.json"
+            self.assertEqual(validate(root, rep_path, allowed_chapters={1}), 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+            self.assertEqual(len(rep["chapters"]), 1)
+            self.assertEqual(rep["chapters"][0]["chapter"], 1)
 
 
 if __name__ == "__main__":

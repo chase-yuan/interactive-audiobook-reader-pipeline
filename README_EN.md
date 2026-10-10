@@ -13,7 +13,7 @@
   <a href="https://apple.com"><img src="https://img.shields.io/badge/Platform-macOS%2013%2B-0f172a?style=flat-square&logo=apple&logoColor=white" alt="Platform"></a>
   <a href="https://apple.com"><img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(M1--M5)-334155?style=flat-square" alt="Hardware"></a>
   <a href="https://github.com/ml-explore/mlx"><img src="https://img.shields.io/badge/Engine-Apple%20MLX%20Whisper-0284c7?style=flat-square" alt="Engine"></a>
-  <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/Tests-138%20Passed-10b981?style=flat-square" alt="Tests"></a>
+  <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/Tests-182%20Passed-10b981?style=flat-square" alt="Tests"></a>
   <a href="https://github.com/chase-yuan/interactive-audiobook-reader-pipeline"><img src="https://img.shields.io/badge/Gate-Cryptographic%20Verified-475569?style=flat-square" alt="Quality Gate"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-64748b?style=flat-square" alt="License"></a>
 </p>
@@ -142,6 +142,14 @@ pip install -e '.[acoustic]'
 python3 universal_runner.py --epub /path/to/book.epub --audio-dir /path/to/mp3s --book-dir ./my_book
 ```
 
+### Mode 3: Autonomous Neural Voice Synthesis Reader (`Kokoro TTS`)
+For standard EPUBs without studio audio recordings, synthesize high-fidelity natural narration directly on Apple Silicon with 82M Kokoro ONNX neural speech:
+
+```bash
+# Automatically synthesize audio and build interactive reader
+python3 universal_runner.py /path/to/book.epub --book-dir ./my_book
+```
+
 ---
 
 ## Installation
@@ -183,14 +191,16 @@ Tracks are aligned by numerical prefix or spine ID, guaranteeing monotonic audio
 
 ## Repository Structure
 
-- `universal_runner.py`: Primary CLI entrypoint (`reader-build`)
-- `extract_epub.py`: EPUB sentence boundary extractor
-- `dynamic_aligner.py`: High-precision word-level acoustic aligner
+- `universal_runner.py`: Primary universal CLI entrypoint (`reader-build`) supporting text-only, studio audio, and synthetic TTS
+- `extract_epub.py`: EPUB sentence boundary extractor and de-hyphenating paragraph stitcher
+- `kokoro_synthesizer.py`: Local neural TTS synthesis with phoneme-overflow recovery and multi-threaded worker pooling
+- `dynamic_aligner.py`: High-precision word-level acoustic aligner and backward token inspection engine
 - `html_builder.py`: Standalone Apple Books HTML compiler
-- `content_profile.py`: Mode router (`text_only` vs `complete` audio)
-- `quality_gate.py`: Cryptographic release gate and smoke tester
+- `content_profile.py`: Mode router (`text_only` vs `complete` vs `synthetic`)
+- `quality_gate.py`: Cryptographic release gate and Stage 1.5 Shift-Left Sentence Integrity Gate
 - `validate_outputs.py`: Invariant validator for publication
 - `acoustic_whisper.py`: Apple Silicon MLX Whisper extractor
+- `xianyu_publisher.py`: Automated marketing package generator, passkey licensing, and Apple-design WebKit poster renderer
 - `demo/sample.epub`: Public-domain demo EPUB
 - `docs/images/`: Visual assets and interactive flow demonstrations
 - `docs/history/`: Historical milestone specifications and benchmarks
@@ -201,7 +211,7 @@ Tracks are aligned by numerical prefix or spine ID, guaranteeing monotonic audio
 
 ## Verification Matrix
 
-Execute the comprehensive test matrix (138 assertions covering extraction, alignment, and packaging):
+Execute the comprehensive test matrix (182 assertions covering extraction, alignment, synthesis, and packaging):
 
 ```bash
 python3 -m unittest discover

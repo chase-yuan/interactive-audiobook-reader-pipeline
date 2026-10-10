@@ -132,6 +132,80 @@ class ChapterParser(HTMLParser):
         if self.stack and not self.ignored_tags:
             self.stack[-1][2].append(data)
 
+
+def clean_and_merge_elements(elements):
+    """
+    Clean and merge adjacent block elements:
+    1. Reconnect words broken by trailing hyphens across elements:
+       e.g. '...oversimplifi-' + 'cation...' -> '...oversimplification...'
+    2. Merge lines that do not end with terminal punctuation ([.!?…”"’)]):
+       soft line wraps in print editions.
+    3. Drop duplicate consecutive identical headers/footers.
+    """
+    if not elements:
+        return []
+
+    # Step 1: Filter out duplicate consecutive identical text (running headers/footers)
+    deduped = []
+    prev_txt = None
+    for el in elements:
+        txt = el.get("text", "").strip()
+        if not txt:
+            continue
+        if txt == prev_txt and len(txt) < 100:
+            continue
+        deduped.append(dict(el))
+        prev_txt = txt
+
+    if not deduped:
+        return []
+
+    # Step 2: Merge elements
+    merged = []
+    curr = deduped[0]
+
+    for next_el in deduped[1:]:
+        curr_tag = curr.get("tag", "p")
+        next_tag = next_el.get("tag", "p")
+        curr_txt = curr.get("text", "").strip()
+        next_txt = next_el.get("text", "").strip()
+
+        is_curr_heading = curr_tag.startswith("h")
+        is_next_heading = next_tag.startswith("h")
+
+        # Never merge headings with non-headings
+        if is_curr_heading or is_next_heading:
+            merged.append(curr)
+            curr = next_el
+            continue
+
+        # Case A: Trailing hyphen at the end of curr_txt: e.g. "oversimplifi-"
+        if re.search(r"\b[a-zA-Z]+-\s*$", curr_txt):
+            base = re.sub(r"-\s*$", "", curr_txt)
+            curr["text"] = base + next_txt
+            continue
+
+        # Case B: next_txt starts with lowercase (unmerged sentence continuation)
+        next_starts_lower = bool(re.match(r"^\s*[\"“‘'(\[]*[a-z]", next_txt))
+
+        # Case C: Check if curr_txt is a title or header
+        is_title = (
+            curr_txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction "))
+            or (len(curr_txt.split()) <= 8 and (curr_txt.istitle() or curr_txt.isupper()))
+        )
+
+        curr_has_terminal = bool(re.search(r"[.!?…”\"’)]$", curr_txt))
+
+        if next_starts_lower or (not curr_has_terminal and not is_title):
+            curr["text"] = curr_txt + " " + next_txt
+        else:
+            merged.append(curr)
+            curr = next_el
+
+    merged.append(curr)
+    return merged
+
+
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     with zipfile.ZipFile(epub_path, 'r') as z:
         raw_html = z.read(chapter_internal_path).decode('utf-8')
@@ -139,9 +213,11 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     parser = ChapterParser()
     parser.feed(raw_html)
     
+    cleaned_elements = clean_and_merge_elements(parser.elements)
+    
     canonical_items = []
     s_idx = 0
-    for elem_idx, el in enumerate(parser.elements):
+    for elem_idx, el in enumerate(cleaned_elements):
         tag = el['tag']
         txt = el['text']
         is_h = tag.startswith('h')
