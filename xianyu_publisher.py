@@ -36,16 +36,16 @@ CANONICAL_CHINESE_TITLES: Dict[str, str] = {
     "beyond-feelings": "超越感觉",
     "48-laws": "权力的48条法则",
     "elon-musk": "埃隆·马斯克传",
-    "range": "胜者思维：通才的崛起",
+    "range": "胜者思维",
     "the-housemaid": "女佣的秘密",
-    "confidence-game": "信任博弈：骗局的艺术",
+    "confidence-game": "信任博弈",
     "influence": "影响力",
-    "story": "故事：剧作原理与结构",
+    "story": "故事原理",
     "denationalisation-of-money": "货币非国家化",
     "competing-against-luck": "克服运气的竞争",
     "deng-xiaoping": "邓小平时代",
     "the-psychology-of-money": "金钱心理学",
-    "build": "创造：做有价值的事",
+    "build": "创造",
     "fourth-wing": "第四翼",
     "protocols": "高绩效协议",
     "bitcoin-standard": "比特币标准",
@@ -53,7 +53,32 @@ CANONICAL_CHINESE_TITLES: Dict[str, str] = {
     "the-little-book-that-builds-wealth": "巴菲特的护城河",
     "financial-intelligence": "财务智慧",
     "the-outsiders": "商界局外人",
-    "the-21-success-secrets-of-self-made-millionaires": "白手起家的21个成功秘诀",
+    "the-21-success-secrets-of-self-made-millionaires": "白手起家21个秘诀",
+}
+
+# Clean English book titles without cluttered colons or long edition tags
+CANONICAL_EN_TITLES: Dict[str, str] = {
+    "beyond-feelings": "Beyond Feelings",
+    "48-laws": "The 48 Laws of Power",
+    "elon-musk": "Elon Musk",
+    "range": "Range",
+    "the-housemaid": "The Housemaid",
+    "confidence-game": "The Confidence Game",
+    "influence": "Influence",
+    "story": "Story",
+    "competing-against-luck": "Competing Against Luck",
+    "deng-xiaoping": "Deng Xiaoping",
+    "the-psychology-of-money": "The Psychology of Money",
+    "build": "Build",
+    "fourth-wing": "Fourth Wing",
+    "protocols": "Protocols",
+    "bitcoin-standard": "The Bitcoin Standard",
+    "the-most-important-thing": "The Most Important Thing",
+    "the-little-book-that-builds-wealth": "The Little Book That Builds Wealth",
+    "financial-intelligence": "Financial Intelligence",
+    "the-outsiders": "The Outsiders",
+    "the-21-success-secrets-of-self-made-millionaires": "Self-Made Millionaires",
+    "denationalisation-of-money": "Denationalisation of Money",
 }
 
 # Well-known Chinese subtitles / category hooks
@@ -69,21 +94,90 @@ CANONICAL_CHINESE_SUBTITLES: Dict[str, str] = {
     "denationalisation-of-money": "哈耶克货币终极思考",
     "competing-against-luck": "创新与商业成功密码",
     "deng-xiaoping": "当代中国转型的历史密码",
-    "the-psychology-of-money": "关于财富、贪婪与幸福的智慧",
+    "the-psychology-of-money": "关于财富、贪婪与幸福的思考",
     "build": "iPod之父非传统做物指南",
-    "the-21-success-secrets-of-self-made-millionaires": "白手起家百万富翁思维习惯",
+    "fourth-wing": "欧美现象级奇幻浪漫巨作",
+    "protocols": "身心精力管理实战手册",
+    "bitcoin-standard": "货币历史演进与硬通货逻辑",
+    "the-most-important-thing": "霍华德·马克斯顶级投资哲学",
+    "the-little-book-that-builds-wealth": "巴菲特与晨星护城河法则",
+    "financial-intelligence": "非财务管理者的财务必修课",
+    "the-outsiders": "巴菲特推崇的八位特立独行CEO",
+    "the-21-success-secrets-of-self-made-millionaires": "百万富翁的思维与行动习惯",
 }
 
 # Thematic hooks tailored to learning science
 THEMATIC_HOOKS: Dict[str, str] = {
     "beyond-feelings": "走出感觉与主观偏见，建立真正严密、独立的批判性思考逻辑框架。",
-    "the-psychology-of-money": "看透金钱诱惑与人性弱点，用时间复利与长期主义重塑财富常识。",
     "48-laws": "洞悉千年权力运行暗流，在复杂现实博弈中掌握主动权的自卫手册。",
     "elon-musk": "从第一性原理出发，横跨商业、工程与火星梦想的硬核野心全记录。",
+    "range": "打破早期狭隘专业化神话，揭示跨界通才在复杂世界里的独特制胜之道。",
+    "confidence-game": "深度剖析人性轻信、贪婪与说服盲区，看透欺诈者如何操纵心智与信任。",
+    "the-housemaid": "反转再反转的心理惊悚畅销神作，豪宅暗流涌动，读到最后一刻直呼过瘾。",
+    "influence": "西奥迪尼经典说服心理学，洞察互惠、稀缺、认同等六大心智驱动密码。",
     "story": "好莱坞故事教父编剧圣经，穿透虚饰、直抵人心的叙事结构与认知密码。",
     "competing-against-luck": "克里斯坦森终极商业思想：聚焦用户待办任务（Jobs to Be Done）。",
-    "deng-xiaoping": "全面剖析当代中国转型的历史十字路口与政治智慧大作。",
+    "deng-xiaoping": "傅高义里程碑巨作，全面剖析当代中国转型的历史十字路口与政治智慧。",
+    "the-psychology-of-money": "看透金钱诱惑与人性弱点，用时间复利与长期主义重塑财富常识。",
+    "build": "iPod与Nest之父托尼·法戴尔实战心法，从零到一打造伟大产品的做物指南。",
+    "fourth-wing": "风靡全球的现象级龙骑士奇幻巨作，血腥考核与禁忌爱恋交织的高燃史诗。",
+    "protocols": "休伯曼实验室顶尖科学家健康协议，重构睡眠、专注力与精力管理系统。",
+    "bitcoin-standard": "立足奥地利学派经济学，追溯人类货币演化，探寻硬通货与去中心化逻辑。",
+    "the-most-important-thing": "橡树资本霍华德·马克斯投资心法，践行第二层次思维与周期风险防线。",
+    "the-little-book-that-builds-wealth": "晨星公司股权研究主管揭秘经济护城河，一眼看透企业长期竞争优势。",
+    "financial-intelligence": "哈佛商业评论高分力作，看懂三大财务报表与核心指标，透视真实商业健康度。",
+    "the-outsiders": "巴菲特倾力推荐，拆解八位反直觉CEO如何凭借卓越资本配置大幅跑赢市场。",
+    "the-21-success-secrets-of-self-made-millionaires": "博恩·崔西经典财富指南，21个颠覆性认知与习惯，助你走向财务自由。",
     "denationalisation-of-money": "哈耶克石破天惊之作：重构货币认知与自由竞争秩序。",
+}
+
+# Canonical release folder names in /Users/lindy/Vault/Xianyu_Book_Releases/
+CANONICAL_FOLDER_NAMES: Dict[str, str] = {
+    "48-laws": "01_The_48_Laws_of_Power",
+    "elon-musk": "02_Elon_Musk",
+    "confidence-game": "03_The_Confidence_Game",
+    "influence": "04_Influence",
+    "range": "05_Range",
+    "the-housemaid": "06_The_Housemaid",
+    "fourth-wing": "07_Fourth_Wing",
+    "story": "08_Story",
+    "competing-against-luck": "09_Competing_Against_Luck",
+    "deng-xiaoping": "10_Deng_Xiaoping",
+    "the-psychology-of-money": "11_The_Psychology_of_Money",
+    "build": "12_Build",
+    "protocols": "13_Protocols",
+    "bitcoin-standard": "14_The_Bitcoin_Standard",
+    "the-most-important-thing": "15_The_Most_Important_Thing",
+    "the-little-book-that-builds-wealth": "16_The_Little_Book_That_Builds_Wealth",
+    "financial-intelligence": "17_Financial_Intelligence",
+    "the-outsiders": "18_The_Outsiders",
+    "the-21-success-secrets-of-self-made-millionaires": "19_The_21_Success_Secrets_of_Self_Made_Millionaires",
+    "beyond-feelings": "20_Beyond_Feelings",
+}
+
+# Concise, compelling book introductions tailored for Xianyu buyers (2-3 sentences)
+BOOK_SUMMARIES: Dict[str, str] = {
+    "48-laws": "浓缩人类三千年历史经验与权谋精髓，深度剖析马基雅维利式现实法则与人性心理机制。它不是教人作恶，而是一本洞察职场与复杂社交博弈、保护自我免受操纵的心智攻防全书。",
+    "elon-musk": "传记大师艾萨克森近距离跟访两年的重磅力作。深度还原马斯克如何用第一性原理打破规则，横跨特斯拉、SpaceX、火星计划与AI的疯狂创新历程，以及极端性格背后的脆弱与野心。",
+    "confidence-game": "哥伦比亚大学心理学博士玛丽亚·康尼科娃力作。深度揭秘历史上顶级骗术大师的操纵艺术，从信任机制到心理盲区，拆解骗子如何利用我们内心的渴望与贪婪，助你识破生活中的心智套路。",
+    "influence": "心理学大师西奥迪尼划时代巨著。系统揭示主导人类决策行为的六大心理学原则：互惠、承诺一致、社会认同、喜好、权威与稀缺。商业营销、职场沟通与防忽悠必备的说服圣经。",
+    "range": "畅销书作家大卫·爱普斯坦打破“一万小时早期专业化”神话。通过体育、艺术与科研界的丰富实证，证明在高度不确定的现代社会，拥有宽广涉猎、跨界整合能力的“通才”，往往能走得更远。",
+    "the-housemaid": "欧美现象级畅销悬疑小说，Goodreads百万读者高分推荐。讲述一个带着秘密的年轻女子成为富豪家庭女佣的故事。层层递进的豪宅阴谋、极致的反转节奏，让人一读就停不下来的心理惊悚力作。",
+    "fourth-wing": "席卷全球的现象级奇幻爱情史诗。讲述瘦弱的维奥莱特被迫进入竞争残酷的巴斯吉亚斯龙骑士军校，在生死淘汰的考核、危险的龙骑契约与禁忌心动的暗流中，逆风成长为强者的热血冒险。",
+    "story": "好莱坞故事教父罗伯特·麦基的编剧圣经。不仅是一套剧本创作法则，更是穿透人性欲望、情感裂变与生命意义的深刻哲学。教你如何用精准的叙事结构与认知密码，讲出直击人心、令人难忘的好故事。",
+    "competing-against-luck": "颠覆性创新之父克里斯坦森终极商业力作。提出著名的“用户待办任务”（Jobs to Be Done）理论，揭示消费者购买行为背后的真实因果动机，让产品创新从“靠运气撞大运”变成“可预测的必然成功”。",
+    "deng-xiaoping": "哈佛大学傅高义教授倾注十年的里程碑巨作。全景式还原中国改革开放的重大转折与决策内幕，深刻刻画邓小平在关键历史十字路口扭转乾坤的政治魄力与治国智慧，读懂现代中国崛起的必读书。",
+    "the-psychology-of-money": "华尔街资深投资人摩根·豪泽尔现象级力作。用19个生动的小故事颠覆传统财务思维，揭示金钱决策的核心从来不是数学公式，而是人性的贪婪、恐惧、耐心与情绪。重塑财富认知与长期复利思维。",
+    "build": "iPod与Nest之父托尼·法戴尔30年硅谷造物心法。从初入职场的工程师到独角兽掌舵人，毫无保留分享关于团队管理、打造伟大产品、应对至暗时刻的非传统实战经验，创业者与产品人必读。",
+    "protocols": "斯坦福大学神经生物学教授休伯曼实验室等前沿研究结晶。系统整合昼夜节律、睡眠优化、压力调控、冷热暴露与深度专注的科学协议，提供一套可落地的身心状态与精力管理实战操作手册。",
+    "bitcoin-standard": "赛义夫丁·阿穆斯立足奥地利学派经济学写就的货币思想力作。系统梳理人类从贝壳、黄金到法币的货币演化史，深度论证稳健货币对文明繁荣的决定性意义，以及去中心化硬通货的技术与经济逻辑。",
+    "the-most-important-thing": "橡树资本创始人霍华德·马克斯投资心法集大成之作，巴菲特自称“读了两遍”的投资宝典。阐述逆向投资、第二层次思维、周期规律与风险防线，是穿越牛熊市场、守住财富的必读经典。",
+    "the-little-book-that-builds-wealth": "晨星公司前股权研究主管帕特·多尔西经典之作。通俗易懂地解构了巴菲特选股的底层核心——经济护城河（无形资产、转换成本、网络效应、成本优势），手把手教你识别真正具备长期竞争优势的伟大企业。",
+    "financial-intelligence": "哈佛商业评论畅销力作，专门为非财务背景的管理者打造。摒弃枯燥公式，以通俗透彻的视角拆解三大财务报表（资产负债表、损益表、现金流量表），教你看透数字背后的真实商业逻辑与经营假象。",
+    "the-outsiders": "巴菲特在致股东信中重点推荐的商业经典。深入复盘八位作风低调、不按常理出牌的特立独行CEO，如何凭借卓越的资本配置能力（股票回购、审慎并购、去中心化管理），创造出跑赢大盘数十倍的惊人回报。",
+    "the-21-success-secrets-of-self-made-millionaires": "世界级潜能开发大师博恩·崔西经典财富指南。提炼数千位白手起家富翁的共同特质与行动准则，从设定宏伟梦想、自律专注、每天持续学习到建立卓越信誉，提供一套人人可复制的个人成长与财富跃迁路线图。",
+    "beyond-feelings": "经典批判性思考入门与进阶指南，风靡数十年的思维训练教材。系统剖析主观偏见、盲从感觉、逻辑谬误对大脑认知的蒙蔽，传授严密审视证据、识别隐藏假设、独立理性决策的批判性思考心智模型。",
+    "denationalisation-of-money": "哈耶克货币非国家化经典论著，提出颠覆传统的私人发行货币与自由竞争理念。",
 }
 
 HTML_POSTER_TEMPLATE = """<!DOCTYPE html>
@@ -585,6 +679,8 @@ def resolve_book_metadata(
         title_en = raw_title
         auto_sub = ""
 
+    title_en = CANONICAL_EN_TITLES.get(book_id) or title_en
+
     subtitle = CANONICAL_CHINESE_SUBTITLES.get(book_id) or (matched_entry or {}).get("subtitle") or auto_sub or "原版有声交互点读精读工作站"
     subtitle = re.sub(r",?\s*(?:Ninth|9th|Eighth|8th|Tenth|10th)\s+Edition", "", subtitle, flags=re.I).strip()
     if not subtitle:
@@ -623,6 +719,7 @@ def resolve_book_metadata(
         raise FileNotFoundError(f"Could not automatically locate cover image for book '{book_id}'.")
 
     hook = THEMATIC_HOOKS.get(book_id) or (matched_entry or {}).get("description") or f"现代英语原版最硬核的认知与语言力量。"
+    summary = BOOK_SUMMARIES.get(book_id) or (matched_entry or {}).get("description") or f"《{title_cn}》原版有声交互点读精读站。"
 
     return {
         "id": book_id,
@@ -634,6 +731,7 @@ def resolve_book_metadata(
         "chapters_count": chapters_count,
         "cover_path": cover_path,
         "hook": hook,
+        "summary": summary,
         "url": f"https://audiblelibrary.online/books/{book_id}/",
     }
 
@@ -682,10 +780,15 @@ def generate_marketing_copy(
     clean_en_compact = re.sub(r"[^\w]", "", title_en)
     keywords = f"{title_cn} {clean_en_compact} 英文原版 英语精读 有声书 影子跟读 纯英双语切换 考研英语 托福雅思 听力口语磨耳朵 沉浸式阅读"
 
-    # Detail description tailored strictly to pain points & instant web passkey delivery
-    detail_text = f"""《{title_cn}》（{title_en}）原版有声交互点读精读站：
-{hook}
+    summary = meta.get("summary") or "经典原版巨作，带你领略原汁原味的英文思想力量。"
 
+    # Detail description tailored strictly to book introduction, pain points & instant web delivery
+    detail_text = f"""《{title_cn}》（{title_en}）原版有声交互点读精读站：
+
+【关于本书 · 内容简介】
+{summary}
+
+【为什么需要这个点读站？】
 你是不是也这样：
 自己硬啃原版书，满页生词，查两次词典就走神读不下去？
 听原版有声书，听着听着就成了白噪音，完全不知道读到了哪？
@@ -705,17 +808,32 @@ def generate_marketing_copy(
 关键词：{keywords}"""
 
     # 3 High-converting SEO titles strictly obeying Xianyu 30-character limit
-    opt1 = f"《{title_cn}》英文原版有声点读精读站 纯英双语秒切 影子跟读"
-    if len(opt1) > 30:
-        opt1 = f"《{title_cn}》原版有声点读精读站 纯英双语秒切 影子跟读"
-    
-    opt2 = f"《{title_cn}》英文原版有声交互点读站 视听双轨 难词全内置"
-    if len(opt2) > 30:
-        opt2 = f"《{title_cn}》原版有声点读精读站 视听双轨 难词全内置"
-        
-    opt3 = f"《{title_cn}》原声点读精读站 手机平板电脑免装软件即读"
-    if len(opt3) > 30:
-        opt3 = f"《{title_cn}》原声点读精读工作站 随时随地想读就读"
+    cand1 = [
+        f"《{title_cn}》英文原版有声点读精读站 纯英双语秒切 影子跟读",
+        f"《{title_cn}》原版有声点读精读站 纯英双语秒切 影子跟读",
+        f"《{title_cn}》原声点读精读站 纯英双语秒切 影子跟读",
+        f"《{title_cn}》原声点读站 纯英双语秒切 影子跟读",
+        f"《{title_cn}》点读精读站 双语秒切 影子跟读",
+    ]
+    opt1 = next((c for c in cand1 if len(c) <= 30), cand1[-1][:30])
+
+    cand2 = [
+        f"《{title_cn}》英文原版有声交互点读站 视听双轨 难词全内置",
+        f"《{title_cn}》原版有声交互点读站 视听双轨 难词全内置",
+        f"《{title_cn}》原版有声点读精读站 视听双轨 难词全内置",
+        f"《{title_cn}》原版点读精读站 视听双轨 难词全内置",
+        f"《{title_cn}》有声点读精读站 难词音标全内置",
+    ]
+    opt2 = next((c for c in cand2 if len(c) <= 30), cand2[-1][:30])
+
+    cand3 = [
+        f"《{title_cn}》原声点读精读站 手机平板电脑免装软件即读",
+        f"《{title_cn}》原声点读精读站 手机电脑免装软件即读",
+        f"《{title_cn}》原声点读精读站 免装软件即开即读",
+        f"《{title_cn}》点读精读站 浏览器免装软件即读",
+        f"《{title_cn}》原版有声点读站 免装软件即读",
+    ]
+    opt3 = next((c for c in cand3 if len(c) <= 30), cand3[-1][:30])
 
     title_options = f"""1. {opt1}
 2. {opt2}
@@ -775,15 +893,16 @@ def publish_xianyu_kit(
     book_id = meta["id"]
 
     out_base_dir = out_base or OUTPUT_BASE_DEFAULT
-    # Determine folder name (e.g., 21_Beyond_Feelings or similar)
+    # Determine folder name (e.g., 20_Beyond_Feelings or existing 01_The_48_Laws_of_Power)
     if not folder_name:
-        # Check existing directories in output base to find match or generate numbered folder
-        folder_name = book_id.replace("-", "_").title()
-        if out_base_dir.is_dir():
+        folder_name = CANONICAL_FOLDER_NAMES.get(book_id)
+        if not folder_name and out_base_dir.is_dir():
             for d in out_base_dir.iterdir():
                 if d.is_dir() and (book_id in d.name.lower() or book_id.replace("-", "_") in d.name.lower()):
                     folder_name = d.name
                     break
+        if not folder_name:
+            folder_name = book_id.replace("-", "_").title()
 
     target_dir = out_base_dir / folder_name
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -796,21 +915,184 @@ def publish_xianyu_kit(
     print(f"📝 [COPYWRITING] Emitting cloud-native marketing copy -> {target_dir} ...")
     generate_marketing_copy(meta, target_dir)
     print(f"🎉 [SUCCESS] Xianyu Release Kit is ready at: {target_dir}")
+
+    # Mirror for Beyond_Feelings backward compatibility if target is 20_Beyond_Feelings
+    if target_dir.name == "20_Beyond_Feelings":
+        legacy_dir = out_base_dir / "Beyond_Feelings"
+        if legacy_dir.is_dir():
+            shutil.copy2(out_png, legacy_dir / "cover_promo.png")
+            shutil.copy2(target_dir / "README.md", legacy_dir / "README.md")
+            shutil.copy2(target_dir / f"{book_id}_Marketing_Copy.md", legacy_dir / f"{book_id}_Marketing_Copy.md")
+
     return target_dir
+
+
+def update_master_readme(out_base_dir: Path, processed_list: list) -> Path:
+    """Update master release summary README.md for all books in out_base_dir."""
+    master_readme = out_base_dir / "README.md"
+    
+    table_rows = []
+    details_sections = []
+    for item in processed_list:
+        meta = item["meta"]
+        target_dir = item["dir"]
+        folder_name = target_dir.name
+        bid = meta["id"]
+        idx_str = f"{item['index']:02d}"
+        title_cn = meta["title_cn"]
+        title_en = meta["title_en"]
+        author = meta["author"]
+        duration = meta["total_duration"]
+        
+        table_rows.append(
+            f"| **{idx_str}** | [{folder_name}](file://{target_dir}/) | {author} | {duration} | **物料就绪 · 待发布** | `{bid}` |"
+        )
+        
+        # Read the SEO titles from generated markdown
+        copy_file = target_dir / f"{bid}_Marketing_Copy.md"
+        top_title = f"《{title_cn}》（{title_en}）原版有声交互点读精读站"
+        if copy_file.is_file():
+            text = copy_file.read_text(encoding="utf-8")
+            m = re.search(r"1\.\s*(.+)", text)
+            if m:
+                top_title = m.group(1).strip()
+
+        details_sections.append(f"""### [{idx_str}] 《{title_cn}》({title_en})
+- **主图海报**：[cover_promo.png](file://{target_dir}/cover_promo.png)
+- **文案详情**：[{bid}_Marketing_Copy.md](file://{target_dir}/{bid}_Marketing_Copy.md)
+- **发布标题推荐**：`{top_title}`
+""")
+
+    table_content = "\n".join(table_rows)
+    details_content = "\n".join(details_sections)
+
+    content = f"""# 闲鱼英文原版有声交互点读精读 · 全量上架物料总控表
+
+> 已全量按照闲鱼实盘转化爆款结构统一生成：1:1 纯净高清主图海报（无牛皮癣、左上角书名排版保护）+ 痛点驱动精炼营销文案（包含【关于本书·内容简介】、彻底移除网盘、零试读流失漏洞、手机电脑浏览器秒开免装软件）。
+> 数据源基准：`/Users/lindy/Vault/Audible/manifest.json`
+
+---
+
+## 1. 上架状态概览表（共 20 本有声书）
+
+| 序号 | 目录编号与书名 | 原著作者 | 有声书时长 | 状态标记 | 专属发货代码 |
+| :---: | :--- | :--- | :---: | :---: | :--- |
+{table_content}
+| ── | `denationalisation-of-money` | Friedrich Hayek | *Text Only* | **无音频 · 依规跳过** | ── |
+
+---
+
+## 2. 待上架书籍物料速查表（直接全选文案粘贴至闲鱼）
+
+{details_content}
+
+---
+
+## 3. 闲鱼高转化文案标准公式（零网盘 · 零试读 · 内容简介 · 痛点直击）
+
+```text
+《书名》（英文名）原版有声交互点读精读站：
+
+【关于本书 · 内容简介】
+[2-3 句话精炼概括作者背景、核心思想与阅读价值]
+
+【为什么需要这个点读站？】
+你是不是也这样：
+自己硬啃原版书，满页生词，查两次词典就走神读不下去？
+听原版有声书，听着听着就成了白噪音，完全不知道读到了哪？
+
+这个网页版交互点读精读站，就是专门解决这些痛点的：
+
+【四大核心特色】
+1. 【点哪读哪 · 字音同步】：录音室真人原声伴读，读到哪、单词高亮到哪，眼睛耳朵双输入，告别走神滑水。
+2. 【难词音标全内置】：轻点句子直接展开地道精翻与核心高阶词汇音标，告别反复切屏查词典。
+3. 【纯英双语秒切】：想练语感看纯英文，遇到难句一键切双语对照，阅读节奏自己掌控。
+4. 【双击单句循环跟读】：双击任意句子瞬间循环复读磨耳朵，口语跟读与听力精听利器。
+
+【极简交付 · 开箱即用】
+拍下自动秒发：专属在线阅读网址 + 专属激活码。
+手机 / iPad / 电脑浏览器打开即读，免装任何软件，永久有效。
+
+关键词：[精准关键词列表]
+```
+"""
+    master_readme.write_text(content, encoding="utf-8")
+    print(f"📋 [INDEX] Master releases index updated at: {master_readme}")
+    return master_readme
+
+
+def publish_all_kits(
+    manifest_path: Optional[Path] = None,
+    out_base: Optional[Path] = None,
+) -> None:
+    """Batch generate release kits for all audiobooks in the library (skipping text-only)."""
+    manifest_file = manifest_path or (AUDIBLE_ROOT / "manifest.json")
+    out_base_dir = out_base or OUTPUT_BASE_DEFAULT
+    if not manifest_file.is_file():
+        raise FileNotFoundError(f"Audible manifest not found: {manifest_file}")
+
+    data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    catalog_books = data.get("books", [])
+
+    # Filter out text-only book 'denationalisation-of-money'
+    target_books = [
+        b for b in catalog_books
+        if b.get("id") != "denationalisation-of-money"
+        and (b.get("totalDuration") or "").lower() != "text only"
+    ]
+
+    # Sort target books according to canonical folder numbering 01 to 20
+    def _folder_sort_key(b: dict) -> int:
+        folder = CANONICAL_FOLDER_NAMES.get(b.get("id", ""), "")
+        m = re.match(r"^(\d+)", folder)
+        return int(m.group(1)) if m else 999
+
+    target_books.sort(key=_folder_sort_key)
+
+    print(f"🚀 [BATCH] Commencing release kit generation for {len(target_books)} audiobooks...")
+
+    processed = []
+    for i, b in enumerate(target_books, start=1):
+        bid = b["id"]
+        print(f"\n==========================================")
+        print(f"[{i:02d}/{len(target_books)}] Processing '{bid}'...")
+        print(f"==========================================")
+        target_dir = publish_xianyu_kit(
+            book_id_or_dir=bid,
+            out_base=out_base_dir,
+        )
+        meta = resolve_book_metadata(bid, manifest_path=manifest_file)
+        processed.append({
+            "index": i,
+            "id": bid,
+            "meta": meta,
+            "dir": target_dir,
+        })
+
+    # Update master README
+    update_master_readme(out_base_dir, processed)
+    print(f"\n✨ [ALL FINISHED] All {len(target_books)} audiobooks released successfully!")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Xianyu Book Publisher · Cloud-Native Marketing Kit Generator")
-    parser.add_argument("book", help="Book identifier (e.g. beyond-feelings) or audiobook directory path")
+    parser.add_argument("book", nargs="?", help="Book identifier (e.g. beyond-feelings) or audiobook directory path")
+    parser.add_argument("--all", action="store_true", help="Publish kits for all 20 audiobooks in the library")
     parser.add_argument("--out-base", default=str(OUTPUT_BASE_DEFAULT), help="Base directory for Xianyu releases")
     parser.add_argument("--folder", help="Specific folder name inside out-base")
     args = parser.parse_args()
 
-    publish_xianyu_kit(
-        book_id_or_dir=args.book,
-        out_base=Path(args.out_base),
-        folder_name=args.folder,
-    )
+    if args.all:
+        publish_all_kits(out_base=Path(args.out_base))
+    elif args.book:
+        publish_xianyu_kit(
+            book_id_or_dir=args.book,
+            out_base=Path(args.out_base),
+            folder_name=args.folder,
+        )
+    else:
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

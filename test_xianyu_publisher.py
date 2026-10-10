@@ -47,6 +47,7 @@ class TestXianyuPublisher(unittest.TestCase):
             self.assertNotIn("EPUB", detail)
 
             # High-conversion value propositions present
+            self.assertIn("【关于本书 · 内容简介】", detail)
             self.assertIn("字音同步", detail)
             self.assertIn("难词音标全内置", detail)
             self.assertIn("纯英双语秒切", detail)
