@@ -18,7 +18,7 @@ from dynamic_aligner import (
 from quality_gate import check_acoustic_lead_silence
 
 
-class GrillRemediationTests(unittest.TestCase):
+class AcousticAlignmentRemediationTests(unittest.TestCase):
     def test_empty_acoustic_words_raises_degradation_error(self):
         """Defect 2: Dynamic aligner must fail fast with AcousticDegradationError when words is empty."""
         with tempfile.TemporaryDirectory() as td:

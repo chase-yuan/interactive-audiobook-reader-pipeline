@@ -8,7 +8,7 @@
 > **Zero Repository Pollution Rule (零污染铁律)**:
 > - **NEVER** create book-specific runners (e.g. `<book_name>_runner.py`) in the repository root directory!
 > - The repository root is strictly reserved for universal, reusable pipeline core modules.
-> - One-off experiment scripts belong in `archive/` or inside the target book directory under `/Users/lindy/Vault/audiobook/<BookName>/`.
+> - One-off experiment scripts belong inside the target book directory under `~/Vault/audiobook/<BookName>/`, never in this open-source repository.
 
 ---
 

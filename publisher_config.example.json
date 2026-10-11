@@ -6,7 +6,7 @@
   "release_report": "/path/to/book/reader_validation_report.json",
   "cover": "/path/to/book/cover.jpg",
   "archive_html": "/path/to/obsidian/Example_Interactive_Reader.html",
-  "portal_repo": "/Users/lindy/Vault/Audible",
+  "portal_repo": "/path/to/audible_library_repo",
   "public_reader_url": "https://audiblelibrary.online/books/example-book/",
   "hosting_provider": "cloudflare_pages",
   "cloudflare_project": "example-reader-production",

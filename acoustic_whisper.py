@@ -96,6 +96,22 @@ def run_mlx_acoustic_extraction(
     print(f"Acoustic extraction complete in {elapsed}s! Total words extracted: {len(words_list)} -> {output_json_path}")
     return output_data
 
+
+def is_acoustic_ready(path: Path, *, require_current_profile: bool = False) -> bool:
+    """Validate whether an acoustic artifact file is structurally complete."""
+    p = Path(path)
+    if not p.is_file() or p.stat().st_size < 1000:
+        return False
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            if require_current_profile and data.get("acoustic_profile_version") != ACOUSTIC_PROFILE_VERSION:
+                return False
+            return bool(data.get("words"))
+        return bool(data) and not require_current_profile
+    except Exception:
+        return False
+
 if __name__ == "__main__":
     if len(sys.argv) >= 3:
         model = sys.argv[3] if len(sys.argv) >= 4 else "mlx-community/whisper-large-v3-turbo"
