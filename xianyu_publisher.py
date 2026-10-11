@@ -24,8 +24,8 @@ from typing import Any, Dict, Optional
 
 # Canonical Paths
 REPO_ROOT = Path(__file__).resolve().parent
-AUDIBLE_ROOT = Path("/Users/lindy/Vault/Audible")
-OUTPUT_BASE_DEFAULT = Path("/Users/lindy/Vault/Xianyu_Book_Releases")
+AUDIBLE_ROOT = Path(os.environ.get("AUDIBLE_VAULT_ROOT", Path.home() / "Vault" / "Audible"))
+OUTPUT_BASE_DEFAULT = Path(os.environ.get("XIANYU_OUTPUT_DIR", Path.home() / "Vault" / "Xianyu_Book_Releases"))
 TOOLS_DIR = REPO_ROOT / "tools"
 BIN_DIR = REPO_ROOT / "bin"
 SWIFT_RENDERER_SOURCE = TOOLS_DIR / "render_poster_wk.swift"
@@ -598,7 +598,8 @@ def _ensure_swift_renderer() -> Path:
         return RENDERER_BIN
 
     # Check fallback in skill path
-    fallback_bin = Path("/Users/lindy/.gemini/config/skills/xianyu-book-publisher/scripts/render_poster_wk")
+    skill_fallback = Path.home() / ".gemini" / "config" / "skills" / "xianyu-book-publisher" / "scripts" / "render_poster_wk"
+    fallback_bin = Path(os.environ.get("RENDER_POSTER_FALLBACK_BIN", skill_fallback))
     if fallback_bin.is_file() and os.access(fallback_bin, os.X_OK):
         BIN_DIR.mkdir(parents=True, exist_ok=True)
         shutil.copy2(fallback_bin, RENDERER_BIN)
@@ -711,7 +712,7 @@ def resolve_book_metadata(
 
     if not cover_path:
         # Check audiobook library
-        vault_audiobook = Path(f"/Users/lindy/Vault/audiobook/{local_dir.name if local_dir else ''}")
+        vault_audiobook = Path(os.environ.get("AUDIOBOOK_VAULT_ROOT", Path.home() / "Vault" / "audiobook")) / (local_dir.name if local_dir else "")
         if (vault_audiobook / "cover.jpg").is_file():
             cover_path = vault_audiobook / "cover.jpg"
 
@@ -995,7 +996,7 @@ def update_master_readme(out_base_dir: Path, processed_list: list) -> Path:
     content = f"""# 闲鱼英文原版有声交互点读精读 · 全量上架物料总控表
 
 > 已全量按照闲鱼实盘转化爆款结构统一生成：1:1 纯净高清主图海报（无牛皮癣、左上角书名排版保护）+ 痛点驱动精炼营销文案（包含【关于本书·内容简介】、彻底移除网盘、零试读流失漏洞、手机电脑浏览器秒开免装软件）。
-> 数据源基准：`/Users/lindy/Vault/Audible/manifest.json`
+> 数据源基准：`{AUDIBLE_ROOT}/manifest.json`
 
 ---
 

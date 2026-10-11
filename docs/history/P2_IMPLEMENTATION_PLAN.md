@@ -1,8 +1,8 @@
 # P2 阶段：工业级智能摄入与全自动发布体系实现规范 (P2 Implementation Plan)
 
 > **当前分支**: `experiment/p0-industrial-hardening`
-> **代码库**: `/Users/lindy/Vault/My Python Productivity Script 2/interactive-audiobook-reader-pipeline/`
-> **关联发布库**: `/Users/lindy/Vault/Audible/` (GitHub Pages: `https://zack1997999.github.io/Audible/`)
+> **代码库**: `interactive-audiobook-reader-pipeline/`
+> **关联发布库**: `Audible/` (GitHub Pages: `https://zack1997999.github.io/Audible/`)
 
 ---
 
@@ -22,7 +22,7 @@
    - 彻底删除 `generate_audible_reader.py`、`compile_live_reader.py` 等硬编码脚本。
    - 所有构建逻辑统一收敛到核心模块 [`html_builder.py`](html_builder.py) 中。
 2. **消除 Manifest 双重数据源**：
-   - 在 [`Audible/index.html`](/Users/lindy/Vault/Audible/index.html) 中彻底消除静态 `INLINE_MANIFEST`，统一由根目录的 `manifest.json` 单一数据源驱动。
+   - 在 `Audible/index.html` 中彻底消除静态 `INLINE_MANIFEST`，统一由根目录的 `manifest.json` 单一数据源驱动。
 
 ---
 
@@ -65,8 +65,8 @@
 3. **严格的 HTTP 206 范围请求探测 (Range Prober)**：
    - 发布前对 R2 上的音频发起 `Range: bytes=0-15`（开头）、中间片段和末尾片段探测，必须严格返回 `206 Partial Content` 且带有合法 `Content-Range` 头，确保进度条拖动与快进绝对可用。
 4. **原子化 Git 发布与书架注册**：
-   - 自动提取并裁剪书籍封面至 `/Users/lindy/Vault/Audible/assets/covers/<slug>.jpg`。
-   - 计算全书总时长与章节数，原子更新 `/Users/lindy/Vault/Audible/manifest.json`。
+   - 自动提取并裁剪书籍封面至 `Audible/assets/covers/<slug>.jpg`。
+   - 计算全书总时长与章节数，原子更新 `Audible/manifest.json`。
    - 仅暂存（stage）明确的白名单文件，执行 `git commit` 并 `git push origin main`。
    - 线上发布完成后，自动调用 HTTP 请求进行部署后冒烟验收，输出最终体验直达链接。
 

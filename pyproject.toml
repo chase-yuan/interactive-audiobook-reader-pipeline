@@ -21,6 +21,8 @@ reader-r2-upload = "r2_upload:main"
 reader-quality-check = "quality_gate:main"
 reader-intake = "intake_reconciler:main"
 reader-publish = "publisher:main"
+reader-release = "release_cli:main"
+reader-build = "universal_runner:main"
 
 [tool.setuptools]
 py-modules = [
@@ -51,5 +53,15 @@ py-modules = [
   "agy_linguistic_worker",
   "mlx_acoustic_worker",
   "intake_reconciler",
-  "publisher"
+  "kokoro_synthesizer",
+  "local_publisher",
+  "pdf_intake_normalizer",
+  "publisher",
+  "reader_theme",
+  "release_token",
+  "acoustic_repair",
+  "deployment_preflight",
+  "release_cli",
+  "universal_runner",
+  "xianyu_publisher"
 ]

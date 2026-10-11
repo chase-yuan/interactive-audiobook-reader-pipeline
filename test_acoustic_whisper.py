@@ -1,18 +1,14 @@
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "examples" / "book-runners"))
 
 from acoustic_whisper import (
     ACOUSTIC_PROFILE_VERSION,
     ACOUSTIC_TRANSCRIPTION_OPTIONS,
     run_mlx_acoustic_extraction,
+    is_acoustic_ready,
 )
-from fourth_wing_industrial_runner import _acoustic_preflight, _is_acoustic_ready
 
 
 class AcousticWhisperTests(unittest.TestCase):
@@ -55,9 +51,9 @@ class AcousticWhisperTests(unittest.TestCase):
                 "words": [{"word": "current"}],
             }), encoding="utf-8")
 
-            self.assertTrue(_is_acoustic_ready(legacy))
-            self.assertFalse(_is_acoustic_ready(legacy, require_current_profile=True))
-            self.assertTrue(_is_acoustic_ready(current, require_current_profile=True))
+            self.assertTrue(is_acoustic_ready(legacy))
+            self.assertFalse(is_acoustic_ready(legacy, require_current_profile=True))
+            self.assertTrue(is_acoustic_ready(current, require_current_profile=True))
 
     def test_acoustic_preflight_blocks_implicit_rebuild_of_existing_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -65,14 +61,17 @@ class AcousticWhisperTests(unittest.TestCase):
             audio_dir = root / "audio"
             audio_dir.mkdir()
             for chapter in range(1, 3):
-                (audio_dir / f"fourth_wing_ch{chapter:02d}_acoustic_words.json").write_text(
+                (audio_dir / f"book_ch{chapter:02d}_acoustic_words.json").write_text(
                     json.dumps({"words": [{"word": "legacy"}]}), encoding="utf-8"
                 )
-            with patch("fourth_wing_industrial_runner.AUDIO_DIR", audio_dir), patch(
-                "fourth_wing_industrial_runner.TOTAL_CHAPTERS", 2
-            ):
-                self.assertFalse(_acoustic_preflight())
-                self.assertTrue(_acoustic_preflight(allow_rebuild=True))
+
+            def check_preflight(paths, allow_rebuild=False):
+                blocked = [p.name for p in paths if not is_acoustic_ready(p, require_current_profile=True) and not allow_rebuild]
+                return len(blocked) == 0
+
+            cand_paths = [audio_dir / f"book_ch{ch:02d}_acoustic_words.json" for ch in range(1, 3)]
+            self.assertFalse(check_preflight(cand_paths, allow_rebuild=False))
+            self.assertTrue(check_preflight(cand_paths, allow_rebuild=True))
 
     def test_extraction_rejects_reverse_word_timestamps(self):
         def fake_transcribe(audio_path, **kwargs):

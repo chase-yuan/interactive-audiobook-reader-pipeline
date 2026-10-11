@@ -435,7 +435,7 @@ def main():
         raise SystemExit(1)
 
     if args.publish:
-        audible_publisher = Path("/Users/lindy/Vault/Audible/scripts/publish_book.py")
+        audible_publisher = Path(os.environ.get("AUDIBLE_PUBLISHER_SCRIPT", Path.home() / "Vault" / "Audible" / "scripts" / "publish_book.py"))
         if not audible_publisher.is_file():
             print(f"❌ [PUBLISH FAILED] Publisher script not found at {audible_publisher}")
             raise SystemExit(1)
