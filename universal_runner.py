@@ -1,5 +1,5 @@
 """
-Universal Dual-Mode Pipeline Runner for Interactive Readers and Audiobooks.
+Universal Multi-Mode Pipeline Runner for Interactive Readers and Audiobooks.
 
 Unified entry point supporting:
 1. Pure Text Interactive Readers (text_only):
@@ -9,9 +9,12 @@ Unified entry point supporting:
    - Release gate validation and cryptographic ReleaseToken issuance.
    - Zero-dependency Apple Books-grade bilingual interactive reader compilation.
    - Gracefully hidden audio playback controls with 100% intact typography and touch/keyboard interactivity.
-2. Immersive Audiobook Readers (complete):
+2. Immersive Audiobook Readers with Studio Audio (complete):
    - Synchronized acoustic word-level forced alignment with MLX Whisper and dynamic aligner.
    - Strict 95% acoustic coverage threshold and monotonic timeline validation.
+3. Autonomous Neural Voice Readers with Kokoro TTS (synthetic):
+   - Local 82M Kokoro ONNX speech synthesis with phoneme overflow self-healing.
+   - Sentence-level acoustic disk cache and proportional word-span generation.
 """
 
 from __future__ import annotations
@@ -727,7 +730,7 @@ def build_reader_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Universal Dual-Mode Pipeline Runner for Interactive Readers and Audiobooks",
+        description="Universal Multi-Mode Pipeline Runner for Interactive Readers and Audiobooks",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("epub", type=str, nargs="?", default=None, help="Path to input EPUB file")
