@@ -125,7 +125,7 @@ python3 universal_runner.py demo/sample.epub --text-only
 
 ---
 
-## 生产级双工作模式
+## 生产级三大工作模式
 
 ### 模式 1：纯文本双语精读器 (`--text-only`)
 适用于尚未配齐音频的电子书。自动完成章节划分、逐句对照、高阶词汇解析与纯键盘导航支持：
