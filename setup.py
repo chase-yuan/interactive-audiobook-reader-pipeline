@@ -43,7 +43,6 @@ setup(
         "deployment_preflight",
         "release_cli",
         "universal_runner",
-        "xianyu_publisher",
     ],
     python_requires=">=3.9",
     install_requires=[],
