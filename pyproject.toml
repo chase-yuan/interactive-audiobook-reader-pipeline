@@ -62,6 +62,6 @@ py-modules = [
   "acoustic_repair",
   "deployment_preflight",
   "release_cli",
-  "universal_runner",
-  "xianyu_publisher"
+  "universal_runner"
 ]
+

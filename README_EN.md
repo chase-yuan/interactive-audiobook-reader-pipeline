@@ -200,7 +200,6 @@ Tracks are aligned by numerical prefix or spine ID, guaranteeing monotonic audio
 - `quality_gate.py`: Cryptographic release gate and Stage 1.5 Shift-Left Sentence Integrity Gate
 - `validate_outputs.py`: Invariant validator for publication
 - `acoustic_whisper.py`: Apple Silicon MLX Whisper extractor
-- `xianyu_publisher.py`: Automated marketing package generator, passkey licensing, and Apple-design WebKit poster renderer
 - `demo/sample.epub`: Public-domain demo EPUB
 - `docs/images/`: Visual assets and interactive flow demonstrations
 - `docs/history/`: Historical milestone specifications and benchmarks

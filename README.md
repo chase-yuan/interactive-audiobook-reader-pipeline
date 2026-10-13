@@ -221,7 +221,6 @@ python3 -m unittest discover
 - `quality_gate.py`：密码学完整性质量放行门禁与 Stage 1.5 句子完整性门禁
 - `validate_outputs.py`：产物不变式合规校验器
 - `acoustic_whisper.py`：Apple Silicon MLX Whisper 单词级特征提取器
-- `xianyu_publisher.py`：生产级分发物料生成器、卡密生成器与 Apple 设计规范海报渲染器
 - `demo/sample.epub`：5KB 公版示范 EPUB
 - `docs/images/`：交互流程实机演示 GIF
 - `docs/history/`：技术演进规范与基准报告存档
