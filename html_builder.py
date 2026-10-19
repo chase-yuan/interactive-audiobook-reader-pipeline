@@ -497,6 +497,9 @@ function formatAudioTime(sec) {
   return (m < 10 ? '0' + m : m) + ':' + (s < 10 ? '0' + s : s);
 }
 
+let lastMediaSessionPositionUpdate = 0;
+let lastScrubberRenderPct = -1;
+
 function updateAudioPlayerUI() {
   if (!audio) return;
   if (audio.playbackRate !== currentPlaybackSpeed) {
@@ -507,7 +510,10 @@ function updateAudioPlayerUI() {
   const pct = dur > 0 ? (cur / dur) * 100 : 0;
   if (!isUserScrubbing && playerScrubber) {
     playerScrubber.value = pct;
-    playerScrubber.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
+    if (Math.abs(pct - lastScrubberRenderPct) >= 0.25 || pct === 0 || pct === 100) {
+      lastScrubberRenderPct = pct;
+      playerScrubber.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
+    }
   }
   if (playerCurTime && !isUserScrubbing) {
     playerCurTime.textContent = formatAudioTime(cur);
@@ -515,14 +521,18 @@ function updateAudioPlayerUI() {
   if (playerTotalTime) {
     playerTotalTime.textContent = formatAudioTime(dur);
   }
-  if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && dur > 0 && !isNaN(dur)) {
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: Math.max(0, dur),
-        playbackRate: audio.playbackRate || 1,
-        position: Math.min(Math.max(0, cur), dur)
-      });
-    } catch(e) {}
+  if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+    const now = Date.now();
+    if (now - lastMediaSessionPositionUpdate >= 2500 && Number.isFinite(dur) && dur > 0 && Number.isFinite(cur) && cur >= 0) {
+      try {
+        lastMediaSessionPositionUpdate = now;
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(0, dur),
+          playbackRate: Number.isFinite(audio.playbackRate) && audio.playbackRate > 0 ? audio.playbackRate : 1,
+          position: Math.min(Math.max(0, cur), dur)
+        });
+      } catch(e) {}
+    }
   }
 }
 
@@ -1287,10 +1297,12 @@ audio.addEventListener('pause', () => {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   stopSyncLoop();
 });
+let lastProgressReportTime = 0;
 audio.addEventListener('timeupdate', () => {
   updateAudioPlayerUI();
-  syncPlayback();
-  if (!Number.isNaN(audio.currentTime) && audio.duration) {
+  const now = Date.now();
+  if (now - lastProgressReportTime >= 3000 && !Number.isNaN(audio.currentTime) && audio.duration) {
+    lastProgressReportTime = now;
     reportLibraryProgress(activeChapterNum, (audio.currentTime / audio.duration) * 100);
   }
 });
@@ -1341,59 +1353,73 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+let lastSyncTimestamp = 0;
+let lastAutoScrollTimestamp = 0;
+
 function syncPlayback() {
   syncFrameId = null;
   if (!audio.paused) {
-    const curTime = audio.currentTime;
-    const activeSection = document.querySelector('.chapter-section.active');
-    
-    if (activeSection) {
-      const activeUnit = findSentenceAt(curTime);
+    const now = performance.now();
+    if (now - lastSyncTimestamp >= 25) {
+      lastSyncTimestamp = now;
+      const curTime = audio.currentTime;
+      const activeSection = document.querySelector('.chapter-section.active');
       
-      if (activeUnit) {
-        if (activeUnit.id !== currentPlayingId) {
-          currentPlayingId = activeUnit.id;
-          localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id);
-          
-          activeSection.querySelectorAll('.sentence-unit.active').forEach(u => {
-            if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
-          });
-          activeUnit.classList.add('active', 'card-collapsed');
+      if (activeSection) {
+        const activeUnit = findSentenceAt(curTime);
+        
+        if (activeUnit) {
+          if (activeUnit.id !== currentPlayingId) {
+            currentPlayingId = activeUnit.id;
+            try { localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id); } catch(e) {}
+            
+            activeSection.querySelectorAll('.sentence-unit.active').forEach(u => {
+              if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
+            });
+            activeUnit.classList.add('active', 'card-collapsed');
 
-          if (autoScrollEnabled) {
-            const rect = activeUnit.getBoundingClientRect();
-            const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
-            if (!inView) {
-              activeUnit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (autoScrollEnabled) {
+              const clockNow = Date.now();
+              if (clockNow - lastAutoScrollTimestamp >= 600) {
+                const rect = activeUnit.getBoundingClientRect();
+                const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
+                if (!inView) {
+                  lastAutoScrollTimestamp = clockNow;
+                  activeUnit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }
             }
           }
-        }
-        
-        const wordEls = activeUnit.querySelectorAll('.w');
-        let foundWord = null;
-        for (let i = 0; i < wordEls.length; i++) {
-          const w = wordEls[i];
-          const ws = parseFloat(w.dataset.s);
-          const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
-          if (curTime >= ws && curTime < we) {
-            foundWord = w;
-            break;
+          
+          if (!activeUnit._cachedWords) {
+            activeUnit._cachedWords = Array.from(activeUnit.querySelectorAll('.w'));
+          }
+          const wordEls = activeUnit._cachedWords;
+          let foundWord = null;
+          for (let i = 0; i < wordEls.length; i++) {
+            const w = wordEls[i];
+            const ws = parseFloat(w.dataset.s);
+            const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
+            if (curTime >= ws && curTime < we) {
+              foundWord = w;
+              break;
+            }
+          }
+          
+          if (foundWord !== currentActiveWordEl) {
+            if (currentActiveWordEl) currentActiveWordEl.classList.remove('active-word');
+            if (foundWord) foundWord.classList.add('active-word');
+            currentActiveWordEl = foundWord;
+          }
+        } else {
+          if (currentActiveWordEl) {
+            currentActiveWordEl.classList.remove('active-word');
+            currentActiveWordEl = null;
           }
         }
-        
-        if (foundWord !== currentActiveWordEl) {
-          if (currentActiveWordEl) currentActiveWordEl.classList.remove('active-word');
-          if (foundWord) foundWord.classList.add('active-word');
-          currentActiveWordEl = foundWord;
-        }
-      } else {
-        if (currentActiveWordEl) {
-          currentActiveWordEl.classList.remove('active-word');
-          currentActiveWordEl = null;
-        }
       }
+      advanceShadowing();
     }
-    advanceShadowing();
   }
   startSyncLoop();
 }
