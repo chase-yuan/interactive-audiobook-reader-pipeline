@@ -442,10 +442,16 @@ def main():
 
         audio_dir = Path(args.book_dir) / "audio"
         audio_dir_arg = str(audio_dir) if audio_dir.is_dir() else str(args.book_dir)
-        print(f"\n🚀 [PIPELINE -> AUTO-PUBLISH] Triggering automated production release for '{args.public_book_id}'...")
+        book_id = args.public_book_id
+        if not book_id:
+            raw_name = os.path.basename(os.path.abspath(args.book_dir))
+            clean_name = re.sub(r"\s*\([^)]*\)", "", raw_name)
+            book_id = re.sub(r"[^a-zA-Z0-9]+", "-", clean_name.strip()).strip("-").lower()
+
+        print(f"\n🚀 [PIPELINE -> AUTO-PUBLISH] Triggering automated production release for '{book_id}'...")
         cmd = [
             sys.executable, str(audible_publisher),
-            "--id", args.public_book_id,
+            "--id", book_id,
             "--src", master_html_path,
             "--audio-dir", audio_dir_arg,
         ]
@@ -453,7 +459,12 @@ def main():
         if res.returncode != 0:
             print("❌ [PIPELINE -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
             raise SystemExit(1)
-        print(f"🎉 [PIPELINE -> AUTO-PUBLISH] Finished! '{args.public_book_id}' is live and verified on production.")
+        print(f"🎉 [PIPELINE -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
+
+        keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
+        if keygen_script.is_file():
+            print("\n🔑 [PIPELINE -> KEYGEN] Emitting production passkey and dispatch copy...")
+            subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
 
 if __name__ == "__main__":
     main()

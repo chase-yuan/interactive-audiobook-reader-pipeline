@@ -191,7 +191,7 @@ def clean_and_merge_elements(elements):
         # Case C: Check if curr_txt is a title or header
         is_title = (
             curr_txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction "))
-            or (len(curr_txt.split()) <= 8 and (curr_txt.istitle() or curr_txt.isupper()))
+            or (len(curr_txt.split()) <= 8 and (curr_txt.istitle() or curr_txt.isupper()) and not curr_txt.endswith(":"))
         )
 
         curr_has_terminal = bool(re.search(r"[.!?…”\"’)]$", curr_txt))
@@ -220,7 +220,12 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     for elem_idx, el in enumerate(cleaned_elements):
         tag = el['tag']
         txt = el['text']
-        is_h = tag.startswith('h')
+        cls = el.get('class', '').lower()
+        is_h = (
+            tag.startswith('h')
+            or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title')
+            or any(c in cls.split() for c in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'heading'))
+        )
         
         if is_h:
             canonical_items.append({

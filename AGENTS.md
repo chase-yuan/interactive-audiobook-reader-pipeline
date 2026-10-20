@@ -9,6 +9,12 @@
 > - **NEVER** create book-specific runners (e.g. `<book_name>_runner.py`) in the repository root directory!
 > - The repository root is strictly reserved for universal, reusable pipeline core modules.
 > - One-off experiment scripts belong inside the target book directory under `~/Vault/audiobook/<BookName>/`, never in this open-source repository.
+>
+> **Industrial End-to-End Delivery Invariant (端到端完整交付铁律)**:
+> - 当用户要求“跑这本书”、“制作这本书”或运行有声书流水线时，任务的**唯一合格终点是全自动上线至在线书架（Audible Library）并输出激活卡密**。
+> - 本地生成 HTML 阅读器并通过质检门禁仅为**阶段性检查点（Checkpoint）**，绝不是最终交付！
+> - 流水线必须一站式自动执行生产发布：音频同步 R2 CDN ➔ 章节切片 ➔ 黄金母本密封 ➔ 双源目录同步 ➔ Git 推送生产环境 ➔ 边缘节点校验 ➔ 输出卡密。
+> - 严禁在本地 HTML 编译通过后停步等待用户二次提醒上架！
 
 ---
 
