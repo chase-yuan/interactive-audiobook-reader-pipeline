@@ -83,29 +83,31 @@ def get_reader_css() -> str:
   /* --- Universal Semantic Tokens --- */
   --btn-primary-text: #ffffff;
 
-  /* --- Focus Immersion Mode Tokens --- */
-  --focus-bg: #000000;
-  --focus-text: #f8fafc;
-  --focus-text-trans: #94a3b8;
-  --focus-title: #94a3b8;
-  --focus-status: #38bdf8;
-  --focus-hint: #64748b;
-  --focus-btn-bg: rgba(255, 255, 255, 0.08);
-  --focus-btn-border: rgba(255, 255, 255, 0.15);
-  --focus-btn-text: #e2e8f0;
-  --focus-btn-active-bg: rgba(56, 189, 248, 0.2);
-  --focus-btn-active-border: #38bdf8;
-  --focus-btn-active-text: #38bdf8;
-  --focus-close-hover: #f8fafc;
-  --focus-word-active-bg: #38bdf8;
-  --focus-word-active-text: #040817;
-  --focus-exit-bg: rgba(255, 255, 255, 0.06);
-  --focus-exit-border: rgba(255, 255, 255, 0.12);
-  --focus-exit-text: #cbd5e1;
-  --focus-exit-active-bg: rgba(255, 255, 255, 0.12);
-  --focus-exit-active-text: #f1f5f9;
-  --focus-exit-holding-border: #38bdf8;
-  --focus-progress-bg: rgba(56, 189, 248, 0.35);
+  /* --- Focus Immersion Mode Tokens (Theme-Harmonized & Invariant) --- */
+  --focus-bg: var(--bg-page);
+  --focus-text: var(--text-main);
+  --focus-text-trans: var(--text-sub);
+  --focus-title: var(--text-sub);
+  --focus-status: var(--accent);
+  --focus-hint: var(--text-sub);
+  --focus-dock-bg: var(--bg-panel-glass);
+  --focus-dock-border: var(--border);
+  --focus-btn-bg: var(--bg-panel);
+  --focus-btn-border: var(--border-subtle);
+  --focus-btn-text: var(--text-main);
+  --focus-btn-active-bg: var(--bg-hover);
+  --focus-btn-active-border: var(--accent);
+  --focus-btn-active-text: var(--accent);
+  --focus-close-hover: var(--text-main);
+  --focus-word-active-bg: var(--word-highlight-bg);
+  --focus-word-active-text: var(--word-highlight-text);
+  --focus-exit-bg: var(--bg-panel);
+  --focus-exit-border: var(--border);
+  --focus-exit-text: var(--text-main);
+  --focus-exit-active-bg: var(--bg-hover);
+  --focus-exit-active-text: var(--accent);
+  --focus-exit-holding-border: var(--accent);
+  --focus-progress-bg: var(--accent-light);
 
   /* --- Backward-compatible Pocket Mode Aliases --- */
   --pocket-bg: var(--focus-bg);
@@ -934,13 +936,14 @@ body {
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: env(safe-area-inset-top, var(--space-4xl)) var(--space-4xl) env(safe-area-inset-bottom, var(--space-4xl)) var(--space-4xl);
+  padding: env(safe-area-inset-top, var(--space-xl)) var(--space-xl) env(safe-area-inset-bottom, var(--space-xl)) var(--space-xl);
   box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
 }
 
+.focus-top-bar,
 .focus-header,
 .pocket-header {
   width: 100%;
@@ -948,70 +951,19 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--space-lg) 0;
-}
-
-.focus-header-left,
-.pocket-header-left {
-  display: flex;
-  align-items: center;
-  gap: var(--space-lg);
+  padding: var(--space-sm) 0;
+  box-sizing: border-box;
 }
 
 .focus-title,
 .pocket-title {
   color: var(--focus-title);
-  font-size: var(--font-size-sm);
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.12em;
   font-family: var(--font-sans);
   text-transform: uppercase;
   font-weight: 600;
-}
-
-.focus-status,
-.pocket-status {
-  color: var(--focus-status);
-  font-size: var(--font-size-h3);
-  font-weight: 600;
-  font-family: var(--font-sans);
-}
-
-.focus-controls,
-.pocket-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-lg);
-}
-
-.focus-tool-btn,
-.pocket-tool-btn {
-  background: var(--focus-btn-bg);
-  color: var(--focus-btn-text);
-  border: 1px solid var(--focus-btn-border);
-  border-radius: var(--radius-full);
-  padding: var(--space-sm) var(--space-xl);
-  font-size: var(--font-size-ui);
-  font-family: var(--font-sans);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-  font-weight: 500;
-}
-
-.focus-tool-btn:hover,
-.pocket-tool-btn:hover {
-  background: var(--focus-btn-active-bg);
-  border-color: var(--focus-btn-active-border);
-  color: var(--focus-btn-active-text);
-}
-
-.focus-tool-btn.active,
-.pocket-tool-btn.active {
-  background: var(--focus-btn-active-bg);
-  border-color: var(--focus-btn-active-border);
-  color: var(--focus-btn-active-text);
+  opacity: 0.7;
 }
 
 .focus-close-icon,
@@ -1019,9 +971,9 @@ body {
   background: transparent;
   color: var(--focus-title);
   border: none;
-  font-size: var(--font-size-h2);
+  font-size: var(--font-size-h3);
   cursor: pointer;
-  padding: var(--space-xs) var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
   line-height: 1;
   transition: color var(--transition-fast);
@@ -1042,29 +994,35 @@ body {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: var(--space-4xl) var(--space-2xl);
+  padding: var(--space-lg) var(--space-base);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .focus-sentence-box,
 .pocket-sentence-box {
   width: 100%;
-  text-align: center;
+  text-align: left;
   cursor: pointer;
-  padding: var(--space-3xl);
+  padding: var(--space-md) var(--space-base);
   border-radius: var(--radius-lg);
+  max-height: calc(100vh - 160px);
+  max-height: calc(100dvh - 160px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   transition: background var(--transition-fast);
 }
 
 .focus-sentence-text,
 .pocket-sentence-text {
   font-family: var(--font-serif);
-  font-size: clamp(1.4rem, 4vw, 2.3rem);
-  line-height: var(--line-height-normal);
+  font-size: clamp(1.25rem, 2.8vw, 1.85rem);
+  line-height: 1.55;
   color: var(--focus-text);
   font-weight: 500;
   letter-spacing: -0.01em;
-  margin-bottom: var(--space-3xl);
+  margin-bottom: var(--space-lg);
+  text-align: left;
   transition: filter var(--transition-base), opacity var(--transition-base);
 }
 
@@ -1087,12 +1045,13 @@ body {
 .focus-sentence-trans,
 .pocket-sentence-trans {
   font-family: var(--font-sans);
-  font-size: clamp(0.95rem, 2vw, 1.15rem);
-  line-height: var(--line-height-relaxed);
+  font-size: clamp(0.92rem, 1.8vw, 1.05rem);
+  line-height: 1.6;
   color: var(--focus-text-trans);
   font-weight: 400;
-  max-width: 720px;
-  margin: 0 auto;
+  max-width: 760px;
+  text-align: left;
+  margin: 0;
   transition: opacity var(--transition-base);
 }
 
@@ -1126,72 +1085,112 @@ body {
   opacity: 1;
 }
 
-.focus-center,
-.pocket-center {
-  display: flex;
-  flex-direction: column;
+/* Floating Bottom Control Dock (AP1 & AP5 Pill Dock) */
+.focus-dock {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-lg);
-  margin-bottom: var(--space-2xl);
+  gap: var(--space-xs);
+  background: var(--focus-dock-bg);
+  border: var(--space-3xs) solid var(--focus-dock-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2xs) var(--space-sm);
+  box-shadow: var(--shadow-subtle);
+  margin-bottom: var(--space-md);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.focus-hint,
-.pocket-hint {
-  color: var(--focus-hint);
-  font-size: var(--font-size-sm);
-  letter-spacing: 0.04em;
+.focus-dock-btn,
+.focus-tool-btn,
+.pocket-tool-btn {
+  background: none;
+  border: none;
+  color: var(--focus-btn-text);
   font-family: var(--font-sans);
-}
-
-/* Instant-Exit Button (Ergonomic AP5, zero 1.5s holding requirement) */
-.focus-exit-btn,
-.pocket-exit-btn {
-  position: relative;
-  overflow: hidden;
-  background: var(--focus-exit-bg);
-  color: var(--focus-exit-text);
-  border: 1px solid var(--focus-exit-border);
-  border-radius: var(--radius-full);
-  padding: var(--space-base) var(--space-4xl);
   font-size: var(--font-size-ui);
   font-weight: 500;
-  font-family: var(--font-sans);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  min-height: 42px;
-  min-width: 150px;
+  transition: all var(--transition-fast);
+  line-height: var(--line-height-btn);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-base);
+  min-width: 38px;
+  min-height: 36px;
 }
 
-.focus-exit-btn:hover,
-.pocket-exit-btn:hover {
-  background: var(--focus-exit-active-bg);
-  color: var(--focus-exit-active-text);
-  border-color: var(--focus-btn-active-border);
+.focus-dock-btn:hover,
+.focus-tool-btn:hover,
+.pocket-tool-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
 }
 
-.focus-exit-btn:active,
-.pocket-exit-btn:active {
-  background: var(--focus-exit-active-bg);
-  color: var(--focus-exit-active-text);
+.focus-dock-btn:active,
+.focus-tool-btn:active,
+.pocket-tool-btn:active {
+  opacity: 0.85;
 }
 
-.focus-exit-btn.holding,
-.pocket-exit-btn.holding {
-  border-color: var(--focus-exit-holding-border);
+.focus-dock-btn.active,
+.focus-tool-btn.active,
+.pocket-tool-btn.active {
+  background: var(--bg-hover);
+  color: var(--accent);
+  font-weight: 600;
 }
 
-.focus-progress-bar,
-.pocket-progress-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  width: 0%;
-  background: var(--focus-progress-bg);
-  pointer-events: none;
+.focus-rep-pill {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.focus-dock-play {
+  font-size: 1.05rem;
+}
+
+/* Mobile Responsive Optimization (Width Recovery & Comfortable Line Span) */
+@media (max-width: 640px) {
+  #focus-overlay,
+  #pocket-overlay {
+    padding: env(safe-area-inset-top, 12px) 12px env(safe-area-inset-bottom, 12px) 12px;
+  }
+  .focus-sentence-container,
+  .pocket-sentence-container {
+    padding: var(--space-xs) var(--space-2xs);
+  }
+  .focus-sentence-box,
+  .pocket-sentence-box {
+    padding: var(--space-xs) var(--space-2xs);
+    max-height: calc(100vh - 130px);
+    max-height: calc(100dvh - 130px);
+  }
+  .focus-sentence-text,
+  .pocket-sentence-text {
+    font-size: clamp(1.10rem, 3.8vw, 1.25rem);
+    line-height: 1.58;
+    margin-bottom: var(--space-md);
+  }
+  .focus-sentence-trans,
+  .pocket-sentence-trans {
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+  .focus-dock {
+    gap: 3px;
+    padding: 3px 6px;
+    margin-bottom: var(--space-xs);
+  }
+  .focus-dock-btn {
+    padding: 5px 9px;
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 0.82rem;
+  }
 }
 
 .w {
