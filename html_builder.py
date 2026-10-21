@@ -155,7 +155,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   <div class="control-drawer" id="controlDrawer">
     <div class="drawer-inner">
       <div class="audio-player-bar" id="audioPlayerBar"{audio_track_attr}>
-        <button class="player-speed-btn" id="audioSpeedBtn" onclick="cyclePlaybackRate()" title="Playback speed / 播放速度" aria-label="Playback speed">1.0×</button>
+        <button class="player-speed-btn" id="audioSpeedBtn" onclick="cyclePlaybackRate()" aria-label="Playback speed">1.0×</button>
         <span class="player-time" id="playerCurTime">00:00</span>
         <div class="player-slider-wrap">
           <input type="range" class="player-slider" id="playerScrubber" min="0" max="100" value="0" step="0.1" aria-label="Playback scrubber">
@@ -165,30 +165,19 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
       </div>
       <div class="drawer-row">
         <div class="drawer-group">
-          <div class="segmented-control" id="chineseLockBtn" role="group" aria-label="Language mode">
-            <button class="seg-btn active" id="langModeBilingual" onclick="setLanguageMode('bilingual')" title="双语研读模式（快捷键 T）">双语</button>
-            <div class="seg-divider"></div>
-            <button class="seg-btn" id="langModeEnglish" onclick="setLanguageMode('english')" title="纯英磨耳朵模式（快捷键 T）">纯英</button>
-          </div>
-          <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark / Night)">Theme</button>
+          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (快捷键 T)">双语</button>
+          <button class="pill-btn" onclick="toggleTheme()" aria-label="Switch theme">Theme</button>
         </div>
         <div class="drawer-group"{repeat_group_attr}>
-          <div class="segmented-control">
-            <select id="shadowRepeatSelect" class="seg-select" onchange="setShadowRepetitions(this.value)" title="Repetitions">
-              <option value="1">1×</option><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option><option value="5">5×</option>
-            </select>
-            <div class="seg-divider"></div>
-            <button class="seg-btn" id="repeatBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
-            <div class="seg-divider"></div>
-            <button class="seg-btn" id="focusModeBtn" onclick="toggleFocusMode()" title="Focus 专注模式 (快捷键 P)">Focus</button>
-          </div>
+          <button class="pill-btn" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (快捷键 R)">Repeat</button>
+          <button class="pill-btn" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (快捷键 P)">Focus</button>
         </div>
         <div class="drawer-group">
-          <label class="toggle-pill" title="Auto-scroll to active sentence">
+          <label class="toggle-pill" aria-label="Auto-scroll to active sentence">
             <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
             <span class="toggle-badge">Auto-scroll</span>
           </label>
-          <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" title="Keyboard & Gesture shortcuts">Shortcuts</button>
+          <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" aria-label="Keyboard & Gesture shortcuts">Shortcuts</button>
         </div>
       </div>
       <div class="drawer-tips" id="drawerTips">
@@ -829,6 +818,11 @@ function setLanguageMode(mode) {
 
 function updateLanguageModeUI(mode) {
   const isEnglish = (mode === 'english');
+  const lockBtn = document.getElementById('chineseLockBtn') || document.getElementById('langToggleBtn');
+  if (lockBtn && lockBtn.classList.contains('pill-btn')) {
+    lockBtn.textContent = isEnglish ? '纯英' : '双语';
+    lockBtn.classList.toggle('active', !isEnglish);
+  }
   const btnBilingual = document.getElementById('langModeBilingual');
   const btnEnglish = document.getElementById('langModeEnglish');
   if (btnBilingual && btnEnglish) {
@@ -849,6 +843,7 @@ function toggleChineseLock() {
 
 window.setLanguageMode = setLanguageMode;
 window.toggleChineseLock = toggleChineseLock;
+window.toggleLanguageMode = toggleChineseLock;
 
 const savedHideChinese = localStorage.getItem(STORAGE_PREFIX + 'hide_chinese') || localStorage.getItem('audible_hide_chinese');
 if (savedHideChinese === 'true') {
@@ -1072,7 +1067,7 @@ audio.preservesPitch = true;
 audio.mozPreservesPitch = true;
 audio.webkitPreservesPitch = true;
 
-const MAIN_REP_LEVELS = [1, 2, 3, 4, 5];
+const MAIN_REP_LEVELS = [1, 2, 3, 5];
 
 function setMainRepetitions(n) {
   const nextRep = Math.max(1, parseInt(n, 10) || 1);
@@ -1081,14 +1076,23 @@ function setMainRepetitions(n) {
     localStorage.setItem(STORAGE_PREFIX + 'repetitions', String(nextRep));
     localStorage.setItem('reader_focus_repetitions', String(nextRep));
   } catch(e) {}
-  const repBtn = document.getElementById('repeatBtn');
+  const repBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (repBtn) {
-    repBtn.textContent = `复读 ${nextRep}×`;
-    repBtn.classList.toggle('active', nextRep > 1);
+    if (nextRep === 1) {
+      repBtn.textContent = 'Repeat';
+      repBtn.classList.remove('active');
+    } else {
+      repBtn.textContent = `${nextRep}×`;
+      repBtn.classList.add('active');
+    }
   }
   const focusRepBtn = document.getElementById('focusRepBtn');
   if (focusRepBtn) {
     focusRepBtn.textContent = `${nextRep}×`;
+  }
+  const sel = document.getElementById('shadowRepeatSelect');
+  if (sel) {
+    sel.value = String(nextRep);
   }
   if (nextRep === 1) {
     if (shadowState.phase !== 'idle') {
@@ -1137,8 +1141,13 @@ function stopShadowing() {
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) {
     const cur = shadowState.repetitions || 1;
-    btn.textContent = `复读 ${cur}×`;
-    btn.classList.toggle('active', cur > 1);
+    if (cur === 1) {
+      btn.textContent = 'Repeat';
+      btn.classList.remove('active');
+    } else {
+      btn.textContent = `${cur}×`;
+      btn.classList.add('active');
+    }
   }
   updatePocketStatus();
 }
@@ -1365,14 +1374,24 @@ function initFocusPreferences() {
     if (savedTrans !== null) {
       focusShowTrans = savedTrans !== '0';
     }
-    const savedRep = localStorage.getItem('reader_focus_repetitions');
+    const savedRep = localStorage.getItem('reader_focus_repetitions') || localStorage.getItem(STORAGE_PREFIX + 'repetitions');
     if (savedRep !== null) {
       const repNum = parseInt(savedRep, 10);
-      if (FOCUS_REP_LEVELS.includes(repNum)) {
+      if (MAIN_REP_LEVELS.includes(repNum)) {
         shadowState.repetitions = repNum;
       }
     } else {
       shadowState.repetitions = 1;
+    }
+    const initialRepBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
+    if (initialRepBtn) {
+      if (shadowState.repetitions > 1) {
+        initialRepBtn.textContent = `${shadowState.repetitions}×`;
+        initialRepBtn.classList.add('active');
+      } else {
+        initialRepBtn.textContent = 'Repeat';
+        initialRepBtn.classList.remove('active');
+      }
     }
     const savedScale = parseFloat(localStorage.getItem('reader_focus_font_scale'));
     if (Number.isFinite(savedScale)) {
