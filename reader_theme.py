@@ -809,6 +809,12 @@ body {
   margin-bottom: var(--space-lg);
   border-radius: var(--radius-base);
   transition: background var(--transition-fast);
+  content-visibility: auto;
+  contain-intrinsic-size: 0 72px;
+}
+
+.sentence-unit.active {
+  content-visibility: visible;
 }
 
 .sentence-text {

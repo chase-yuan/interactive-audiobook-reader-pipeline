@@ -558,6 +558,9 @@ let activeChapterNum = parseInt(localStorage.getItem(STORAGE_PREFIX + 'active_ch
 let autoScrollEnabled = localStorage.getItem(STORAGE_PREFIX + 'autoscroll') !== 'false';
 let currentPlayingId = null;
 let currentActiveWordEl = null;
+let currentActiveWordStart = -1;
+let currentActiveWordEnd = -1;
+let currentActiveSection = null;
 let sentenceTimeIndex = [];
 let syncFrameId = null;
 const shadowState = { phase: 'idle', repetitions: 3, completed: 0, sentence: null, timer: null, pauseStartTime: 0 };
@@ -626,8 +629,8 @@ function reportLibraryProgress(chNum, pct) {
 }
 
 function rebuildSentenceTimeIndex() {
-  const section = document.querySelector('.chapter-section.active');
-  sentenceTimeIndex = section ? Array.from(section.querySelectorAll('.sentence-unit')).map(el => ({
+  currentActiveSection = document.querySelector('.chapter-section.active');
+  sentenceTimeIndex = currentActiveSection ? Array.from(currentActiveSection.querySelectorAll('.sentence-unit')).map(el => ({
     start: parseFloat(el.dataset.start || '0'),
     end: parseFloat(el.dataset.end || '0'),
     el: el
@@ -678,6 +681,9 @@ function switchChapter(chNum, autoPlay) {
     sec.classList.remove('active');
     if (parseInt(sec.dataset.ch, 10) === chNum) {
       sec.classList.add('active');
+      currentActiveSection = sec;
+      currentActiveWordStart = -1;
+      currentActiveWordEnd = -1;
       const audioSrc = resolveAudioSource(sec);
       if (audio.getAttribute('src') !== audioSrc) {
         const wasPlaying = autoPlay || !audio.paused;
@@ -1080,6 +1086,18 @@ function toggleShadowing() {
 
 function getNextShadowSentence(currentEl) {
   if (!currentEl) return null;
+  if (sentenceTimeIndex && sentenceTimeIndex.length) {
+    const idx = sentenceTimeIndex.findIndex(item => item.el === currentEl);
+    if (idx !== -1) {
+      for (let i = idx + 1; i < sentenceTimeIndex.length; i++) {
+        const item = sentenceTimeIndex[i];
+        if (item.el && item.el.dataset.matched !== '0' && Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start) {
+          return item.el;
+        }
+      }
+      return null;
+    }
+  }
   const section = currentEl.closest('.chapter-section') || document.querySelector('.chapter-section.active');
   if (!section) return null;
   const allSentences = Array.from(section.querySelectorAll('.sentence-unit'));
@@ -1094,6 +1112,25 @@ function getNextShadowSentence(currentEl) {
     }
   }
   return null;
+}
+
+let shadowBufferWatchdog = null;
+function armShadowPauseWatchdog() {
+  if (shadowBufferWatchdog) clearTimeout(shadowBufferWatchdog);
+  shadowBufferWatchdog = setTimeout(() => {
+    if (typeof shadowState !== 'undefined' && shadowState.phase === 'pause_buffer' && shadowState.pauseStartTime > 0) {
+      if (Date.now() - shadowState.pauseStartTime >= 700) {
+        shadowState.pauseStartTime = 0;
+        if (shadowState.timer) clearTimeout(shadowState.timer);
+        if (shadowState.phase !== 'idle' && shadowState.sentence) {
+          shadowState.phase = 'playing';
+          audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
+          audio.play();
+        }
+      }
+    }
+    shadowBufferWatchdog = null;
+  }, 750);
 }
 
 function advanceShadowing() {
@@ -1113,6 +1150,7 @@ function advanceShadowing() {
       updatePocketStatus();
       shadowState.phase = 'pause_buffer';
       shadowState.pauseStartTime = Date.now();
+      armShadowPauseWatchdog();
       nextSentence.classList.add('active');
       if (autoScrollEnabled) {
         const rect = nextSentence.getBoundingClientRect();
@@ -1149,6 +1187,7 @@ function advanceShadowing() {
   
   shadowState.phase = 'pause_buffer';
   shadowState.pauseStartTime = Date.now();
+  armShadowPauseWatchdog();
   if (shadowState.timer) clearTimeout(shadowState.timer);
   shadowState.timer = setTimeout(() => {
     if (shadowState.phase === 'idle' || !shadowState.sentence) return;
@@ -1158,20 +1197,6 @@ function advanceShadowing() {
     audio.play();
   }, 650);
 }
-
-setInterval(() => {
-  if (shadowState.phase === 'pause_buffer' && shadowState.pauseStartTime > 0) {
-    if (Date.now() - shadowState.pauseStartTime >= 700) {
-      shadowState.pauseStartTime = 0;
-      if (shadowState.timer) clearTimeout(shadowState.timer);
-      if (shadowState.phase !== 'idle' && shadowState.sentence) {
-        shadowState.phase = 'playing';
-        audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
-        audio.play();
-      }
-    }
-  }
-}, 250);
 
 let pocketModeActive = false;
 let lastPocketTapTime = 0;
@@ -1363,17 +1388,21 @@ function syncPlayback() {
     if (now - lastSyncTimestamp >= 25) {
       lastSyncTimestamp = now;
       const curTime = audio.currentTime;
-      const activeSection = document.querySelector('.chapter-section.active');
+      if (!currentActiveSection || !currentActiveSection.classList.contains('active')) {
+        currentActiveSection = document.querySelector('.chapter-section.active');
+      }
       
-      if (activeSection) {
+      if (currentActiveSection) {
         const activeUnit = findSentenceAt(curTime);
         
         if (activeUnit) {
           if (activeUnit.id !== currentPlayingId) {
             currentPlayingId = activeUnit.id;
+            currentActiveWordStart = -1;
+            currentActiveWordEnd = -1;
             try { localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id); } catch(e) {}
             
-            activeSection.querySelectorAll('.sentence-unit.active').forEach(u => {
+            currentActiveSection.querySelectorAll('.sentence-unit.active').forEach(u => {
               if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
             });
             activeUnit.classList.add('active', 'card-collapsed');
@@ -1391,31 +1420,43 @@ function syncPlayback() {
             }
           }
           
-          if (!activeUnit._cachedWords) {
-            activeUnit._cachedWords = Array.from(activeUnit.querySelectorAll('.w'));
-          }
-          const wordEls = activeUnit._cachedWords;
-          let foundWord = null;
-          for (let i = 0; i < wordEls.length; i++) {
-            const w = wordEls[i];
-            const ws = parseFloat(w.dataset.s);
-            const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
-            if (curTime >= ws && curTime < we) {
-              foundWord = w;
-              break;
+          if (currentActiveWordEl && curTime >= currentActiveWordStart && curTime < currentActiveWordEnd) {
+            // Short-circuit: still within active word time window
+          } else {
+            if (!activeUnit._cachedWords) {
+              activeUnit._cachedWords = Array.from(activeUnit.querySelectorAll('.w'));
             }
-          }
-          
-          if (foundWord !== currentActiveWordEl) {
-            if (currentActiveWordEl) currentActiveWordEl.classList.remove('active-word');
-            if (foundWord) foundWord.classList.add('active-word');
-            currentActiveWordEl = foundWord;
+            const wordEls = activeUnit._cachedWords;
+            let foundWord = null;
+            let foundStart = -1;
+            let foundEnd = -1;
+            for (let i = 0; i < wordEls.length; i++) {
+              const w = wordEls[i];
+              const ws = parseFloat(w.dataset.s);
+              const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
+              if (curTime >= ws && curTime < we) {
+                foundWord = w;
+                foundStart = ws;
+                foundEnd = we;
+                break;
+              }
+            }
+            
+            if (foundWord !== currentActiveWordEl) {
+              if (currentActiveWordEl) currentActiveWordEl.classList.remove('active-word');
+              if (foundWord) foundWord.classList.add('active-word');
+              currentActiveWordEl = foundWord;
+            }
+            currentActiveWordStart = foundStart;
+            currentActiveWordEnd = foundEnd;
           }
         } else {
           if (currentActiveWordEl) {
             currentActiveWordEl.classList.remove('active-word');
             currentActiveWordEl = null;
           }
+          currentActiveWordStart = -1;
+          currentActiveWordEnd = -1;
         }
       }
       advanceShadowing();
