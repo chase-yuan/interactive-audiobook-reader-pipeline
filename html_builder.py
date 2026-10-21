@@ -1476,7 +1476,13 @@ function updateFocusSentenceDisplay() {
   if (!textEl) return;
   
   if (!shadowState.sentence) {
-    const cur = findSentenceAt(audio.currentTime) || (sentenceTimeIndex[0] && sentenceTimeIndex[0].el);
+    const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
+    const cur = findSentenceAt((audio && Number.isFinite(audio.currentTime)) ? audio.currentTime : 0) || 
+      (currentPlayingId ? document.getElementById(currentPlayingId) : null) || 
+      (activeSec ? activeSec.querySelector('.sentence-unit.active') : null) || 
+      (sentenceTimeIndex[0] && sentenceTimeIndex[0].el) || 
+      (activeSec ? activeSec.querySelector('.sentence-unit') : null) || 
+      document.querySelector('.sentence-unit');
     if (cur) shadowState.sentence = cur;
   }
   
@@ -1640,7 +1646,8 @@ function toggleFocusMode(force) {
     const fallback = (activeSec ? activeSec.querySelector('.sentence-unit.active') : null) || 
                      (currentPlayingId ? document.getElementById(currentPlayingId) : null) || 
                      (sentenceTimeIndex[0] && sentenceTimeIndex[0].el) || 
-                     (activeSec ? activeSec.querySelector('.sentence-unit') : null);
+                     (activeSec ? activeSec.querySelector('.sentence-unit') : null) || 
+                     document.querySelector('.sentence-unit');
     shadowState.sentence = cur || fallback;
     if (shadowState.phase === 'idle') {
       shadowState.phase = 'playing';
