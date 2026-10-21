@@ -434,17 +434,9 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 </main>
 
 <div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
-  <div class="focus-header pocket-header">
-    <div class="focus-header-left pocket-header-left">
-      <div class="focus-title pocket-title">Focus</div>
-      <button class="focus-tool-btn pocket-tool-btn" id="focusRepBtn" onclick="cycleFocusRepetitions(event)" title="单句循环遍数 (快捷键 R)">1×</button>
-      <div class="focus-status pocket-status" id="focusStatus">1/1</div>
-    </div>
-    <div class="focus-controls pocket-controls">
-      <button class="focus-tool-btn pocket-tool-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)" title="切换双语显隐 (快捷键 T)">双语</button>
-      <button class="focus-tool-btn pocket-tool-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)" title="切换盲听模式 (快捷键 H/B)">盲听</button>
-      <button class="focus-close-icon pocket-close-icon" onclick="toggleFocusMode(false)" title="退出 (Esc)">✕</button>
-    </div>
+  <div class="focus-top-bar pocket-header">
+    <div class="focus-title pocket-title">Focus</div>
+    <button class="focus-close-icon pocket-close-icon" id="focusExitBtn" onclick="toggleFocusMode(false)">✕</button>
   </div>
   <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)">
     <div class="focus-sentence-box pocket-sentence-box" id="focusSentenceBox">
@@ -452,9 +444,13 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
       <div class="focus-sentence-trans pocket-sentence-trans" id="focusSentenceTrans"></div>
     </div>
   </div>
-  <div class="focus-center pocket-center">
-    <div class="focus-hint pocket-hint">← / → 切句 · 空格重听 · T 双语 · B 盲听 · R 遍数 · Esc 退出</div>
-    <button class="focus-exit-btn pocket-exit-btn" id="focusExitBtn" onclick="toggleFocusMode(false)"><span class="focus-btn-text">退出专注模式</span></button>
+  <div class="focus-dock" id="focusDock">
+    <button class="focus-dock-btn" id="focusPrevBtn" onclick="gotoPreviousShadowSentence(event)">◀</button>
+    <button class="focus-dock-btn focus-dock-play" id="focusPlayBtn" onclick="toggleFocusPlayPause(event)">⏸</button>
+    <button class="focus-dock-btn focus-rep-pill" id="focusRepBtn" onclick="cycleFocusRepetitions(event)">1×</button>
+    <button class="focus-dock-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)">双语</button>
+    <button class="focus-dock-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)">盲听</button>
+    <button class="focus-dock-btn" id="focusNextBtn" onclick="gotoNextShadowSentence(event)">▶</button>
   </div>
 </div>
 
@@ -1188,6 +1184,7 @@ function advanceShadowing() {
   }
 
   // Shadow repeating loop strictly for repetitions > 1
+  shadowState.isInternalPause = true;
   audio.pause();
   shadowState.completed += 1;
   updateFocusStatus();
@@ -1216,8 +1213,10 @@ function advanceShadowing() {
         if (shadowState.phase === 'idle' || !shadowState.sentence) return;
         shadowState.pauseStartTime = 0;
         shadowState.phase = 'playing';
+        shadowState.isInternalPause = false;
         audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
         audio.play();
+        updateFocusPlayBtn(true);
       }, 250);
       return;
     } else {
@@ -1245,8 +1244,10 @@ function advanceShadowing() {
     if (shadowState.phase === 'idle' || !shadowState.sentence) return;
     shadowState.pauseStartTime = 0;
     shadowState.phase = 'replaying';
+    shadowState.isInternalPause = false;
     audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
     audio.play();
+    updateFocusPlayBtn(true);
   }, 280);
 }
 
@@ -1321,28 +1322,49 @@ function cycleFocusRepetitions(e) {
 }
 
 function updateFocusStatus() {
-  const statusEl = document.getElementById('focusStatus') || document.getElementById('pocketStatus');
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) {
-    repBtn.textContent = `${shadowState.repetitions || 1}×`;
+    if (shadowState.repetitions <= 1) {
+      repBtn.textContent = '1×';
+    } else {
+      const cur = Math.min(shadowState.repetitions, shadowState.completed + 1);
+      repBtn.textContent = `${cur}/${shadowState.repetitions}`;
+    }
   }
-  if (!statusEl) return;
-  if (shadowState.phase === 'idle') {
-    statusEl.textContent = '未启动';
-    return;
+  const statusEl = document.getElementById('focusStatus') || document.getElementById('pocketStatus');
+  if (statusEl) {
+    if (shadowState.repetitions <= 1) {
+      statusEl.textContent = '1/1';
+    } else {
+      const cur = Math.min(shadowState.repetitions, shadowState.completed + 1);
+      statusEl.textContent = `${cur}/${shadowState.repetitions}`;
+    }
   }
-  if (shadowState.phase === 'paused_external') {
-    statusEl.textContent = '已暂停';
-    return;
-  }
-  if (shadowState.repetitions <= 1) {
-    statusEl.textContent = '1/1';
-    return;
-  }
-  const curRep = Math.min(shadowState.repetitions, shadowState.completed + 1);
-  statusEl.textContent = `${curRep}/${shadowState.repetitions}`;
+  updateFocusPlayBtn();
 }
 const updatePocketStatus = updateFocusStatus;
+
+function toggleFocusPlayPause(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  if (!audio) return;
+  if (audio.paused) {
+    shadowState.isInternalPause = false;
+    if (shadowState.phase === 'paused_external') shadowState.phase = 'playing';
+    audio.play();
+    updateFocusPlayBtn(true);
+  } else {
+    shadowState.isInternalPause = false;
+    audio.pause();
+    updateFocusPlayBtn(false);
+  }
+}
+
+function updateFocusPlayBtn(isPlaying) {
+  const btn = document.getElementById('focusPlayBtn');
+  if (!btn) return;
+  const playing = typeof isPlaying === 'boolean' ? isPlaying : (audio && !audio.paused);
+  btn.textContent = playing ? '⏸' : '▶';
+}
 
 function updateFocusSentenceDisplay() {
   const textEl = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
@@ -1475,8 +1497,10 @@ function handleFocusTouchEnd(e) {
   const deltaX = e.changedTouches[0].clientX - focusTouchStartX;
   const deltaTime = Date.now() - focusTouchStartTime;
 
-  if (Math.abs(deltaY) > 40 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2 && deltaTime < 600) {
-    if (deltaY < 0) {
+  // Horizontal swipe only for switching sentences (Left swipe = Next, Right swipe = Previous)
+  // Vertical scrolling is 100% reserved for native document scrolling of long sentences
+  if (Math.abs(deltaX) > 48 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4 && deltaTime < 600) {
+    if (deltaX < 0) {
       gotoNextShadowSentence();
     } else {
       gotoPreviousShadowSentence();
@@ -1537,13 +1561,8 @@ const togglePocketMode = toggleFocusMode;
 
 function handleFocusOverlayClick(e) {
   if (e.target && (
-    e.target.closest('#focusExitBtn') || e.target.classList.contains('focus-exit-btn') ||
-    e.target.closest('#focusBlindBtn') || e.target.closest('#focusTransBtn') ||
-    e.target.closest('#focusRepBtn') || e.target.closest('.focus-close-icon') ||
-    e.target.closest('#focusSentenceBox') || e.target.closest('.focus-controls') ||
-    e.target.closest('#pocketExitBtn') || e.target.classList.contains('pocket-exit-btn') ||
-    e.target.closest('#pocketBlindBtn') || e.target.closest('.pocket-close-icon') ||
-    e.target.closest('#pocketSentenceBox') || e.target.closest('.pocket-controls')
+    e.target.closest('#focusDock') || e.target.closest('#focusSentenceBox') ||
+    e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
   )) {
     return;
   }
@@ -1559,6 +1578,8 @@ const handlePocketOverlayClick = handleFocusOverlayClick;
 
 window.toggleFocusMode = toggleFocusMode;
 window.togglePocketMode = toggleFocusMode;
+window.toggleFocusPlayPause = toggleFocusPlayPause;
+window.updateFocusPlayBtn = updateFocusPlayBtn;
 window.handleFocusOverlayClick = handleFocusOverlayClick;
 window.handlePocketOverlayClick = handleFocusOverlayClick;
 window.handleFocusTouchStart = handleFocusTouchStart;
@@ -1820,14 +1841,19 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (focusModeActive || pocketModeActive) {
-    if (e.key === 't' || e.key === 'T' || e.code === 'KeyT') {
+    if (e.key === 'Escape') {
       e.preventDefault();
-      toggleFocusTransMode();
+      toggleFocusMode(false);
       return;
     }
-    if (e.key === 'r' || e.key === 'R' || e.code === 'KeyR') {
+    if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
-      cycleFocusRepetitions();
+      toggleFocusPlayPause();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      replayCurrentShadowSentence();
       return;
     }
     if (e.key === 'ArrowLeft') {
@@ -1840,19 +1866,19 @@ window.addEventListener('keydown', (e) => {
       gotoNextShadowSentence();
       return;
     }
-    if (e.key === ' ' || e.code === 'Space' || e.key === 'ArrowUp') {
+    if (e.key === 't' || e.key === 'T' || e.code === 'KeyT') {
       e.preventDefault();
-      replayCurrentShadowSentence();
+      toggleFocusTransMode();
       return;
     }
-    if (e.key === 'h' || e.key === 'H' || e.key === 'b' || e.key === 'B') {
+    if (e.key === 'r' || e.key === 'R' || e.code === 'KeyR') {
+      e.preventDefault();
+      cycleFocusRepetitions();
+      return;
+    }
+    if (e.key === 'h' || e.key === 'H' || e.key === 'b' || e.key === 'B' || e.code === 'KeyB') {
       e.preventDefault();
       toggleFocusBlindMode();
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      toggleFocusMode(false);
       return;
     }
   }
