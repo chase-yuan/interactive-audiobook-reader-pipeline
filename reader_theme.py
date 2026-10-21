@@ -893,7 +893,7 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
-/* OLED Pocket Mode Overlay (Zero-Power Pitch Black + Touch Shield) */
+/* Focus & Pocket Mode Overlay (Single-Sentence Immersion Theater) */
 #pocket-overlay {
   position: fixed;
   top: 0;
@@ -902,74 +902,222 @@ body {
   height: 100vh;
   width: 100dvw;
   height: 100dvh;
-  background-color: var(--pocket-bg);
+  background-color: var(--pocket-bg, #030712);
+  color: #f8fafc;
   z-index: 2147483647;
   display: none;
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: env(safe-area-inset-top, 40px) 24px env(safe-area-inset-bottom, 40px) 24px;
+  padding: env(safe-area-inset-top, 24px) 24px env(safe-area-inset-bottom, 24px) 24px;
   box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
+  touch-action: pan-y;
 }
 
 .pocket-header {
-  margin-top: 36px;
-  text-align: center;
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.pocket-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .pocket-title {
-  color: var(--pocket-title);
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
   font-family: var(--font-sans);
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: 2px;
 }
 
 .pocket-status {
-  color: var(--pocket-status);
-  font-size: 1.15rem;
+  color: #38bdf8;
+  font-size: 1.05rem;
   font-weight: 600;
   font-family: var(--font-sans);
+}
+
+.pocket-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pocket-tool-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-full);
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pocket-tool-btn:hover, .pocket-tool-btn.active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+.pocket-close-icon {
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+
+.pocket-close-icon:hover {
+  color: #f8fafc;
+}
+
+/* Centered Sentence Immersion Box */
+.pocket-sentence-container {
+  flex: 1;
+  width: 100%;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.pocket-sentence-box {
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  transition: background var(--transition-fast);
+}
+
+.pocket-sentence-text {
+  font-family: var(--font-serif);
+  font-size: clamp(1.4rem, 4vw, 2.3rem);
+  line-height: 1.45;
+  color: #f8fafc;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin-bottom: 20px;
+  transition: filter var(--transition-base), opacity var(--transition-base);
+}
+
+.pocket-sentence-text .w {
+  display: inline;
+  transition: background-color var(--transition-fast);
+}
+
+.pocket-sentence-text .active-word {
+  background-color: #38bdf8 !important;
+  color: #040817 !important;
+  border-radius: var(--radius-xs);
+  padding: 1px 3px;
+}
+
+.pocket-sentence-trans {
+  font-family: var(--font-sans);
+  font-size: clamp(0.95rem, 2vw, 1.15rem);
+  line-height: 1.6;
+  color: #94a3b8;
+  font-weight: 400;
+  max-width: 720px;
+  margin: 0 auto;
+  transition: opacity var(--transition-base);
+}
+
+/* Blind Mode (Active Recall Blur) */
+#pocket-overlay.blind-mode .pocket-sentence-text {
+  filter: blur(14px);
+  opacity: 0.15;
+}
+
+#pocket-overlay.blind-mode .pocket-sentence-trans {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#pocket-overlay.blind-mode .pocket-sentence-box.revealed .pocket-sentence-text {
+  filter: blur(0);
+  opacity: 1;
+}
+
+#pocket-overlay.blind-mode .pocket-sentence-box.revealed .pocket-sentence-trans {
+  opacity: 1;
 }
 
 .pocket-center {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 32px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .pocket-hint {
-  color: var(--pocket-hint);
-  font-size: 0.82rem;
+  color: #64748b;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
   font-family: var(--font-sans);
-  letter-spacing: 0.02em;
 }
 
 .pocket-exit-btn {
-  background: var(--pocket-btn-bg);
-  color: var(--pocket-btn-text);
-  border: 1px solid var(--pocket-btn-border);
+  position: relative;
+  overflow: hidden;
+  background: var(--pocket-btn-bg, rgba(255, 255, 255, 0.06));
+  color: var(--pocket-btn-text, #cbd5e1);
+  border: 1px solid var(--pocket-btn-border, rgba(255, 255, 255, 0.12));
   border-radius: var(--radius-full);
-  padding: 12px 28px;
-  font-size: 0.92rem;
+  padding: 10px 24px;
+  font-size: 0.88rem;
   font-weight: 500;
   font-family: var(--font-sans);
   cursor: pointer;
-  min-height: 44px;
-  min-width: 140px;
-  touch-action: manipulation;
+  min-height: 42px;
+  min-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition-base);
 }
 
 .pocket-exit-btn:active {
-  background: var(--pocket-btn-active-bg);
-  color: var(--pocket-btn-active-text);
+  background: var(--pocket-btn-active-bg, rgba(255, 255, 255, 0.12));
+  color: var(--pocket-btn-active-text, #f1f5f9);
+}
+
+.pocket-exit-btn.holding {
+  border-color: #38bdf8;
+}
+
+.pocket-progress-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: rgba(56, 189, 248, 0.35);
+  pointer-events: none;
 }
 
 .w {
