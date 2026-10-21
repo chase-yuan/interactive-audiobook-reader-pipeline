@@ -296,7 +296,7 @@ def decode_audio_to_pcm(audio_path, sr=16000):
             FFMPEG_BIN, "-i", str(audio_path), "-f", "s16le",
             "-ac", "1", "-ar", str(sr), "-v", "error", "-"
         ]
-        raw = subprocess.check_output(cmd)
+        raw = subprocess.check_output(cmd, timeout=300)
         return np.frombuffer(raw, dtype=np.int16)
     except Exception as exc:
         print(f"Warning: PCM decoding failed for {audio_path}: {exc}")

@@ -1,5 +1,5 @@
 import unittest
-from extract_epub import split_into_atomic_sentences
+from extract_epub import split_into_atomic_sentences, extract_chapter_from_epub
 
 class SentenceBoundaryTests(unittest.TestCase):
     def test_parenthetical_sentence_is_separate(self):
@@ -39,6 +39,12 @@ class SentenceBoundaryTests(unittest.TestCase):
             "He arrived at 10 a.m.",
             "After getting calls from the school, she left."
         ])
+
+    def test_zip_slip_path_traversal_rejected(self):
+        with self.assertRaises(ValueError):
+            extract_chapter_from_epub("dummy.epub", "../escape.html", "out.json")
+        with self.assertRaises(ValueError):
+            extract_chapter_from_epub("dummy.epub", "/absolute/escape.html", "out.json")
 
 
 if __name__ == "__main__":

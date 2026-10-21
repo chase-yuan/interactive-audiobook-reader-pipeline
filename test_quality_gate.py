@@ -25,6 +25,9 @@ function switchChapter() {{}}
 function handleSentenceClick() {{}}
 function toggleGlobalPlay() {{}}
 function syncPlayback() {{}}
+function cycleFocusFontSize() {{}}
+function setShadowRepetitions() {{}}
+function toggleFocusMode() {{}}
 </script>
 </body>
 </html>

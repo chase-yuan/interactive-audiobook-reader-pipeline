@@ -6,6 +6,7 @@ Description: Unabridged 1-Sentence-1-Card EPUB Sentence Extractor with abbreviat
 import zipfile
 import re
 import json
+from pathlib import PurePosixPath
 from html.parser import HTMLParser
 from artifact_io import atomic_write_json
 
@@ -207,6 +208,10 @@ def clean_and_merge_elements(elements):
 
 
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
+    pure = PurePosixPath(chapter_internal_path)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise ValueError(f"Insecure chapter internal path: {chapter_internal_path}")
+
     with zipfile.ZipFile(epub_path, 'r') as z:
         raw_html = z.read(chapter_internal_path).decode('utf-8')
         
