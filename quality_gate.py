@@ -4,6 +4,7 @@ import argparse
 import os
 import json
 import re
+import subprocess
 from pathlib import Path
 from dynamic_aligner import decode_audio_to_pcm, detect_voice_onset
 
@@ -20,6 +21,9 @@ REQUIRED_FUNCTIONS = (
     "handleSentenceClick",
     "toggleGlobalPlay",
     "syncPlayback",
+    "cycleFocusFontSize",
+    "setShadowRepetitions",
+    "toggleFocusMode",
 )
 
 
@@ -212,6 +216,33 @@ def smoke_check_html(html_path: Path, expected_chapters=None, audio_path=None):
     for function_name in REQUIRED_FUNCTIONS:
         if not re.search(rf"function\s+{re.escape(function_name)}\s*\(", content):
             errors.append(f"missing required JavaScript function: {function_name}")
+
+    # Validate JavaScript AST syntax in script blocks
+    script_blocks = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', content, re.DOTALL)
+    for idx, script_content in enumerate(script_blocks, 1):
+        if not script_content.strip():
+            continue
+        try:
+            proc = subprocess.run(
+                ["node", "-e", "new Function(process.argv[1]);", script_content],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if proc.returncode != 0:
+                err_msg = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "syntax error"
+                errors.append(f"script block {idx} has invalid JavaScript syntax: {err_msg}")
+        except FileNotFoundError:
+            pass
+        except subprocess.TimeoutExpired:
+            errors.append(f"script block {idx} timed out during syntax validation")
+
+    # Guard against dangling exported window assignments without declaration
+    JS_LITERALS = {"true", "false", "null", "undefined", "NaN", "Infinity", "this", "window", "document"}
+    window_exports = re.findall(r'\bwindow\.([a-zA-Z0-9_]+)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*;', content)
+    for exp_prop, orig_var in window_exports:
+        if orig_var not in JS_LITERALS and not re.search(rf"\b(?:function|const|let|var|class)\s+{re.escape(orig_var)}\b", content):
+            errors.append(f"exported variable '{orig_var}' (window.{exp_prop}) is not defined in script")
     chapters = re.findall(r'<section\b[^>]*class="chapter-section[^>]*\bdata-ch="(\d+)"', content)
     if expected_chapters is not None and len(chapters) != expected_chapters:
         errors.append(f"expected {expected_chapters} chapter sections, found {len(chapters)}")

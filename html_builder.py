@@ -104,15 +104,17 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 <title>{html.escape(('EXPERIMENTAL PREVIEW — ' if preview else '') + book_title)}: {html.escape(book_subtitle)}</title>
 <script>
 (function() {{
-  var bId = {json.dumps(book_id)};
-  var t = localStorage.getItem('audible_theme') || localStorage.getItem('audible_reader_theme') || localStorage.getItem('reader_' + bId + '_theme') || localStorage.getItem(bId + '_theme');
-  if (t && (t === 'sepia' || t === 'light' || t === 'dark' || t === 'night')) {{
-    document.documentElement.setAttribute('data-theme', t);
-  }}
-  var hideCh = localStorage.getItem('reader_' + bId + '_hide_chinese') || localStorage.getItem('audible_hide_chinese');
-  if (hideCh === 'true') {{
-    document.documentElement.setAttribute('data-hide-chinese', 'true');
-  }}
+  try {{
+    var bId = {json.dumps(book_id)};
+    var t = localStorage.getItem('audible_theme') || localStorage.getItem('audible_reader_theme') || localStorage.getItem('reader_' + bId + '_theme') || localStorage.getItem(bId + '_theme');
+    if (t && (t === 'sepia' || t === 'light' || t === 'dark' || t === 'night')) {{
+      document.documentElement.setAttribute('data-theme', t);
+    }}
+    var hideCh = localStorage.getItem('reader_' + bId + '_hide_chinese') || localStorage.getItem('audible_hide_chinese');
+    if (hideCh === 'true') {{
+      document.documentElement.setAttribute('data-hide-chinese', 'true');
+    }}
+  }} catch (e) {{}}
 }})();
 </script>
 <style>
@@ -469,6 +471,18 @@ const playerTotalTime = document.getElementById('playerTotalTime');
 const playerScrubber = document.getElementById('playerScrubber');
 let isUserScrubbing = false;
 
+function safePlay(audioEl) {
+  if (!audioEl) return;
+  const p = audioEl.play();
+  if (p && typeof p.catch === 'function') {
+    p.catch(function(err) {
+      if (err && err.name !== 'AbortError') {
+        console.warn('[Audio] play error:', err);
+      }
+    });
+  }
+}
+
 const SPEED_PRESETS = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 0.75];
 const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 1.75: '1.75×', 2.0: '2.0×', 2.25: '2.25×', 2.5: '2.5×', 2.75: '2.75×', 3.0: '3.0×', 0.75: '0.75×' };
 let currentPlaybackSpeed = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'playback_speed') || '1.0');
@@ -715,22 +729,12 @@ function switchChapter(chNum, autoPlay) {
         }
         if (wasPlaying) {
           try { audio.currentTime = 0; } catch(e) {}
-          const p = audio.play();
-          if (p && p.catch) {
-            p.catch(function(e) {
-              if (e.name !== 'AbortError') console.warn("Auto-play error:", e);
-            });
-          }
+          safePlay(audio);
           if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
         }
       } else if (autoPlay && audio.paused) {
         try { audio.currentTime = 0; } catch(e) {}
-        const p = audio.play();
-        if (p && p.catch) {
-          p.catch(function(e) {
-            if (e.name !== 'AbortError') console.warn("Auto-play error:", e);
-          });
-        }
+        safePlay(audio);
         if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
       }
       const firstSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
@@ -934,7 +938,7 @@ function startSentenceShadowing(sentenceEl) {
   }
   const start = parseFloat(sentenceEl.dataset.start);
   audio.currentTime = start;
-  audio.play();
+  safePlay(audio);
   globalPlayBtn.textContent = '⏸ Pause';
   sentenceEl.classList.add('active');
 }
@@ -975,7 +979,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
 
   if (window.__HAS_AUDIO__ && Number.isFinite(start) && start >= 0) {{
     audio.currentTime = start;
-    audio.play();
+    safePlay(audio);
     globalPlayBtn.textContent = '⏸ Pause';
   }} else if (window.__HAS_AUDIO__) {{
     const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
@@ -1006,14 +1010,14 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
         const stepOffset = idx - prevIdx;
         const targetTime = prevTime + (nextTime - prevTime) * (stepOffset / gapSteps);
         audio.currentTime = targetTime;
-        audio.play();
+        safePlay(audio);
         globalPlayBtn.textContent = '⏸ Pause';
         interpolated = true;
       }} else if (prevTime !== null) {{
         const dur = (audio && Number.isFinite(audio.duration)) ? audio.duration : Infinity;
         if (prevTime < dur - 3) {{
           audio.currentTime = prevTime;
-          audio.play();
+          safePlay(audio);
           globalPlayBtn.textContent = '⏸ Pause';
           interpolated = true;
         }} else {{
@@ -1022,7 +1026,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
         }}
       }} else if (nextTime !== null) {{
         audio.currentTime = 0;
-        audio.play();
+        safePlay(audio);
         globalPlayBtn.textContent = '⏸ Pause';
         interpolated = true;
       }}
@@ -1056,7 +1060,7 @@ function handleInspectPanelClick(event, id) {
 
 function toggleGlobalPlay() {
   if (audio.paused) {
-    audio.play();
+    safePlay(audio);
     globalPlayBtn.textContent = '⏸ Pause';
   } else {
     audio.pause();
@@ -1183,7 +1187,7 @@ function armShadowPauseWatchdog() {
         if (shadowState.phase !== 'idle' && shadowState.sentence) {
           shadowState.phase = 'playing';
           audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
-          audio.play();
+          safePlay(audio);
         }
       } else {
         armShadowPauseWatchdog();
@@ -1219,7 +1223,7 @@ function advanceShadowing() {
       return;
     } else {
       const nextCh = activeChapterNum + 1;
-      const nextOption = document.querySelector(`#chapterSelect option[value="${nextCh}"]`) || 
+      const nextOption = document.getElementById('menu-ch-' + nextCh) || 
                          document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
       if (nextOption) {
         switchChapter(nextCh, true);
@@ -1263,13 +1267,13 @@ function advanceShadowing() {
         shadowState.phase = 'playing';
         shadowState.isInternalPause = false;
         audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
-        audio.play();
+        safePlay(audio);
         updateFocusPlayBtn(true);
       }, 250);
       return;
     } else {
       const nextCh = activeChapterNum + 1;
-      const nextOption = document.querySelector(`#chapterSelect option[value="${nextCh}"]`) || 
+      const nextOption = document.getElementById('menu-ch-' + nextCh) || 
                          document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
       if (nextOption) {
         shadowState.phase = 'pause_buffer';
@@ -1294,7 +1298,7 @@ function advanceShadowing() {
     shadowState.phase = 'replaying';
     shadowState.isInternalPause = false;
     audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
-    audio.play();
+    safePlay(audio);
     updateFocusPlayBtn(true);
   }, 280);
 }
@@ -1453,7 +1457,7 @@ function toggleFocusPlayPause(e) {
   if (audio.paused) {
     shadowState.isInternalPause = false;
     if (shadowState.phase === 'paused_external') shadowState.phase = 'playing';
-    audio.play();
+    safePlay(audio);
     updateFocusPlayBtn(true);
   } else {
     shadowState.isInternalPause = false;
@@ -1568,7 +1572,7 @@ function replayCurrentShadowSentence() {
         playSentenceAtTime(start);
       } else {
         audio.currentTime = start;
-        audio.play();
+        safePlay(audio);
       }
     }
     updateFocusStatus();
@@ -1661,11 +1665,11 @@ function toggleFocusMode(force) {
             playSentenceAtTime(start);
           } else {
             audio.currentTime = start;
-            audio.play();
+            safePlay(audio);
           }
         }
       } else {
-        audio.play();
+        safePlay(audio);
       }
     }
     requestShadowWakeLock();
@@ -1824,16 +1828,15 @@ audio.addEventListener('ended', () => {
     return;
   }
   const nextCh = activeChapterNum + 1;
-  const nextOption = document.querySelector(`#chapterSelect option[value="${nextCh}"]`) || 
+  const nextOption = document.getElementById('menu-ch-' + nextCh) || 
                      document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
   if (nextOption) {
     switchChapter(nextCh, true);
   } else {
-    const firstOpt = document.querySelector('#chapterSelect option') || 
-                     document.querySelector('.chapter-item[data-chapter]');
+    const firstOpt = document.getElementById('menu-ch-0') || 
+                     document.querySelector('.chapter-item');
     if (firstOpt) {
-      const firstCh = parseInt(firstOpt.dataset.chapter || firstOpt.value || '0', 10);
-      switchChapter(firstCh, true);
+      switchChapter(0, true);
     }
   }
 });
@@ -2101,7 +2104,7 @@ window.addEventListener('keydown', (e) => {
         const st = parseFloat(targetUnit.dataset.start);
         if (!isNaN(st)) {
           audio.currentTime = st;
-          audio.play();
+          safePlay(audio);
           globalPlayBtn.textContent = '⏸ Pause';
         }
       }
@@ -2118,7 +2121,7 @@ window.addEventListener('keydown', (e) => {
         const st = parseFloat(targetUnit.dataset.start);
         if (!isNaN(st)) {
           audio.currentTime = st;
-          audio.play();
+          safePlay(audio);
           globalPlayBtn.textContent = '⏸ Pause';
         }
       }
