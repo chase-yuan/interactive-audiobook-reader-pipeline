@@ -441,7 +441,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
       <div class="focus-status pocket-status" id="focusStatus">1/3</div>
     </div>
     <div class="focus-controls pocket-controls">
-      <button class="focus-tool-btn pocket-tool-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)" title="切换译文显隐 (快捷键 T)">译文</button>
+      <button class="focus-tool-btn pocket-tool-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)" title="切换双语显隐 (快捷键 T)">双语</button>
       <button class="focus-tool-btn pocket-tool-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)" title="切换盲听模式 (快捷键 H/B)">盲听</button>
       <button class="focus-close-icon pocket-close-icon" onclick="toggleFocusMode(false)" title="退出 (Esc)">✕</button>
     </div>
@@ -453,7 +453,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     </div>
   </div>
   <div class="focus-center pocket-center">
-    <div class="focus-hint pocket-hint">← / → 切句 · 空格重听 · T 译文 · B 盲听 · R 遍数 · Esc 退出</div>
+    <div class="focus-hint pocket-hint">← / → 切句 · 空格重听 · T 双语 · B 盲听 · R 遍数 · Esc 退出</div>
     <button class="focus-exit-btn pocket-exit-btn" id="focusExitBtn" onclick="toggleFocusMode(false)"><span class="focus-btn-text">退出专注模式</span></button>
   </div>
 </div>
@@ -1154,9 +1154,43 @@ function advanceShadowing() {
   if (shadowState.phase === 'idle' || shadowState.phase === 'pause_buffer' || !shadowState.sentence) return;
   const end = parseFloat(shadowState.sentence.dataset.end);
   if (audio.currentTime < end) return;
+  
+  // Continuous smooth streaming when repetitions <= 1 (Native audio flow, zero stutter, zero seek)
+  if (shadowState.repetitions <= 1) {
+    const nextSentence = getNextShadowSentence(shadowState.sentence);
+    if (nextSentence) {
+      if (shadowState.sentence) shadowState.sentence.classList.remove('active');
+      shadowState.sentence = nextSentence;
+      shadowState.completed = 0;
+      nextSentence.classList.add('active');
+      updateFocusStatus();
+      updateFocusSentenceDisplay();
+      if (autoScrollEnabled) {
+        const rect = nextSentence.getBoundingClientRect();
+        const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
+        if (!inView) {
+          nextSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+      return;
+    } else {
+      const nextCh = activeChapterNum + 1;
+      const nextOption = document.querySelector(`#chapterSelect option[value="${nextCh}"]`) || 
+                         document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+      if (nextOption) {
+        switchChapter(nextCh, true);
+        return;
+      } else {
+        stopShadowing();
+        return;
+      }
+    }
+  }
+
+  // Shadow repeating loop strictly for repetitions > 1
   audio.pause();
   shadowState.completed += 1;
-  updatePocketStatus();
+  updateFocusStatus();
   
   if (shadowState.completed >= shadowState.repetitions) {
     const nextSentence = getNextShadowSentence(shadowState.sentence);
@@ -1164,8 +1198,8 @@ function advanceShadowing() {
       if (shadowState.sentence) shadowState.sentence.classList.remove('active');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
-      updatePocketStatus();
-      updatePocketSentenceDisplay();
+      updateFocusStatus();
+      updateFocusSentenceDisplay();
       shadowState.phase = 'pause_buffer';
       shadowState.pauseStartTime = Date.now();
       armShadowPauseWatchdog();
@@ -1184,7 +1218,7 @@ function advanceShadowing() {
         shadowState.phase = 'playing';
         audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
         audio.play();
-      }, 650);
+      }, 250);
       return;
     } else {
       const nextCh = activeChapterNum + 1;
@@ -1193,7 +1227,7 @@ function advanceShadowing() {
       if (nextOption) {
         shadowState.phase = 'pause_buffer';
         shadowState.completed = 0;
-        updatePocketStatus();
+        updateFocusStatus();
         switchChapter(nextCh, true);
         return;
       } else {
@@ -1213,7 +1247,7 @@ function advanceShadowing() {
     shadowState.phase = 'replaying';
     audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
     audio.play();
-  }, 650);
+  }, 280);
 }
 
 let focusModeActive = false;
@@ -1245,7 +1279,7 @@ function applyFocusTransVisibility() {
   }
   if (btn) {
     btn.classList.toggle('active', focusShowTrans);
-    btn.textContent = focusShowTrans ? '译文' : '纯英';
+    btn.textContent = focusShowTrans ? '双语' : '纯英';
   }
 }
 
@@ -1256,7 +1290,7 @@ function toggleFocusTransMode(e) {
     localStorage.setItem('reader_focus_show_trans', focusShowTrans ? '1' : '0');
   } catch (err) {}
   applyFocusTransVisibility();
-  showToast(focusShowTrans ? '译文已显示' : '仅显示英文');
+  showToast(focusShowTrans ? '双语对照已开启' : '仅显示英文');
 }
 
 function cycleFocusRepetitions(e) {
@@ -1443,8 +1477,12 @@ function toggleFocusMode(force) {
   pocketModeActive = target;
   
   if (focusModeActive) {
-    if (shadowState.phase === 'idle') {
+    if (shadowState.repetitions > 1 && shadowState.phase === 'idle') {
       toggleShadowing();
+    } else if (shadowState.phase === 'idle') {
+      shadowState.phase = 'playing';
+      const cur = findSentenceAt(audio.currentTime) || (sentenceTimeIndex[0] && sentenceTimeIndex[0].el);
+      if (cur) shadowState.sentence = cur;
     }
     initFocusPreferences();
     requestShadowWakeLock();
@@ -1664,6 +1702,12 @@ function syncPlayback() {
               if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
             });
             activeUnit.classList.add('active', 'card-collapsed');
+
+            if (focusModeActive || pocketModeActive) {
+              shadowState.sentence = activeUnit;
+              updateFocusSentenceDisplay();
+              updateFocusStatus();
+            }
 
             if (autoScrollEnabled) {
               const clockNow = Date.now();
