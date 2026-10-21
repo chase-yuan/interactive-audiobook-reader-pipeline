@@ -450,6 +450,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     <button class="focus-dock-btn focus-rep-pill" id="focusRepBtn" onclick="cycleFocusRepetitions(event)">1×</button>
     <button class="focus-dock-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)">双语</button>
     <button class="focus-dock-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)">盲听</button>
+    <button class="focus-dock-btn" id="focusFontBtn" onclick="cycleFocusFontSize(event)">aA</button>
     <button class="focus-dock-btn" id="focusNextBtn" onclick="gotoNextShadowSentence(event)">▶</button>
   </div>
 </div>
@@ -1258,9 +1259,54 @@ let focusBlindMode = false;
 let pocketBlindMode = false;
 let focusShowTrans = true;
 const FOCUS_REP_LEVELS = [1, 3, 5];
+const FOCUS_FONT_SCALES = [1.0, 1.25, 1.55];
+let focusFontScaleIndex = 0;
 let focusTouchStartY = 0;
 let focusTouchStartX = 0;
 let focusTouchStartTime = 0;
+
+function applyFocusFontScale(scale) {
+  const overlay = document.getElementById('focus-overlay') || document.getElementById('pocket-overlay');
+  if (overlay) {
+    overlay.style.setProperty('--focus-font-scale', String(scale));
+  }
+  const btn = document.getElementById('focusFontBtn');
+  if (btn) {
+    if (scale <= 1.05) {
+      btn.textContent = 'aA';
+      btn.classList.remove('active');
+    } else if (scale <= 1.35) {
+      btn.textContent = 'aA+';
+      btn.classList.add('active');
+    } else {
+      btn.textContent = 'aA++';
+      btn.classList.add('active');
+    }
+  }
+}
+
+function cycleFocusFontSize(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  focusFontScaleIndex = (focusFontScaleIndex + 1) % FOCUS_FONT_SCALES.length;
+  const nextScale = FOCUS_FONT_SCALES[focusFontScaleIndex];
+  applyFocusFontScale(nextScale);
+  try {
+    localStorage.setItem('reader_focus_font_scale', String(nextScale));
+  } catch (err) {}
+}
+
+function adjustFocusFontScale(delta) {
+  const current = FOCUS_FONT_SCALES[focusFontScaleIndex] || 1.0;
+  const next = Math.max(0.85, Math.min(2.0, Math.round((current + delta) * 100) / 100));
+  const idx = FOCUS_FONT_SCALES.findIndex(s => Math.abs(s - next) < 0.05);
+  if (idx !== -1) {
+    focusFontScaleIndex = idx;
+  }
+  applyFocusFontScale(next);
+  try {
+    localStorage.setItem('reader_focus_font_scale', String(next));
+  } catch (err) {}
+}
 
 function initFocusPreferences() {
   try {
@@ -1276,6 +1322,16 @@ function initFocusPreferences() {
       }
     } else {
       shadowState.repetitions = 1;
+    }
+    const savedScale = parseFloat(localStorage.getItem('reader_focus_font_scale'));
+    if (Number.isFinite(savedScale)) {
+      const idx = FOCUS_FONT_SCALES.findIndex(s => Math.abs(s - savedScale) < 0.05);
+      if (idx !== -1) {
+        focusFontScaleIndex = idx;
+      }
+      applyFocusFontScale(savedScale);
+    } else {
+      applyFocusFontScale(FOCUS_FONT_SCALES[focusFontScaleIndex]);
     }
   } catch (e) {}
   applyFocusTransVisibility();
@@ -1592,6 +1648,9 @@ window.toggleFocusBlindMode = toggleFocusBlindMode;
 window.togglePocketBlindMode = toggleFocusBlindMode;
 window.toggleFocusTransMode = toggleFocusTransMode;
 window.cycleFocusRepetitions = cycleFocusRepetitions;
+window.cycleFocusFontSize = cycleFocusFontSize;
+window.applyFocusFontScale = applyFocusFontScale;
+window.adjustFocusFontScale = adjustFocusFontScale;
 window.updateFocusStatus = updateFocusStatus;
 window.updatePocketStatus = updateFocusStatus;
 window.updateFocusSentenceDisplay = updateFocusSentenceDisplay;
@@ -1879,6 +1938,30 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'h' || e.key === 'H' || e.key === 'b' || e.key === 'B' || e.code === 'KeyB') {
       e.preventDefault();
       toggleFocusBlindMode();
+      return;
+    }
+    if (e.key === 'a' || e.key === 'A' || e.code === 'KeyA') {
+      e.preventDefault();
+      cycleFocusFontSize();
+      return;
+    }
+    if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      adjustFocusFontScale(0.15);
+      return;
+    }
+    if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      adjustFocusFontScale(-0.15);
+      return;
+    }
+    if (e.key === '0') {
+      e.preventDefault();
+      focusFontScaleIndex = 0;
+      applyFocusFontScale(1.0);
+      try {
+        localStorage.setItem('reader_focus_font_scale', '1.0');
+      } catch (err) {}
       return;
     }
   }
