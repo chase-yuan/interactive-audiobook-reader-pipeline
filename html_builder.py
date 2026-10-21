@@ -168,12 +168,24 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             <div class="seg-divider"></div>
             <button class="seg-btn" id="langModeEnglish" onclick="setLanguageMode('english')" title="纯英磨耳朵模式（快捷键 T）">纯英</button>
           </div>
-          <button class="pill-btn" id="repeatBtn" onclick="cycleMainRepeat(event)" title="单句循环复读（快捷键 R）"{repeat_group_attr}>复读 1×</button>
           <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark / Night)">Theme</button>
-          <button class="pill-btn primary" id="focusModeBtn" onclick="toggleFocusMode()" title="Focus 专注模式 (快捷键 P)">Focus</button>
+        </div>
+        <div class="drawer-group"{repeat_group_attr}>
+          <div class="segmented-control">
+            <select id="shadowRepeatSelect" class="seg-select" onchange="setShadowRepetitions(this.value)" title="Repetitions">
+              <option value="1">1×</option><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option><option value="5">5×</option>
+            </select>
+            <div class="seg-divider"></div>
+            <button class="seg-btn" id="repeatBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
+            <div class="seg-divider"></div>
+            <button class="seg-btn" id="focusModeBtn" onclick="toggleFocusMode()" title="Focus 专注模式 (快捷键 P)">Focus</button>
+          </div>
         </div>
         <div class="drawer-group">
-          <button class="pill-btn active" id="autoScrollBtn" onclick="toggleAutoScrollPill(this)" title="自动滚屏跟随当前句">Auto-scroll</button>
+          <label class="toggle-pill" title="Auto-scroll to active sentence">
+            <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
+            <span class="toggle-badge">Auto-scroll</span>
+          </label>
           <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" title="Keyboard & Gesture shortcuts">Shortcuts</button>
         </div>
       </div>
@@ -944,7 +956,8 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
 
   const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
 
-  if (el.classList.contains('active') && !isDoubleTap) {{
+  // If audio is currently playing and user taps the already active sentence, toggle translation collapse
+  if (audio && !audio.paused && el.classList.contains('active') && !isDoubleTap) {{
     if (!el.classList.contains('card-collapsed')) {{
       el.classList.add('card-collapsed');
       return;
@@ -1621,10 +1634,17 @@ function toggleFocusMode(force) {
   
   if (focusModeActive) {
     initFocusPreferences();
+    const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
+    const curTime = (audio && Number.isFinite(audio.currentTime)) ? audio.currentTime : 0;
+    const cur = findSentenceAt(curTime);
+    const fallback = (activeSec ? activeSec.querySelector('.sentence-unit.active') : null) || 
+                     (currentPlayingId ? document.getElementById(currentPlayingId) : null) || 
+                     (sentenceTimeIndex[0] && sentenceTimeIndex[0].el) || 
+                     (activeSec ? activeSec.querySelector('.sentence-unit') : null);
+    shadowState.sentence = cur || fallback;
     if (shadowState.phase === 'idle') {
       shadowState.phase = 'playing';
-      const cur = findSentenceAt(audio ? audio.currentTime : 0) || (sentenceTimeIndex[0] && sentenceTimeIndex[0].el);
-      if (cur) shadowState.sentence = cur;
+      shadowState.completed = 0;
     }
     if (audio && audio.paused) {
       if (shadowState.sentence) {
