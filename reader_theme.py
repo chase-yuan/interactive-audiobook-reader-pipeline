@@ -83,16 +83,40 @@ def get_reader_css() -> str:
   /* --- Universal Semantic Tokens --- */
   --btn-primary-text: #ffffff;
 
-  /* --- OLED Pocket Mode Tokens --- */
-  --pocket-bg: #000000;
-  --pocket-title: #334155;
-  --pocket-status: #64748b;
-  --pocket-hint: #1e293b;
-  --pocket-btn-bg: #0f172a;
-  --pocket-btn-border: #1e293b;
-  --pocket-btn-text: #94a3b8;
-  --pocket-btn-active-bg: #1e293b;
-  --pocket-btn-active-text: #f1f5f9;
+  /* --- Focus Immersion Mode Tokens --- */
+  --focus-bg: #000000;
+  --focus-text: #f8fafc;
+  --focus-text-trans: #94a3b8;
+  --focus-title: #94a3b8;
+  --focus-status: #38bdf8;
+  --focus-hint: #64748b;
+  --focus-btn-bg: rgba(255, 255, 255, 0.08);
+  --focus-btn-border: rgba(255, 255, 255, 0.15);
+  --focus-btn-text: #e2e8f0;
+  --focus-btn-active-bg: rgba(56, 189, 248, 0.2);
+  --focus-btn-active-border: #38bdf8;
+  --focus-btn-active-text: #38bdf8;
+  --focus-close-hover: #f8fafc;
+  --focus-word-active-bg: #38bdf8;
+  --focus-word-active-text: #040817;
+  --focus-exit-bg: rgba(255, 255, 255, 0.06);
+  --focus-exit-border: rgba(255, 255, 255, 0.12);
+  --focus-exit-text: #cbd5e1;
+  --focus-exit-active-bg: rgba(255, 255, 255, 0.12);
+  --focus-exit-active-text: #f1f5f9;
+  --focus-exit-holding-border: #38bdf8;
+  --focus-progress-bg: rgba(56, 189, 248, 0.35);
+
+  /* --- Backward-compatible Pocket Mode Aliases --- */
+  --pocket-bg: var(--focus-bg);
+  --pocket-title: var(--focus-title);
+  --pocket-status: var(--focus-status);
+  --pocket-hint: var(--focus-hint);
+  --pocket-btn-bg: var(--focus-exit-bg);
+  --pocket-btn-border: var(--focus-exit-border);
+  --pocket-btn-text: var(--focus-exit-text);
+  --pocket-btn-active-bg: var(--focus-exit-active-bg);
+  --pocket-btn-active-text: var(--focus-exit-active-text);
 }
 
 /* Theme 1: Sepia (Parchment Paper - Warm & Calming) */
@@ -809,6 +833,12 @@ body {
   margin-bottom: var(--space-lg);
   border-radius: var(--radius-base);
   transition: background var(--transition-fast);
+  content-visibility: auto;
+  contain-intrinsic-size: 0 72px;
+}
+
+.sentence-unit.active {
+  content-visibility: visible;
 }
 
 .sentence-text {
@@ -887,7 +917,8 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
-/* OLED Pocket Mode Overlay (Zero-Power Pitch Black + Touch Shield) */
+/* Focus & Pocket Mode Overlay (Single-Sentence Immersion Theater) */
+#focus-overlay,
 #pocket-overlay {
   position: fixed;
   top: 0;
@@ -896,74 +927,271 @@ body {
   height: 100vh;
   width: 100dvw;
   height: 100dvh;
-  background-color: var(--pocket-bg);
+  background-color: var(--focus-bg);
+  color: var(--focus-text);
   z-index: 2147483647;
   display: none;
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: env(safe-area-inset-top, 40px) 24px env(safe-area-inset-bottom, 40px) 24px;
+  padding: env(safe-area-inset-top, var(--space-4xl)) var(--space-4xl) env(safe-area-inset-bottom, var(--space-4xl)) var(--space-4xl);
   box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
+  touch-action: pan-y;
 }
 
+.focus-header,
 .pocket-header {
-  margin-top: 36px;
-  text-align: center;
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-lg) 0;
 }
 
+.focus-header-left,
+.pocket-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.focus-title,
 .pocket-title {
-  color: var(--pocket-title);
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
+  color: var(--focus-title);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.08em;
   font-family: var(--font-sans);
   text-transform: uppercase;
-  margin-bottom: 8px;
+  font-weight: 600;
 }
 
+.focus-status,
 .pocket-status {
-  color: var(--pocket-status);
-  font-size: 1.15rem;
+  color: var(--focus-status);
+  font-size: var(--font-size-h3);
   font-weight: 600;
   font-family: var(--font-sans);
 }
 
+.focus-controls,
+.pocket-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.focus-tool-btn,
+.pocket-tool-btn {
+  background: var(--focus-btn-bg);
+  color: var(--focus-btn-text);
+  border: 1px solid var(--focus-btn-border);
+  border-radius: var(--radius-full);
+  padding: var(--space-sm) var(--space-xl);
+  font-size: var(--font-size-ui);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-weight: 500;
+}
+
+.focus-tool-btn:hover,
+.pocket-tool-btn:hover {
+  background: var(--focus-btn-active-bg);
+  border-color: var(--focus-btn-active-border);
+  color: var(--focus-btn-active-text);
+}
+
+.focus-tool-btn.active,
+.pocket-tool-btn.active {
+  background: var(--focus-btn-active-bg);
+  border-color: var(--focus-btn-active-border);
+  color: var(--focus-btn-active-text);
+}
+
+.focus-close-icon,
+.pocket-close-icon {
+  background: transparent;
+  color: var(--focus-title);
+  border: none;
+  font-size: var(--font-size-h2);
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+
+.focus-close-icon:hover,
+.pocket-close-icon:hover {
+  color: var(--focus-close-hover);
+}
+
+/* Centered Sentence Immersion Box */
+.focus-sentence-container,
+.pocket-sentence-container {
+  flex: 1;
+  width: 100%;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-4xl) var(--space-2xl);
+  box-sizing: border-box;
+}
+
+.focus-sentence-box,
+.pocket-sentence-box {
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+  padding: var(--space-3xl);
+  border-radius: var(--radius-lg);
+  transition: background var(--transition-fast);
+}
+
+.focus-sentence-text,
+.pocket-sentence-text {
+  font-family: var(--font-serif);
+  font-size: clamp(1.4rem, 4vw, 2.3rem);
+  line-height: var(--line-height-normal);
+  color: var(--focus-text);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin-bottom: var(--space-3xl);
+  transition: filter var(--transition-base), opacity var(--transition-base);
+}
+
+.focus-sentence-text .w,
+.pocket-sentence-text .w {
+  display: inline;
+  transition: background-color var(--transition-fast);
+}
+
+/* ZERO LAYOUT JITTER (AP4): Strictly zero padding to prevent horizontal font expansion and reflow */
+.focus-sentence-text .active-word,
+.pocket-sentence-text .active-word {
+  background-color: var(--focus-word-active-bg) !important;
+  color: var(--focus-word-active-text) !important;
+  border-radius: var(--radius-xs);
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.focus-sentence-trans,
+.pocket-sentence-trans {
+  font-family: var(--font-sans);
+  font-size: clamp(0.95rem, 2vw, 1.15rem);
+  line-height: var(--line-height-relaxed);
+  color: var(--focus-text-trans);
+  font-weight: 400;
+  max-width: 720px;
+  margin: 0 auto;
+  transition: opacity var(--transition-base);
+}
+
+/* Independent Translation Visibility Toggle */
+#focus-overlay.hide-trans .focus-sentence-trans,
+#pocket-overlay.hide-trans .pocket-sentence-trans {
+  display: none !important;
+}
+
+/* Blind Mode (Active Recall Blur) */
+#focus-overlay.blind-mode .focus-sentence-text,
+#pocket-overlay.blind-mode .pocket-sentence-text {
+  filter: blur(14px);
+  opacity: 0.15;
+}
+
+#focus-overlay.blind-mode .focus-sentence-trans,
+#pocket-overlay.blind-mode .pocket-sentence-trans {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#focus-overlay.blind-mode .focus-sentence-box.revealed .focus-sentence-text,
+#pocket-overlay.blind-mode .pocket-sentence-box.revealed .pocket-sentence-text {
+  filter: blur(0);
+  opacity: 1;
+}
+
+#focus-overlay.blind-mode:not(.hide-trans) .focus-sentence-box.revealed .focus-sentence-trans,
+#pocket-overlay.blind-mode:not(.hide-trans) .pocket-sentence-box.revealed .pocket-sentence-trans {
+  opacity: 1;
+}
+
+.focus-center,
 .pocket-center {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 32px;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-2xl);
 }
 
+.focus-hint,
 .pocket-hint {
-  color: var(--pocket-hint);
-  font-size: 0.82rem;
+  color: var(--focus-hint);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.04em;
   font-family: var(--font-sans);
-  letter-spacing: 0.02em;
 }
 
+/* Instant-Exit Button (Ergonomic AP5, zero 1.5s holding requirement) */
+.focus-exit-btn,
 .pocket-exit-btn {
-  background: var(--pocket-btn-bg);
-  color: var(--pocket-btn-text);
-  border: 1px solid var(--pocket-btn-border);
+  position: relative;
+  overflow: hidden;
+  background: var(--focus-exit-bg);
+  color: var(--focus-exit-text);
+  border: 1px solid var(--focus-exit-border);
   border-radius: var(--radius-full);
-  padding: 12px 28px;
-  font-size: 0.92rem;
+  padding: var(--space-base) var(--space-4xl);
+  font-size: var(--font-size-ui);
   font-weight: 500;
   font-family: var(--font-sans);
   cursor: pointer;
-  min-height: 44px;
-  min-width: 140px;
-  touch-action: manipulation;
+  min-height: 42px;
+  min-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition-base);
 }
 
+.focus-exit-btn:hover,
+.pocket-exit-btn:hover {
+  background: var(--focus-exit-active-bg);
+  color: var(--focus-exit-active-text);
+  border-color: var(--focus-btn-active-border);
+}
+
+.focus-exit-btn:active,
 .pocket-exit-btn:active {
-  background: var(--pocket-btn-active-bg);
-  color: var(--pocket-btn-active-text);
+  background: var(--focus-exit-active-bg);
+  color: var(--focus-exit-active-text);
+}
+
+.focus-exit-btn.holding,
+.pocket-exit-btn.holding {
+  border-color: var(--focus-exit-holding-border);
+}
+
+.focus-progress-bar,
+.pocket-progress-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: var(--focus-progress-bg);
+  pointer-events: none;
 }
 
 .w {

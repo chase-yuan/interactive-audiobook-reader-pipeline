@@ -167,6 +167,19 @@ class DesignTokensAestheticTests(unittest.TestCase):
                 f".w.active-word violates zero-jitter invariant with property: {forbidden}"
             )
 
+    def test_focus_immersion_sentence_active_word_has_zero_jitter(self):
+        focus_active_match = re.search(r"\.focus-sentence-text\s+\.active-word[^{]*\{(?P<body>.*?)\}", self.css, re.DOTALL)
+        self.assertIsNotNone(focus_active_match, ".focus-sentence-text .active-word rule missing in CSS")
+        body = focus_active_match.group("body")
+        self.assertIn("padding: 0", body, "Focus mode active word must enforce padding: 0 to prevent text reflow")
+        for forbidden in ("font-size", "font-weight", "letter-spacing", "line-height"):
+            self.assertNotIn(f"{forbidden}:", body, f"Focus mode active word cannot alter {forbidden}")
+
+    def test_zero_decorative_emojis_in_reader_templates(self):
+        forbidden_emojis = ["👁", "🙈", "📖", "💡", "✨", "🚀", "ℹ️"]
+        for emoji in forbidden_emojis:
+            self.assertNotIn(emoji, self.html, f"Aesthetic Principle Zero (AP0) violation: found decorative emoji {emoji} in reader HTML")
+
     def test_theme_switch_script_supports_all_four_themes(self):
         self.assertIn("const themes = ['sepia', 'light', 'dark', 'night'];", self.html)
         self.assertIn("t === 'night'", self.html)

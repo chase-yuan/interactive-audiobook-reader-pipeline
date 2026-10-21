@@ -554,6 +554,8 @@ def build_reader_pipeline(
     force_extract: bool = False,
     llm_model: Optional[str] = None,
     chapters_filter: Optional[List[int]] = None,
+    publish: bool = False,
+    public_book_id: Optional[str] = None,
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
@@ -716,7 +718,34 @@ def build_reader_pipeline(
     print(f" Standalone Interactive Reader: {out_html}")
     print("=====================================================================")
 
-    if open_in_browser:
+    if publish:
+        audible_publisher = Path(os.environ.get("AUDIBLE_PUBLISHER_SCRIPT", Path.home() / "Vault" / "Audible" / "scripts" / "publish_book.py"))
+        if not audible_publisher.is_file():
+            print(f"❌ [PUBLISH FAILED] Publisher script not found at {audible_publisher}")
+            raise SystemExit(1)
+
+        book_id = public_book_id or slug_id
+        audio_dir_arg = str(audio_dir) if audio_dir and Path(audio_dir).is_dir() else str(target_dir / "audio")
+        print(f"\n🚀 [UNIVERSAL RUNNER -> AUTO-PUBLISH] Triggering automated production release for '{book_id}'...")
+        cmd = [
+            sys.executable, str(audible_publisher),
+            "--id", book_id,
+            "--src", str(out_html),
+        ]
+        if Path(audio_dir_arg).is_dir():
+            cmd.extend(["--audio-dir", audio_dir_arg])
+        res = subprocess.run(cmd)
+        if res.returncode != 0:
+            print("❌ [UNIVERSAL RUNNER -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
+            raise SystemExit(1)
+        print(f"🎉 [UNIVERSAL RUNNER -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
+
+        keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
+        if keygen_script.is_file():
+            print("\n🔑 [UNIVERSAL RUNNER -> KEYGEN] Emitting production passkey and dispatch copy...")
+            subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
+
+    if open_in_browser and not publish:
         try:
             if sys.platform == "darwin":
                 subprocess.run(["open", str(out_html)], check=False)
@@ -751,6 +780,8 @@ def main():
     parser.add_argument("--force-extract", action="store_true", help="Force re-extraction of canonical sentences even if already present")
     parser.add_argument("--chapters", type=str, default=None, help="Comma-separated track numbers to build (e.g. 0,1,2)")
     parser.add_argument("--llm-model", type=str, default=None, help="LLM model for linguistic analysis (e.g. deepseek, gemini-3.8-flash-high)")
+    parser.add_argument("--publish", action="store_true", help="Automatically upload to R2, chunk, seal, and deploy to Audible production portal upon successful compilation")
+    parser.add_argument("--public-book-id", type=str, default=None, help="Explicit book id for public deployment (defaults to slug_id)")
 
     args = parser.parse_args()
     epub_target = args.epub or args.epub_flag
@@ -778,6 +809,8 @@ def main():
         force_extract=args.force_extract,
         llm_model=args.llm_model,
         chapters_filter=chapters_filter,
+        publish=args.publish,
+        public_book_id=args.public_book_id,
     )
 
 

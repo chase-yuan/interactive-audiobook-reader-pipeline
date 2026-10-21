@@ -47,6 +47,7 @@ def load_chapter_metadata(path: Path, expected_chapters: Iterable[int] | None = 
             "title": title.strip(),
             "display_number": display_number,
             **({"label": row["label"].strip()} if isinstance(row.get("label"), str) and row["label"].strip() else {}),
+            **({"editorial_notice": row["editorial_notice"].strip()} if isinstance(row.get("editorial_notice"), str) and row["editorial_notice"].strip() else {}),
         }
 
     if expected_chapters is not None:

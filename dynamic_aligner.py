@@ -385,6 +385,13 @@ def calibrate_aligned_sentences_pcm(sentences, audio_path, headroom=0.06):
                 s["word_spans"][0]["start"] = new_st
                 if s["word_spans"][0]["end"] <= new_st:
                     s["word_spans"][0]["end"] = round(new_st + 0.12, 2)
+                prev_w_s = s["word_spans"][0]["start"]
+                for w in s["word_spans"][1:]:
+                    if w["start"] <= prev_w_s:
+                        w["start"] = round(prev_w_s + 0.01, 2)
+                    if w["end"] <= w["start"]:
+                        w["end"] = round(w["start"] + 0.01, 2)
+                    prev_w_s = w["start"]
 
         prev_end = et
     return sentences
