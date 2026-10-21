@@ -1040,14 +1040,14 @@ body {
 .focus-sentence-trans,
 .pocket-sentence-trans {
   font-family: var(--font-sans);
-  font-size: calc(clamp(0.92rem, 1.8vw, 1.05rem) * var(--focus-font-scale, 1));
+  font-size: clamp(0.92rem, 1.8vw, 1.05rem);
   line-height: 1.6;
   color: var(--focus-text-trans);
   font-weight: 400;
   max-width: 860px;
   text-align: left;
   margin: 0;
-  transition: opacity var(--transition-base), font-size var(--transition-fast);
+  transition: opacity var(--transition-base);
 }
 
 .focus-sentence-vocab {
@@ -1065,7 +1065,7 @@ body {
 
 .focus-sentence-vocab .vocab-row {
   font-family: var(--font-sans);
-  font-size: calc(clamp(0.85rem, 1.5vw, 0.95rem) * var(--focus-font-scale, 1));
+  font-size: clamp(0.85rem, 1.5vw, 0.95rem);
   line-height: var(--line-height-normal);
   display: flex;
   align-items: baseline;
@@ -1200,7 +1200,7 @@ body {
   }
   .focus-sentence-trans,
   .pocket-sentence-trans {
-    font-size: calc(0.92rem * var(--focus-font-scale, 1));
+    font-size: 0.92rem;
     line-height: 1.55;
   }
   .focus-dock {
