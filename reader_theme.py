@@ -87,6 +87,7 @@ def get_reader_css() -> str:
   --focus-bg: var(--bg-page);
   --focus-text: var(--text-main);
   --focus-text-trans: var(--text-sub);
+  --focus-font-scale: 1;
   --focus-title: var(--text-sub);
   --focus-status: var(--accent);
   --focus-hint: var(--text-sub);
@@ -989,7 +990,7 @@ body {
 .pocket-sentence-container {
   flex: 1;
   width: 100%;
-  max-width: 860px;
+  max-width: clamp(860px, 80vw, 1080px);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1016,14 +1017,14 @@ body {
 .focus-sentence-text,
 .pocket-sentence-text {
   font-family: var(--font-serif);
-  font-size: clamp(1.25rem, 2.8vw, 1.85rem);
+  font-size: calc(clamp(1.25rem, 2.8vw, 1.85rem) * var(--focus-font-scale, 1));
   line-height: 1.55;
   color: var(--focus-text);
   font-weight: 500;
   letter-spacing: -0.01em;
   margin-bottom: var(--space-lg);
   text-align: left;
-  transition: filter var(--transition-base), opacity var(--transition-base);
+  transition: filter var(--transition-base), opacity var(--transition-base), font-size var(--transition-fast);
 }
 
 .focus-sentence-text .w,
@@ -1045,14 +1046,14 @@ body {
 .focus-sentence-trans,
 .pocket-sentence-trans {
   font-family: var(--font-sans);
-  font-size: clamp(0.92rem, 1.8vw, 1.05rem);
+  font-size: calc(clamp(0.92rem, 1.8vw, 1.05rem) * var(--focus-font-scale, 1));
   line-height: 1.6;
   color: var(--focus-text-trans);
   font-weight: 400;
-  max-width: 760px;
+  max-width: 860px;
   text-align: left;
   margin: 0;
-  transition: opacity var(--transition-base);
+  transition: opacity var(--transition-base), font-size var(--transition-fast);
 }
 
 /* Independent Translation Visibility Toggle */
@@ -1171,25 +1172,28 @@ body {
   }
   .focus-sentence-text,
   .pocket-sentence-text {
-    font-size: clamp(1.10rem, 3.8vw, 1.25rem);
+    font-size: calc(clamp(1.10rem, 3.8vw, 1.25rem) * var(--focus-font-scale, 1));
     line-height: 1.58;
     margin-bottom: var(--space-md);
   }
   .focus-sentence-trans,
   .pocket-sentence-trans {
-    font-size: 0.92rem;
+    font-size: calc(0.92rem * var(--focus-font-scale, 1));
     line-height: 1.55;
   }
   .focus-dock {
     gap: 3px;
     padding: 3px 6px;
     margin-bottom: var(--space-xs);
+    max-width: calc(100vw - 20px);
+    max-width: calc(100dvw - 20px);
+    flex-wrap: nowrap;
   }
   .focus-dock-btn {
-    padding: 5px 9px;
-    min-width: 32px;
+    padding: 5px 7px;
+    min-width: 28px;
     min-height: 32px;
-    font-size: 0.82rem;
+    font-size: 0.80rem;
   }
 }
 
