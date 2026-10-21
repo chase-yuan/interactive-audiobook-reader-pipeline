@@ -950,7 +950,7 @@ body {
   width: 100%;
   max-width: 900px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   padding: var(--space-sm) 0;
   box-sizing: border-box;
@@ -958,13 +958,7 @@ body {
 
 .focus-title,
 .pocket-title {
-  color: var(--focus-title);
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.12em;
-  font-family: var(--font-sans);
-  text-transform: uppercase;
-  font-weight: 600;
-  opacity: 0.7;
+  display: none !important;
 }
 
 .focus-close-icon,
@@ -1056,9 +1050,33 @@ body {
   transition: opacity var(--transition-base), font-size var(--transition-fast);
 }
 
-/* Independent Translation Visibility Toggle */
+.focus-sentence-vocab {
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: var(--space-3xs) solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-width: 860px;
+  width: 100%;
+  text-align: left;
+  transition: opacity var(--transition-base);
+}
+
+.focus-sentence-vocab .vocab-row {
+  font-family: var(--font-sans);
+  font-size: calc(clamp(0.85rem, 1.5vw, 0.95rem) * var(--focus-font-scale, 1));
+  line-height: var(--line-height-normal);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+/* Independent Translation & Vocab Visibility Toggle */
 #focus-overlay.hide-trans .focus-sentence-trans,
-#pocket-overlay.hide-trans .pocket-sentence-trans {
+#pocket-overlay.hide-trans .pocket-sentence-trans,
+#focus-overlay.hide-trans .focus-sentence-vocab,
+#pocket-overlay.hide-trans .focus-sentence-vocab {
   display: none !important;
 }
 
@@ -1070,19 +1088,23 @@ body {
 }
 
 #focus-overlay.blind-mode .focus-sentence-trans,
-#pocket-overlay.blind-mode .pocket-sentence-trans {
+#pocket-overlay.blind-mode .pocket-sentence-trans,
+#focus-overlay.blind-mode .focus-sentence-vocab,
+#pocket-overlay.blind-mode .focus-sentence-vocab {
   opacity: 0;
   pointer-events: none;
 }
 
 #focus-overlay.blind-mode .focus-sentence-box.revealed .focus-sentence-text,
-#pocket-overlay.blind-mode .pocket-sentence-box.revealed .pocket-sentence-text {
+#pocket-overlay.blind-mode .focus-sentence-box.revealed .pocket-sentence-text {
   filter: blur(0);
   opacity: 1;
 }
 
 #focus-overlay.blind-mode:not(.hide-trans) .focus-sentence-box.revealed .focus-sentence-trans,
-#pocket-overlay.blind-mode:not(.hide-trans) .pocket-sentence-box.revealed .pocket-sentence-trans {
+#pocket-overlay.blind-mode:not(.hide-trans) .pocket-sentence-box.revealed .focus-sentence-trans,
+#focus-overlay.blind-mode:not(.hide-trans) .focus-sentence-box.revealed .focus-sentence-vocab,
+#pocket-overlay.blind-mode:not(.hide-trans) .pocket-sentence-box.revealed .focus-sentence-vocab {
   opacity: 1;
 }
 

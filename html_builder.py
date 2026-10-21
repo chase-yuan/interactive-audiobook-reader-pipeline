@@ -163,34 +163,17 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
       </div>
       <div class="drawer-row">
         <div class="drawer-group">
-          <div class="segmented-control" role="group" aria-label="Font size">
-            <button class="seg-btn" onclick="adjustFontSize(-1)" title="Decrease font size">A−</button>
-            <div class="seg-divider"></div>
-            <button class="seg-btn" onclick="adjustFontSize(1)" title="Increase font size">A+</button>
-          </div>
           <div class="segmented-control" id="chineseLockBtn" role="group" aria-label="Language mode">
             <button class="seg-btn active" id="langModeBilingual" onclick="setLanguageMode('bilingual')" title="双语研读模式（快捷键 T）">双语</button>
             <div class="seg-divider"></div>
             <button class="seg-btn" id="langModeEnglish" onclick="setLanguageMode('english')" title="纯英磨耳朵模式（快捷键 T）">纯英</button>
           </div>
+          <button class="pill-btn" id="repeatBtn" onclick="cycleMainRepeat(event)" title="单句循环复读（快捷键 R）"{repeat_group_attr}>复读 1×</button>
           <button class="pill-btn" onclick="toggleTheme()" title="Switch theme (Sepia / Light / Dark / Night)">Theme</button>
-        </div>
-        <div class="drawer-group"{repeat_group_attr}>
-          <div class="segmented-control">
-            <select id="shadowRepeatSelect" class="seg-select" onchange="setShadowRepetitions(this.value)" title="Repetitions">
-              <option value="1">1×</option><option value="2">2×</option><option value="3" selected>3×</option><option value="5">5×</option>
-            </select>
-            <div class="seg-divider"></div>
-            <button class="seg-btn" id="repeatBtn" onclick="toggleShadowing()" title="Sentence repeat loop (快捷键 R)">Repeat</button>
-            <div class="seg-divider"></div>
-            <button class="seg-btn" id="focusModeBtn" onclick="toggleFocusMode()" title="Focus 专注模式 (快捷键 P)">Focus</button>
-          </div>
+          <button class="pill-btn primary" id="focusModeBtn" onclick="toggleFocusMode()" title="Focus 专注模式 (快捷键 P)">Focus</button>
         </div>
         <div class="drawer-group">
-          <label class="toggle-pill" title="Auto-scroll to active sentence">
-            <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
-            <span class="toggle-badge">Auto-scroll</span>
-          </label>
+          <button class="pill-btn active" id="autoScrollBtn" onclick="toggleAutoScrollPill(this)" title="自动滚屏跟随当前句">Auto-scroll</button>
           <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" title="Keyboard & Gesture shortcuts">Shortcuts</button>
         </div>
       </div>
@@ -435,13 +418,13 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
 <div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
   <div class="focus-top-bar pocket-header">
-    <div class="focus-title pocket-title">Focus</div>
     <button class="focus-close-icon pocket-close-icon" id="focusExitBtn" onclick="toggleFocusMode(false)">✕</button>
   </div>
   <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)">
     <div class="focus-sentence-box pocket-sentence-box" id="focusSentenceBox">
       <div class="focus-sentence-text pocket-sentence-text" id="focusSentenceText"></div>
       <div class="focus-sentence-trans pocket-sentence-trans" id="focusSentenceTrans"></div>
+      <div class="focus-sentence-vocab" id="focusSentenceVocab"></div>
     </div>
   </div>
   <div class="focus-dock" id="focusDock">
@@ -450,7 +433,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     <button class="focus-dock-btn focus-rep-pill" id="focusRepBtn" onclick="cycleFocusRepetitions(event)">1×</button>
     <button class="focus-dock-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)">双语</button>
     <button class="focus-dock-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)">盲听</button>
-    <button class="focus-dock-btn" id="focusFontBtn" onclick="cycleFocusFontSize(event)">aA</button>
+    <button class="focus-dock-btn" id="focusFontBtn" onclick="cycleFocusFontSize(event)">A+</button>
     <button class="focus-dock-btn" id="focusNextBtn" onclick="gotoNextShadowSentence(event)">▶</button>
   </div>
 </div>
@@ -594,12 +577,25 @@ function releaseShadowWakeLock() {
   }
 }
 
-document.getElementById('autoScrollCheck').checked = autoScrollEnabled;
+const scrollBtn = document.getElementById('autoScrollBtn');
+if (scrollBtn) scrollBtn.classList.toggle('active', autoScrollEnabled);
+const scrollCheck = document.getElementById('autoScrollCheck');
+if (scrollCheck) scrollCheck.checked = autoScrollEnabled;
 
 function toggleAutoScroll(enabled) {
   autoScrollEnabled = enabled;
-  localStorage.setItem(STORAGE_PREFIX + 'autoscroll', enabled);
+  localStorage.setItem(STORAGE_PREFIX + 'autoscroll', enabled ? 'true' : 'false');
+  const btn = document.getElementById('autoScrollBtn');
+  if (btn) btn.classList.toggle('active', enabled);
+  const chk = document.getElementById('autoScrollCheck');
+  if (chk) chk.checked = enabled;
 }
+
+function toggleAutoScrollPill(btn) {
+  toggleAutoScroll(!autoScrollEnabled);
+  showToast(autoScrollEnabled ? '自动滚屏已开启' : '自动滚屏已暂停');
+}
+window.toggleAutoScrollPill = toggleAutoScrollPill;
 
 // Chapter Switching
 function toggleChapterDropdown(event) {
@@ -1059,8 +1055,53 @@ audio.preservesPitch = true;
 audio.mozPreservesPitch = true;
 audio.webkitPreservesPitch = true;
 
+const MAIN_REP_LEVELS = [1, 2, 3, 4, 5];
+
+function setMainRepetitions(n) {
+  const nextRep = Math.max(1, parseInt(n, 10) || 1);
+  shadowState.repetitions = nextRep;
+  try {
+    localStorage.setItem(STORAGE_PREFIX + 'repetitions', String(nextRep));
+    localStorage.setItem('reader_focus_repetitions', String(nextRep));
+  } catch(e) {}
+  const repBtn = document.getElementById('repeatBtn');
+  if (repBtn) {
+    repBtn.textContent = `复读 ${nextRep}×`;
+    repBtn.classList.toggle('active', nextRep > 1);
+  }
+  const focusRepBtn = document.getElementById('focusRepBtn');
+  if (focusRepBtn) {
+    focusRepBtn.textContent = `${nextRep}×`;
+  }
+  if (nextRep === 1) {
+    if (shadowState.phase !== 'idle') {
+      stopShadowing();
+    }
+    showToast('已切回常规连续朗读');
+  } else {
+    showToast(`每句复读已设置为 ${nextRep} 遍`);
+    if (shadowState.phase === 'idle' && audio && !audio.paused) {
+      const activeSection = document.querySelector('.chapter-section.active');
+      const sentence = findSentenceAt(audio.currentTime) || 
+        (currentPlayingId ? document.getElementById(currentPlayingId) : null) || 
+        (activeSection ? activeSection.querySelector('.sentence-unit.active') : null);
+      if (sentence) {
+        startSentenceShadowing(sentence);
+      }
+    }
+  }
+}
+
+function cycleMainRepeat(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const cur = shadowState.repetitions || 1;
+  const idx = MAIN_REP_LEVELS.indexOf(cur);
+  const nextRep = idx !== -1 ? MAIN_REP_LEVELS[(idx + 1) % MAIN_REP_LEVELS.length] : 1;
+  setMainRepetitions(nextRep);
+}
+
 function setShadowRepetitions(value) {
-  shadowState.repetitions = Math.max(1, parseInt(value, 10) || 3);
+  setMainRepetitions(value);
 }
 
 function stopShadowing() {
@@ -1077,23 +1118,16 @@ function stopShadowing() {
   shadowState.sentence = null;
   releaseShadowWakeLock();
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-  if (btn) btn.textContent = 'Repeat';
+  if (btn) {
+    const cur = shadowState.repetitions || 1;
+    btn.textContent = `复读 ${cur}×`;
+    btn.classList.toggle('active', cur > 1);
+  }
   updatePocketStatus();
 }
 
 function toggleShadowing() {
-  if (shadowState.phase !== 'idle') {
-    stopShadowing();
-    return;
-  }
-  const activeSection = document.querySelector('.chapter-section.active');
-  const sentence = findSentenceAt(audio.currentTime) || 
-    (currentPlayingId ? document.getElementById(currentPlayingId) : null) || 
-    (activeSection ? activeSection.querySelector('.sentence-unit.active') : null) || 
-    (activeSection ? activeSection.querySelector('.sentence-unit') : null);
-  if (sentence) {
-    startSentenceShadowing(sentence);
-  }
+  cycleMainRepeat();
 }
 
 function getNextShadowSentence(currentEl) {
@@ -1273,13 +1307,13 @@ function applyFocusFontScale(scale) {
   const btn = document.getElementById('focusFontBtn');
   if (btn) {
     if (scale <= 1.05) {
-      btn.textContent = 'aA';
+      btn.textContent = 'A+';
       btn.classList.remove('active');
     } else if (scale <= 1.35) {
-      btn.textContent = 'aA+';
+      btn.textContent = 'A++';
       btn.classList.add('active');
     } else {
-      btn.textContent = 'aA++';
+      btn.textContent = 'A+++';
       btn.classList.add('active');
     }
   }
@@ -1450,6 +1484,18 @@ function updateFocusSentenceDisplay() {
   if (transEl) {
     const trans = el.dataset.trans || el.querySelector('.inspect-trans')?.textContent || '';
     transEl.textContent = trans;
+  }
+  
+  const vocabEl = document.getElementById('focusSentenceVocab');
+  if (vocabEl) {
+    const rawVocab = el.querySelector('.inspect-vocab-list');
+    if (rawVocab && rawVocab.children.length > 0) {
+      vocabEl.innerHTML = rawVocab.innerHTML;
+      vocabEl.style.display = 'flex';
+    } else {
+      vocabEl.innerHTML = '';
+      vocabEl.style.display = 'none';
+    }
   }
   
   if (box) {
@@ -1648,6 +1694,9 @@ window.toggleFocusBlindMode = toggleFocusBlindMode;
 window.togglePocketBlindMode = toggleFocusBlindMode;
 window.toggleFocusTransMode = toggleFocusTransMode;
 window.cycleFocusRepetitions = cycleFocusRepetitions;
+window.cycleMainRepeat = cycleMainRepeat;
+window.setMainRepetitions = setMainRepetitions;
+window.toggleAutoScrollPill = toggleAutoScrollPill;
 window.cycleFocusFontSize = cycleFocusFontSize;
 window.applyFocusFontScale = applyFocusFontScale;
 window.adjustFocusFontScale = adjustFocusFontScale;
