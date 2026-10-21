@@ -1095,10 +1095,9 @@ function getNextShadowSentence(currentEl) {
           return item.el;
         }
       }
-      return null;
     }
   }
-  const section = currentEl.closest('.chapter-section') || document.querySelector('.chapter-section.active');
+  const section = currentEl.closest('.chapter-section') || (currentActiveSection && currentActiveSection.classList.contains('active') ? currentActiveSection : document.querySelector('.chapter-section.active'));
   if (!section) return null;
   const allSentences = Array.from(section.querySelectorAll('.sentence-unit'));
   const idx = allSentences.indexOf(currentEl);
@@ -1127,6 +1126,9 @@ function armShadowPauseWatchdog() {
           audio.currentTime = parseFloat(shadowState.sentence.dataset.start);
           audio.play();
         }
+      } else {
+        armShadowPauseWatchdog();
+        return;
       }
     }
     shadowBufferWatchdog = null;
