@@ -56,6 +56,49 @@ class ReleaseGateTests(unittest.TestCase):
             report = json.loads((root / "reader_validation_report.json").read_text(encoding="utf-8")) if (root / "reader_validation_report.json").exists() else None
             self.assertIsNone(report)
 
+    def test_excessive_acoustic_void_blocks_release(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_fixture(root)
+            canonical = [
+                {"id": "s-1", "text": "First sentence."},
+                {"id": "s-2", "text": "Second sentence."}
+            ]
+            analysis = [
+                {"id": "s-1", "text": "First sentence.", "trans": "第一句。", "vocab": []},
+                {"id": "s-2", "text": "Second sentence.", "trans": "第二句。", "vocab": []}
+            ]
+            aligned = [
+                {
+                    "id": "s-1", "text": "First sentence.",
+                    "word_spans": [{"word": "First", "start": 0.0, "end": 1.0}],
+                    "raw_start": 0.0, "raw_end": 1.0, "has_audio_match": True,
+                    "fallback_used": False, "alignment_status": "validated",
+                    "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                },
+                {
+                    "id": "s-2", "text": "Second sentence.",
+                    "word_spans": [{"word": "Second", "start": 200.0, "end": 201.0}],
+                    "raw_start": 200.0, "raw_end": 201.0, "has_audio_match": True,
+                    "fallback_used": False, "alignment_status": "validated",
+                    "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                }
+            ]
+            for suffix, data in (("canonical_sentences", canonical), ("full_analysis", analysis), ("aligned_sentences", aligned)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+            # Gap between s-1 (ends 1.0) and s-2 (starts 200.0) is 199.0s > 120s ceiling
+            self.assertNotEqual(validate(root), 0)
+
+    def test_low_bilateral_acoustic_word_ratio_blocks_release(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_fixture(root)
+            # Create acoustic words file with 200 words, but aligned data only has 1 word span
+            ac_data = {"words": [{"word": f"word_{i}", "start": float(i), "end": float(i) + 0.5} for i in range(200)]}
+            (root / "audio" / "book_ch01_acoustic_words.json").write_text(json.dumps(ac_data), encoding="utf-8")
+            # Aligned data has 1 span / 200 words = 0.5% < 85% threshold
+            self.assertNotEqual(validate(root), 0)
+
     def test_low_lexical_ratio_with_complete_physical_spans_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

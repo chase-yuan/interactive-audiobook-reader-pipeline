@@ -22,6 +22,8 @@ INTENTIONAL_INTERJECTION = re.compile(
     re.IGNORECASE,
 )
 MIN_CHAPTER_AUDIO_COVERAGE = 0.95
+MIN_BILATERAL_ACOUSTIC_WORD_RATIO = 0.85
+MAX_INTER_SENTENCE_ACOUSTIC_GAP = 120.0
 MAX_NON_NARRATED_CHAPTER_RATIO = 0.20
 MAX_NON_NARRATED_CHAPTER_COUNT = 60
 
@@ -290,6 +292,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         if suspicious:
             diagnostics.append(f"{label}: {len(suspicious)} suspicious sentence boundaries ({', '.join(suspicious[:8])})")
         ortho_issues = validate_canonical_sentences(data)
+        analysis = book_dir / canonical.name.replace("_canonical_sentences.json", "_full_analysis.json")
         if ortho_issues:
             # Shift-Left Auto-Healer: If the only ortho defect is unclosed quote at chapter end,
             # auto-balance the discourse quote and re-verify before reporting hard gate errors.
@@ -312,7 +315,6 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             errors.extend([f"{label} {iss}" for iss in ortho_issues])
         record = {"chapter": number, "canonical_records": len(data), "suspicious_records": len(suspicious), "ortho_issues": len(ortho_issues)}
 
-        analysis = book_dir / canonical.name.replace("_canonical_sentences.json", "_full_analysis.json")
         if not analysis.exists():
             errors.append(f"{label}: linguistic analysis file missing")
         else:
@@ -512,6 +514,14 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 if span_start is None or span_end is None or span_start < 0 or span_end < span_start or span.get("timing_source", "observed") != "observed":
                     errors.append(f"{label} {item_id}: invalid word span")
             if participates_in_timeline:
+                if start is not None and previous_end > 0:
+                    inter_gap = start - previous_end
+                    if inter_gap > MAX_INTER_SENTENCE_ACOUSTIC_GAP:
+                        errors.append(
+                            f"{label} {item_id}: excessive acoustic void of {inter_gap:.1f}s detected "
+                            f"(previous sentence ended at {previous_end:.1f}s, current starts at {start:.1f}s); "
+                            f"exceeds {MAX_INTER_SENTENCE_ACOUSTIC_GAP:.0f}s release ceiling"
+                        )
                 if start is not None:
                     previous_start = start
                 if end is not None:
@@ -542,6 +552,29 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 f"{label}: acoustic coverage {coverage:.1%} is below the "
                 f"{MIN_CHAPTER_AUDIO_COVERAGE:.0%} release threshold"
             )
+
+        # Bilateral acoustic check: verify reverse coverage of acoustic words if acoustic profile exists
+        prefix = canonical.name.removesuffix("_canonical_sentences.json")
+        acoustic_path = book_dir / "audio" / f"{prefix}_acoustic_words.json"
+        if acoustic_path.is_file():
+            try:
+                with acoustic_path.open("r", encoding="utf-8") as af:
+                    ac_data = json.load(af)
+                total_ac_words = len(ac_data.get("words", []))
+                if total_ac_words > 100:
+                    total_aligned_words = sum(len(item.get("word_spans", [])) for item in aligned_data if item.get("has_audio_match"))
+                    bilateral_ratio = total_aligned_words / total_ac_words
+                    record["bilateral_acoustic_word_ratio"] = round(bilateral_ratio, 4)
+                    record["total_acoustic_words"] = total_ac_words
+                    record["total_aligned_words"] = total_aligned_words
+                    if bilateral_ratio < MIN_BILATERAL_ACOUSTIC_WORD_RATIO:
+                        errors.append(
+                            f"{label}: bilateral acoustic word ratio {bilateral_ratio:.1%} is below the "
+                            f"{MIN_BILATERAL_ACOUSTIC_WORD_RATIO:.0%} threshold (audio has {total_ac_words} words, "
+                            f"text only accounts for {total_aligned_words} words)"
+                        )
+            except Exception:
+                pass
         non_narrated_records = sum(
             1 for item in aligned_data
             if item.get("alignment_status") == "not-applicable"
