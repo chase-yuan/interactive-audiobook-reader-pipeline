@@ -123,6 +123,15 @@ class IntakeReconcilerTests(unittest.TestCase):
         self.assertEqual(rows[1]["chapter_indices"], [1])
         self.assertEqual(rows[1]["audio_indices"], [0])
 
+    def test_ffprobe_duration_specifies_explicit_timeout(self):
+        from unittest.mock import patch, MagicMock
+        from intake_reconciler import ffprobe_duration
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="123.45\n")
+            dur = ffprobe_duration(Path("/fake/audio.mp3"))
+            self.assertEqual(dur, 123.45)
+            self.assertEqual(mock_run.call_args[1].get("timeout"), 60)
+
 
 if __name__ == "__main__":
     unittest.main()

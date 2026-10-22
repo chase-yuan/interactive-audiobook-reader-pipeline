@@ -136,7 +136,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     for ch in loaded_chapters:
         cnum = ch["num"]
         ctitle = ch["title"]
-        label = ch["label"]
+        label = html.escape(ch["label"])
         active_cls = " active" if cnum == first_ch_num else ""
         html_head += f"""        <div class="chapter-item{active_cls}" id="menu-ch-{cnum}" onclick="switchChapter({cnum})">
           <span class="chapter-item-tag">{label}</span>
@@ -222,15 +222,16 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         csents = ch["sentences"]
         active_cls = " active" if cnum == first_ch_num else ""
         ch_heading_label = ch["label"].upper()
+        safe_heading_label = html.escape(ch_heading_label)
         clean_title = ctitle.strip()
         disp_num = str(ch.get("display_number")) if ch.get("display_number") is not None else ""
         disp_part = rf"|\b(?:Chapter\s+)?{re.escape(disp_num)}(?!\d)\s*[\.\:—–-]\s*" if disp_num else ""
         prefix_pattern = rf"^(?:{re.escape(ch['label'])}\s*[:—–-]?\s*{disp_part})"
         sub_title = re.sub(prefix_pattern, "", clean_title, flags=re.IGNORECASE).strip()
-        if not sub_title or clean_title.upper() == ch_heading_label.upper() or clean_title.upper() == f"CHAPTER {cnum}":
-            title_html = ch_heading_label
+        if not sub_title or clean_title.upper() == ch_heading_label or clean_title.upper() == f"CHAPTER {cnum}":
+            title_html = safe_heading_label
         else:
-            title_html = f"{ch_heading_label}<br>{html.escape(sub_title)}"
+            title_html = f"{safe_heading_label}<br>{html.escape(sub_title)}"
         
         html_head += f"""
   <!-- CHAPTER {cnum} -->
@@ -413,7 +414,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         if editorial_notice:
             html_head += f"""
       <div class="editorial-notice-box">
-        <span class="notice-badge">编者注</span>
+        <span class="notice-badge">Editor's Note</span>
         <div class="notice-content">
           {html.escape(editorial_notice)}
         </div>
@@ -617,7 +618,7 @@ function toggleAutoScroll(enabled) {
 
 function toggleAutoScrollPill(btn) {
   toggleAutoScroll(!autoScrollEnabled);
-  showToast(autoScrollEnabled ? '自动滚屏已开启' : '自动滚屏已暂停');
+  showToast(autoScrollEnabled ? 'Auto-scroll enabled' : 'Auto-scroll paused');
 }
 window.toggleAutoScrollPill = toggleAutoScrollPill;
 
@@ -747,6 +748,12 @@ function switchChapter(chNum, autoPlay) {
           firstSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
+      if (focusModeActive || pocketModeActive) {
+        shadowState.sentence = firstSentence;
+        updateFocusSentenceDisplay();
+        updateFocusStatus();
+        showFocusDock();
+      }
     }
   });
   rebuildSentenceTimeIndex();
@@ -832,17 +839,6 @@ function updateLanguageModeUI(mode) {
     lockBtn.textContent = isEnglish ? 'EN' : 'Dual';
     lockBtn.classList.toggle('active', !isEnglish);
   }
-  const btnBilingual = document.getElementById('langModeBilingual');
-  const btnEnglish = document.getElementById('langModeEnglish');
-  if (btnBilingual && btnEnglish) {
-    if (isEnglish) {
-      btnBilingual.classList.remove('active');
-      btnEnglish.classList.add('active');
-    } else {
-      btnBilingual.classList.add('active');
-      btnEnglish.classList.remove('active');
-    }
-  }
 }
 
 function toggleChineseLock() {
@@ -918,7 +914,7 @@ let lastSentenceClickId = null;
 function startSentenceShadowing(sentenceEl) {
   if (!sentenceEl) return;
   if (sentenceEl.dataset.matched !== '1') {
-    showToast('该句子无音频，无法跟读');
+    showToast('No audio available for this sentence');
     return;
   }
   if (shadowState.timer) clearTimeout(shadowState.timer);
@@ -929,7 +925,7 @@ function startSentenceShadowing(sentenceEl) {
   const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (btn) btn.textContent = 'Stop Repeat';
   requestShadowWakeLock();
-  showToast('精听跟读已启动 · 可开启专注精听舱');
+  showToast('Shadowing loop active');
   updatePocketStatus();
   updatePocketSentenceDisplay();
   
@@ -1099,17 +1095,13 @@ function setMainRepetitions(n) {
   if (focusRepBtn) {
     focusRepBtn.textContent = `${nextRep}×`;
   }
-  const sel = document.getElementById('shadowRepeatSelect');
-  if (sel) {
-    sel.value = String(nextRep);
-  }
   if (nextRep === 1) {
     if (shadowState.phase !== 'idle') {
       stopShadowing();
     }
-    showToast('已切回常规连续朗读');
+    showToast('Continuous reading mode active');
   } else {
-    showToast(`每句复读已设置为 ${nextRep} 遍`);
+    showToast(`Sentence repeat set to ${nextRep}×`);
     if (shadowState.phase === 'idle' && audio && !audio.paused) {
       const activeSection = document.querySelector('.chapter-section.active');
       const sentence = findSentenceAt(audio.currentTime) || 
@@ -1450,10 +1442,8 @@ function cycleFocusRepetitions(e) {
   } catch (err) {}
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) repBtn.textContent = `${nextRep}×`;
-  const selectEl = document.getElementById('shadowRepeatSelect');
-  if (selectEl) selectEl.value = String(nextRep);
   updateFocusStatus();
-  showToast(`单句重复设置为 ${nextRep} 遍`);
+  showToast(`Sentence repeat set to ${nextRep}×`);
 }
 
 function updateFocusStatus() {
@@ -1521,7 +1511,7 @@ function updateFocusSentenceDisplay() {
   }
   
   if (!shadowState.sentence) {
-    textEl.textContent = '请选择句子开始精听';
+    textEl.textContent = 'Select a sentence to begin immersion';
     if (transEl) transEl.textContent = '';
     return;
   }
@@ -1559,10 +1549,20 @@ const updatePocketSentenceDisplay = updateFocusSentenceDisplay;
 
 function gotoNextShadowSentence() {
   if (!sentenceTimeIndex || !sentenceTimeIndex.length) return;
+  showFocusDock();
   let curIdx = shadowState.sentence ? sentenceTimeIndex.findIndex(item => item.el === shadowState.sentence) : -1;
   if (curIdx === -1) {
     const curSentence = findSentenceAt(audio.currentTime);
     curIdx = curSentence ? sentenceTimeIndex.findIndex(item => item.el === curSentence) : -1;
+  }
+  if (curIdx >= sentenceTimeIndex.length - 1) {
+    const nextCh = activeChapterNum + 1;
+    const nextOption = document.getElementById('menu-ch-' + nextCh) || 
+                       document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+    if (nextOption) {
+      switchChapter(nextCh, true);
+      return;
+    }
   }
   const nextIdx = (curIdx >= 0 && curIdx + 1 < sentenceTimeIndex.length) ? curIdx + 1 : 0;
   const target = sentenceTimeIndex[nextIdx];
@@ -1574,6 +1574,7 @@ function gotoNextShadowSentence() {
 
 function gotoPreviousShadowSentence() {
   if (!sentenceTimeIndex || !sentenceTimeIndex.length) return;
+  showFocusDock();
   let curIdx = shadowState.sentence ? sentenceTimeIndex.findIndex(item => item.el === shadowState.sentence) : -1;
   if (curIdx === -1) {
     const curSentence = findSentenceAt(audio.currentTime);
@@ -1851,6 +1852,16 @@ function initMediaSession() {
       const skip = details.seekOffset || 10;
       if (audio && audio.duration) audio.currentTime = Math.min(audio.duration, audio.currentTime + skip);
     });
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (audio && Number.isFinite(details.seekTime)) {
+        if (details.fastSeek && 'fastSeek' in audio) {
+          audio.fastSeek(details.seekTime);
+        } else {
+          audio.currentTime = details.seekTime;
+        }
+        updateAudioPlayerUI();
+      }
+    });
     navigator.mediaSession.setActionHandler('previoustrack', () => {
       const prevCh = Math.max(0, activeChapterNum - 1);
       if (prevCh !== activeChapterNum) switchChapter(prevCh, true);
@@ -1895,6 +1906,50 @@ audio.addEventListener('loadedmetadata', () => {
   updateAudioPlayerUI();
 });
 audio.addEventListener('durationchange', updateAudioPlayerUI);
+let audioStallTimer = null;
+audio.addEventListener('waiting', () => {
+  if (audio && !audio.paused) {
+    if (audioStallTimer) clearTimeout(audioStallTimer);
+    audioStallTimer = setTimeout(() => {
+      if (audio && !audio.paused && audio.readyState < 3) {
+        console.warn('[Audio] Buffering stall detected, refreshing buffer...');
+        const cur = audio.currentTime;
+        audio.currentTime = cur;
+        safePlay(audio);
+      }
+    }, 2500);
+  }
+});
+audio.addEventListener('playing', () => {
+  if (audioStallTimer) {
+    clearTimeout(audioStallTimer);
+    audioStallTimer = null;
+  }
+});
+audio.addEventListener('stalled', () => {
+  if (audio && !audio.paused && audio.readyState < 3) {
+    if (!audioStallTimer) {
+      audioStallTimer = setTimeout(() => {
+        if (audio && !audio.paused && audio.readyState < 3) {
+          const cur = audio.currentTime;
+          audio.currentTime = cur;
+          safePlay(audio);
+        }
+      }, 3000);
+    }
+  }
+});
+audio.addEventListener('error', (err) => {
+  console.warn('[Audio] Media playback error encountered:', err);
+  if (globalPlayBtn) globalPlayBtn.textContent = '▶ Play';
+  if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(false);
+  showToast('Audio network error. Reconnecting...');
+  if (audio.src) {
+    const cur = audio.currentTime;
+    audio.load();
+    audio.currentTime = cur;
+  }
+});
 audio.addEventListener('ended', () => {
   if (focusModeActive) {
     showFocusDock();

@@ -171,7 +171,7 @@ def parse_epub(epub_path: Path, cover_output: Optional[Path] = None) -> Dict:
 def ffprobe_duration(path: Path) -> float:
     completed = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(path)],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, timeout=60,
     )
     return float(completed.stdout.strip())
 
