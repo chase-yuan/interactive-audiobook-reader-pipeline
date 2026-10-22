@@ -469,6 +469,8 @@ const playerCurTime = document.getElementById('playerCurTime');
 const playerTotalTime = document.getElementById('playerTotalTime');
 const playerScrubber = document.getElementById('playerScrubber');
 let isUserScrubbing = false;
+let focusModeActive = false;
+let pocketModeActive = false;
 
 function safePlay(audioEl) {
   if (!audioEl) return;
@@ -748,11 +750,11 @@ function switchChapter(chNum, autoPlay) {
           firstSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
-      if (focusModeActive || pocketModeActive) {
+      if (typeof focusModeActive !== 'undefined' && (focusModeActive || pocketModeActive)) {
         shadowState.sentence = firstSentence;
-        updateFocusSentenceDisplay();
-        updateFocusStatus();
-        showFocusDock();
+        if (typeof updateFocusSentenceDisplay === 'function') updateFocusSentenceDisplay();
+        if (typeof updateFocusStatus === 'function') updateFocusStatus();
+        if (typeof showFocusDock === 'function') showFocusDock();
       }
     }
   });
@@ -1313,8 +1315,6 @@ function advanceShadowing() {
   }, 280);
 }
 
-let focusModeActive = false;
-let pocketModeActive = false;
 let lastFocusTapTime = 0;
 let focusBlindMode = false;
 let pocketBlindMode = false;
