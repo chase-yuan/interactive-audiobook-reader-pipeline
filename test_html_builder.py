@@ -408,5 +408,27 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn('id="c1-s-2" data-start="null" data-end="null" data-audio-order="" data-epigraph="0" data-matched="0"', rendered)
             self.assertIn('id="c1-s-3" data-start="14.9" data-end="20.0"', rendered)
 
+    def test_focus_dock_autohide_and_english_button_labels(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "UI Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            self.assertIn('<button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (快捷键 T)">Dual</button>', rendered)
+            self.assertIn('<button class="focus-dock-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)">Dual</button>', rendered)
+            self.assertIn('<button class="focus-dock-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)">Audio</button>', rendered)
+            self.assertIn('.focus-dock.dock-hidden', rendered)
+            self.assertIn('function scheduleFocusDockHide()', rendered)
+            self.assertIn('function showFocusDock()', rendered)
+            self.assertIn('Focus Mode (Immersion)', rendered)
+            self.assertIn('Audio mode (hide text for listening)', rendered)
+
+
 
 

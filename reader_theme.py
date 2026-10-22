@@ -1123,6 +1123,13 @@ body {
   -webkit-backdrop-filter: blur(16px);
   user-select: none;
   -webkit-user-select: none;
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.focus-dock.dock-hidden {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
 }
 
 .focus-dock-btn,

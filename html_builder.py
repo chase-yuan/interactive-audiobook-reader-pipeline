@@ -165,7 +165,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
       </div>
       <div class="drawer-row">
         <div class="drawer-group">
-          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (快捷键 T)">双语</button>
+          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (快捷键 T)">Dual</button>
           <button class="pill-btn" onclick="toggleTheme()" aria-label="Switch theme">Theme</button>
         </div>
         <div class="drawer-group"{repeat_group_attr}>
@@ -183,18 +183,27 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
       <div class="drawer-tips" id="drawerTips">
         <div class="tips-columns">
           <div class="tips-section">
-            <div class="tips-section-title">Touch & Mouse</div>
+            <div class="tips-section-title">Reading & Playback</div>
             <div class="tips-row"><span class="kbd-key">Tap Sentence</span><span>{'Play audio & show breakdown' if has_audio else 'Show translation & vocabulary breakdown'}</span></div>
             <div class="tips-row"><span class="kbd-key">{'Double Tap' if has_audio else 'Tap Active'}</span><span>{'Repeat sentence loop' if has_audio else 'Collapse translation card'}</span></div>
             {f'<div class="tips-row"><span class="kbd-key">Tap Card</span><span>Collapse card</span></div>' if has_audio else ''}
-          </div>
-          <div class="tips-section">
-            <div class="tips-section-title">Keyboard Shortcuts</div>
             <div class="tips-row"><span class="kbd-key">Space</span><span>Toggle translation card (peek / hide)</span></div>
             <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence (audio only)</span></div>
             <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
             {f'<div class="tips-row"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>' if has_audio else ''}
-            {f'<div class="tips-row"><span class="kbd-key">P</span><span>Toggle Focus mode (专注模式)</span></div>' if has_audio else ''}
+            {f'<div class="tips-row"><span class="kbd-key">P</span><span>Toggle Focus mode</span></div>' if has_audio else ''}
+          </div>
+          <div class="tips-section">
+            <div class="tips-section-title">Focus Mode (Immersion)</div>
+            <div class="tips-row"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
+            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
+            <div class="tips-row"><span class="kbd-key">↑</span><span>Replay current sentence</span></div>
+            <div class="tips-row"><span class="kbd-key">Swipe L/R</span><span>Previous / Next sentence</span></div>
+            <div class="tips-row"><span class="kbd-key">R</span><span>Cycle repeats (1× / 2× / 3× / 5×)</span></div>
+            <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Dual / English-only</span></div>
+            <div class="tips-row"><span class="kbd-key">H / B</span><span>Audio mode (hide text for listening)</span></div>
+            <div class="tips-row"><span class="kbd-key">A / +/-</span><span>Scale English font size</span></div>
+            <div class="tips-row"><span class="kbd-key">Double Tap / Esc</span><span>Exit Focus mode</span></div>
           </div>
         </div>
       </div>
@@ -434,8 +443,8 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     <button class="focus-dock-btn" id="focusPrevBtn" onclick="gotoPreviousShadowSentence(event)">◀</button>
     <button class="focus-dock-btn focus-dock-play" id="focusPlayBtn" onclick="toggleFocusPlayPause(event)">⏸</button>
     <button class="focus-dock-btn focus-rep-pill" id="focusRepBtn" onclick="cycleFocusRepetitions(event)">1×</button>
-    <button class="focus-dock-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)">双语</button>
-    <button class="focus-dock-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)">盲听</button>
+    <button class="focus-dock-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)">Dual</button>
+    <button class="focus-dock-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)">Audio</button>
     <button class="focus-dock-btn" id="focusFontBtn" onclick="cycleFocusFontSize(event)">A+</button>
     <button class="focus-dock-btn" id="focusNextBtn" onclick="gotoNextShadowSentence(event)">▶</button>
   </div>
@@ -820,7 +829,7 @@ function updateLanguageModeUI(mode) {
   const isEnglish = (mode === 'english');
   const lockBtn = document.getElementById('chineseLockBtn') || document.getElementById('langToggleBtn');
   if (lockBtn && lockBtn.classList.contains('pill-btn')) {
-    lockBtn.textContent = isEnglish ? '纯英' : '双语';
+    lockBtn.textContent = isEnglish ? 'EN' : 'Dual';
     lockBtn.classList.toggle('active', !isEnglish);
   }
   const btnBilingual = document.getElementById('langModeBilingual');
@@ -1416,7 +1425,7 @@ function applyFocusTransVisibility() {
   }
   if (btn) {
     btn.classList.toggle('active', focusShowTrans);
-    btn.textContent = focusShowTrans ? '双语' : '纯英';
+    btn.textContent = focusShowTrans ? 'Dual' : 'EN';
   }
 }
 
@@ -1427,7 +1436,7 @@ function toggleFocusTransMode(e) {
     localStorage.setItem('reader_focus_show_trans', focusShowTrans ? '1' : '0');
   } catch (err) {}
   applyFocusTransVisibility();
-  showToast(focusShowTrans ? '双语对照已开启' : '仅显示英文');
+  showToast(focusShowTrans ? 'Dual mode' : 'English only');
 }
 
 function cycleFocusRepetitions(e) {
@@ -1478,10 +1487,12 @@ function toggleFocusPlayPause(e) {
     if (shadowState.phase === 'paused_external') shadowState.phase = 'playing';
     safePlay(audio);
     updateFocusPlayBtn(true);
+    scheduleFocusDockHide();
   } else {
     shadowState.isInternalPause = false;
     audio.pause();
     updateFocusPlayBtn(false);
+    showFocusDock();
   }
 }
 
@@ -1609,15 +1620,16 @@ function toggleFocusBlindMode(e) {
     overlay.classList.toggle('blind-mode', focusBlindMode);
   }
   if (btn) {
-    btn.textContent = focusBlindMode ? '盲听中' : '盲听';
+    btn.textContent = 'Audio';
     btn.classList.toggle('active', focusBlindMode);
   }
-  showToast(focusBlindMode ? '盲听开启 · 轻触文本临时显字' : '盲听关闭 · 恢复显示');
+  showToast(focusBlindMode ? 'Audio mode ON (tap text to peek)' : 'Audio mode OFF');
 }
 const togglePocketBlindMode = toggleFocusBlindMode;
 
 function handleFocusSentenceBoxClick(e) {
   if (e && e.stopPropagation) e.stopPropagation();
+  showFocusDock();
   const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
   if (focusBlindMode && box) {
     box.classList.toggle('revealed');
@@ -1628,6 +1640,7 @@ function handleFocusSentenceBoxClick(e) {
 const handlePocketSentenceBoxClick = handleFocusSentenceBoxClick;
 
 function handleFocusTouchStart(e) {
+  showFocusDock();
   if ((!focusModeActive && !pocketModeActive) || !e.touches || e.touches.length !== 1) return;
   focusTouchStartY = e.touches[0].clientY;
   focusTouchStartX = e.touches[0].clientX;
@@ -1653,6 +1666,31 @@ function handleFocusTouchEnd(e) {
 }
 const handlePocketTouchEnd = handleFocusTouchEnd;
 
+let focusDockHideTimer = null;
+
+function scheduleFocusDockHide() {
+  if (focusDockHideTimer) {
+    clearTimeout(focusDockHideTimer);
+    focusDockHideTimer = null;
+  }
+  const dock = document.getElementById('focusDock');
+  if (!dock) return;
+  dock.classList.remove('dock-hidden');
+  if (focusModeActive && audio && !audio.paused) {
+    focusDockHideTimer = setTimeout(() => {
+      if (focusModeActive && audio && !audio.paused) {
+        dock.classList.add('dock-hidden');
+      }
+    }, 3000);
+  }
+}
+
+function showFocusDock() {
+  const dock = document.getElementById('focusDock');
+  if (dock) dock.classList.remove('dock-hidden');
+  scheduleFocusDockHide();
+}
+
 function toggleFocusMode(force) {
   const overlay = document.getElementById('focus-overlay') || document.getElementById('pocket-overlay');
   if (!overlay) return;
@@ -1663,6 +1701,7 @@ function toggleFocusMode(force) {
   
   if (focusModeActive) {
     initFocusPreferences();
+    showFocusDock();
     const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
     const curTime = (audio && Number.isFinite(audio.currentTime)) ? audio.currentTime : 0;
     const cur = findSentenceAt(curTime);
@@ -1699,6 +1738,12 @@ function toggleFocusMode(force) {
     updateFocusStatus();
     updateFocusSentenceDisplay();
   } else {
+    if (focusDockHideTimer) {
+      clearTimeout(focusDockHideTimer);
+      focusDockHideTimer = null;
+    }
+    const dock = document.getElementById('focusDock');
+    if (dock) dock.classList.remove('dock-hidden');
     releaseShadowWakeLock();
     overlay.style.display = 'none';
     document.body.style.overflow = '';
@@ -1718,6 +1763,7 @@ function handleFocusOverlayClick(e) {
   )) {
     return;
   }
+  showFocusDock();
   const now = Date.now();
   if (now - lastFocusTapTime < 450) {
     toggleFocusMode(false);
@@ -1757,6 +1803,8 @@ window.updatePocketSentenceDisplay = updateFocusSentenceDisplay;
 window.gotoNextShadowSentence = gotoNextShadowSentence;
 window.gotoPreviousShadowSentence = gotoPreviousShadowSentence;
 window.replayCurrentShadowSentence = replayCurrentShadowSentence;
+window.scheduleFocusDockHide = scheduleFocusDockHide;
+window.showFocusDock = showFocusDock;
 
 function startSyncLoop() {
   if (syncFrameId === null && !audio.paused && !document.hidden) syncFrameId = requestAnimationFrame(syncPlayback);
@@ -1821,11 +1869,17 @@ audio.addEventListener('play', () => {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   updateMediaSessionMetadata();
   startSyncLoop();
+  if (focusModeActive) {
+    scheduleFocusDockHide();
+  }
 });
 audio.addEventListener('pause', () => {
   globalPlayBtn.textContent = '▶ Play';
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   stopSyncLoop();
+  if (focusModeActive) {
+    showFocusDock();
+  }
 });
 let lastProgressReportTime = 0;
 audio.addEventListener('timeupdate', () => {
@@ -1842,6 +1896,9 @@ audio.addEventListener('loadedmetadata', () => {
 });
 audio.addEventListener('durationchange', updateAudioPlayerUI);
 audio.addEventListener('ended', () => {
+  if (focusModeActive) {
+    showFocusDock();
+  }
   if (shadowState.phase !== 'idle') {
     advanceShadowing();
     return;
@@ -1998,6 +2055,7 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (focusModeActive || pocketModeActive) {
+    showFocusDock();
     if (e.key === 'Escape') {
       e.preventDefault();
       toggleFocusMode(false);
@@ -2168,6 +2226,21 @@ window.addEventListener('keydown', (e) => {
 });
 initMediaSession();
 updateMediaSessionMetadata();
+const focusOverlayEl = document.getElementById('focus-overlay');
+if (focusOverlayEl) {
+  focusOverlayEl.addEventListener('pointermove', () => {
+    if (focusModeActive) scheduleFocusDockHide();
+  });
+  focusOverlayEl.addEventListener('pointerdown', () => {
+    if (focusModeActive) showFocusDock();
+  });
+}
+const focusDockEl = document.getElementById('focusDock');
+if (focusDockEl) {
+  focusDockEl.addEventListener('pointerdown', () => {
+    showFocusDock();
+  });
+}
 </script>
 </body>
 </html>
