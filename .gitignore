@@ -17,3 +17,4 @@ grill-report*.md
 *grill-report*.md
 archive/
 scripts/
+.linguistic_batch_cache/
