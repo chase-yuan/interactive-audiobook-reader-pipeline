@@ -171,16 +171,29 @@ def _call_deepseek_batch(prompt: str, timeout: int = 120) -> str:
 
 def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, total_batches: int,
                           cwd: Path, timeout: int, max_batch_attempts: int) -> list[dict]:
+    # Checkpoint Cache: Resume seamlessly without re-running completed batches
+    cache_dir = cwd / ".linguistic_batch_cache"
+    cache_dir.mkdir(exist_ok=True)
+    first_id = batch[0].get("id", f"idx{batch_idx}")
+    last_id = batch[-1].get("id", f"idx{batch_idx}")
+    cache_file = cache_dir / f"cache_{first_id}_{last_id}_{len(batch)}.json"
+
+    if cache_file.is_file() and cache_file.stat().st_size > 10:
+        try:
+            cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
+            verify_analysis(cached_data, batch)
+            return cached_data
+        except Exception:
+            pass
+
     prompt = build_batch_prompt(base_prompt, batch, batch_idx, total_batches)
     last_error = ""
 
     default_model = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
     fallback_models = [default_model]
-    for alt in ("gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium", "claude-sonnet-4-6"):
+    for alt in ("gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium"):
         if alt not in fallback_models:
             fallback_models.append(alt)
-    if os.getenv("DEEPSEEK_API_KEY") and "deepseek" not in fallback_models:
-        fallback_models.append("deepseek")
 
     for attempt in range(1, max_batch_attempts + 1):
         model_name = fallback_models[(attempt - 1) % len(fallback_models)]
@@ -221,7 +234,7 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
             missing_items = [item for item in batch if item["id"] not in returned_map]
 
             # Auto-heal missing sentences via a targeted sub-query
-            if missing_items and len(missing_items) <= 10:
+            if missing_items and len(missing_items) <= 15:
                 sub_prompt = build_batch_prompt(base_prompt, missing_items, 0, 1)
                 try:
                     if model_name == "deepseek":
@@ -255,10 +268,14 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
 
             ordered_batch = [returned_map[item["id"]] for item in batch]
             verify_analysis(ordered_batch, batch)
+            try:
+                atomic_write_json(cache_file, ordered_batch)
+            except Exception:
+                pass
             return ordered_batch
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, RuntimeError) as exc:
+        except Exception as exc:
             last_error = str(exc)
-            time.sleep(1)
+            time.sleep(2)
 
     raise RuntimeError(
         f"agy failed on batch {batch_idx + 1}/{total_batches} after {max_batch_attempts} attempts: {last_error}"
