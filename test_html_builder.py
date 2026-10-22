@@ -429,6 +429,42 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn('Focus Mode (Immersion)', rendered)
             self.assertIn('Audio mode (hide text for listening)', rendered)
 
+    def test_ch_heading_label_escaped_against_xss(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "XSS Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Injected Title", "label": "<script>alert('xss')</script>",
+                    "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            self.assertNotIn("<h1 class=\"book-title\"><script>", rendered)
+            self.assertNotIn("<span class=\"chapter-item-tag\"><script>", rendered)
+            self.assertIn("&lt;SCRIPT&gt;ALERT(&#x27;XSS&#x27;)&lt;/SCRIPT&gt;", rendered)
+            self.assertIn("<span class=\"chapter-item-tag\">&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;</span>", rendered)
+
+    def test_media_session_seekto_and_audio_error_listeners(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Media Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            self.assertIn("navigator.mediaSession.setActionHandler('seekto'", rendered)
+            self.assertIn("audio.addEventListener('error'", rendered)
+            self.assertIn("audio.addEventListener('stalled'", rendered)
+            self.assertIn("Select a sentence to begin immersion", rendered)
+
+
 
 
 
