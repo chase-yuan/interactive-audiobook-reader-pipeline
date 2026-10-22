@@ -15,6 +15,9 @@ REQUIRED_IDS = (
     "audioTrack",
     "drawerToggleBtn",
     "controlDrawer",
+    "chineseLockBtn",
+    "repeatBtn",
+    "focusModeBtn",
 )
 REQUIRED_FUNCTIONS = (
     "switchChapter",
@@ -24,6 +27,8 @@ REQUIRED_FUNCTIONS = (
     "cycleFocusFontSize",
     "setShadowRepetitions",
     "toggleFocusMode",
+    "cycleMainRepeat",
+    "toggleChineseLock",
 )
 
 

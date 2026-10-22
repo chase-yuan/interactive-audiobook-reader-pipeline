@@ -231,7 +231,7 @@ def _has_nearby_exact_audio(source_tokens, acoustic_words, ac_tokens, ac_map, ne
     return False
 
 
-def _duplicate_source_fragment_indices(sentences, window=25):
+def _duplicate_source_fragment_indices(sentences, window=100):
     """Find extraction fragments whose combined text duplicates one record,
     or standalone pull-quotes / callout boxes that duplicate an existing sentence.
 
@@ -308,7 +308,7 @@ def decode_audio_to_pcm(audio_path, sr=16000):
         ]
         raw = subprocess.check_output(cmd, timeout=300)
         return np.frombuffer(raw, dtype=np.int16)
-    except Exception as exc:
+    except (subprocess.SubprocessError, MemoryError, OSError) as exc:
         print(f"Warning: PCM decoding failed for {audio_path}: {exc}")
         return None
 

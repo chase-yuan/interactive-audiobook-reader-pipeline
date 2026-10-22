@@ -18,6 +18,9 @@ class QualityGateSmokeTests(unittest.TestCase):
 <div id="chapterDropdown"></div>
 <div id="drawerToggleBtn"></div>
 <div id="controlDrawer"></div>
+<div id="chineseLockBtn"></div>
+<div id="repeatBtn"></div>
+<div id="focusModeBtn"></div>
 <audio id="audioTrack" src="audio.mp3"></audio>
 {body_content}
 <script>
@@ -28,6 +31,8 @@ function syncPlayback() {{}}
 function cycleFocusFontSize() {{}}
 function setShadowRepetitions() {{}}
 function toggleFocusMode() {{}}
+function cycleMainRepeat() {{}}
+function toggleChineseLock() {{}}
 </script>
 </body>
 </html>

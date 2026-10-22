@@ -627,7 +627,8 @@ def build_reader_pipeline(
                 if row.get("display_number") is not None:
                     item["display_number"] = row["display_number"]
                 chapters_meta.append(item)
-        except Exception:
+        except Exception as exc:
+            print(f"[Warning] Failed to parse chapter_metadata.json ({exc}), falling back to raw chapters", file=sys.stderr)
             chapters_meta = []
     else:
         chapters_meta = []
