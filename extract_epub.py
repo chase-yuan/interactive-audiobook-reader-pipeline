@@ -197,7 +197,10 @@ def clean_and_merge_elements(elements):
 
         curr_has_terminal = bool(re.search(r"[.!?…”\"’)]$", curr_txt))
 
-        if next_starts_lower or (not curr_has_terminal and not is_title):
+        # Hard ceiling on soft-wrap merges to prevent mega-sentence bloat in unpunctuated lists/tables
+        is_too_long = len(curr_txt.split()) >= 40 or len(curr_txt) >= 280
+
+        if (next_starts_lower or (not curr_has_terminal and not is_title)) and not is_too_long:
             curr["text"] = curr_txt + " " + next_txt
         else:
             merged.append(curr)

@@ -292,6 +292,106 @@ class UniversalRunnerTests(unittest.TestCase):
             self.assertTrue(rep["release_ready"])
             self.assertEqual(rep["audio_content_mode"], "synthetic")
 
+    @patch("universal_runner.process_canonical_sentences")
+    @patch("acoustic_whisper.run_mlx_acoustic_extraction")
+    @patch("dynamic_aligner.align_sentences_with_audio")
+    def test_build_reader_pipeline_complete_audio_mode_end_to_end(self, mock_align, mock_acoustic, mock_process_linguistics):
+        def fake_linguistics(canonical_data, **kwargs):
+            return [
+                {
+                    "id": item["id"],
+                    "elem_idx": item.get("elem_idx", 0),
+                    "tag": item.get("tag", "p"),
+                    "text": item["text"],
+                    "trans": f"【译文】{item['text']}",
+                    "vocab": [],
+                    "is_heading": item.get("is_heading", False),
+                }
+                for item in canonical_data
+            ]
+
+        def fake_acoustic(audio_path, output_json_path, **kwargs):
+            words_data = {
+                "words": [
+                    {"word": f"word{i}", "start": i * 0.5, "end": (i + 1) * 0.5, "score": 0.99}
+                    for i in range(120)
+                ]
+            }
+            Path(output_json_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_json_path).write_text(json.dumps(words_data), encoding="utf-8")
+
+        def fake_align(acoustic_json, analysis_json, aligned_json, audio_path=None):
+            ana = json.loads(Path(analysis_json).read_text(encoding="utf-8"))
+            aligned = []
+            cur_t = 0.0
+            total_items = len(ana)
+            words_per_item = 120 // total_items
+            for idx, item in enumerate(ana):
+                words = [f"word{w}" for w in range(idx * words_per_item, (idx + 1) * words_per_item)]
+                spans = [{"word": w, "start": cur_t + i * 0.5, "end": cur_t + (i + 1) * 0.5} for i, w in enumerate(words)]
+                end_t = cur_t + len(words) * 0.5
+                aligned.append({
+                    "id": item["id"],
+                    "elem_idx": item.get("elem_idx", 0),
+                    "tag": item.get("tag", "p"),
+                    "text": " ".join(words),
+                    "trans": item.get("trans", ""),
+                    "vocab": [],
+                    "is_heading": item.get("is_heading", False),
+                    "start": round(cur_t, 2),
+                    "end": round(end_t, 2),
+                    "raw_start": round(cur_t, 2),
+                    "raw_end": round(end_t, 2),
+                    "has_audio_match": True,
+                    "alignment_status": "validated",
+                    "matched_token_count": len(words),
+                    "source_token_count": len(words),
+                    "word_spans": spans,
+                    "match_ratio": 1.0,
+                    "alignment_method": "mock_studio_align",
+                    "fallback_used": False,
+                })
+                cur_t = end_t
+            Path(aligned_json).parent.mkdir(parents=True, exist_ok=True)
+            Path(aligned_json).write_text(json.dumps(aligned), encoding="utf-8")
+
+        mock_process_linguistics.side_effect = fake_linguistics
+        mock_acoustic.side_effect = fake_acoustic
+        mock_align.side_effect = fake_align
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            epub_path = root / "sample.epub"
+            book_dir = root / "output_book"
+            audio_dir = root / "source_audio"
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            _create_mock_epub(epub_path)
+
+            # Create dummy mp3 files for each chapter candidate
+            for idx in range(3):
+                (audio_dir / f"chapter_{idx:02d}.mp3").write_bytes(b"ID3" + b"\x00" * 100)
+
+            out_html = build_reader_pipeline(
+                epub_path=epub_path,
+                book_dir=book_dir,
+                audio_dir=audio_dir,
+                concurrency=2,
+                min_chars=50,
+                open_in_browser=False,
+            )
+
+            self.assertTrue(out_html.is_file())
+            self.assertGreater(out_html.stat().st_size, 1000)
+
+            # Check audio_content_profile.json
+            profile = json.loads((book_dir / "audio_content_profile.json").read_text(encoding="utf-8"))
+            self.assertEqual(profile["audio_content_mode"], "complete")
+
+            # Check validation report
+            rep = json.loads((book_dir / "reader_validation_report.json").read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+            self.assertEqual(rep["audio_content_mode"], "complete")
+
 
 if __name__ == "__main__":
     unittest.main()

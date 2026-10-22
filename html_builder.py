@@ -1025,7 +1025,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
           globalPlayBtn.textContent = '⏸ Pause';
           interpolated = true;
         }} else {{
-          showToast('原版有声书音频已在正文末尾结束，已为您展开双语释义');
+          showToast('Audio narration concluded; expanded bilingual study breakdown.');
           interpolated = true;
         }}
       }} else if (nextTime !== null) {{

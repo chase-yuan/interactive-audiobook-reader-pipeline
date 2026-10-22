@@ -175,6 +175,18 @@ class ElementMergeDehyphenationTests(unittest.TestCase):
         self.assertEqual(merged[0]["text"], "Part Three: A Strategy")
         self.assertEqual(merged[1]["text"], "Actual substantive text begins here.")
 
+    def test_merge_unpunctuated_lines_capped_to_prevent_mega_sentence(self):
+        # 10 lines without terminal punctuation totaling > 40 words or > 280 chars
+        raw_elements = [
+            {"tag": "p", "class": "", "text": f"Line {i} discusses an intricate detail regarding industrial capital allocation without punctuation"}
+            for i in range(10)
+        ]
+        merged = clean_and_merge_elements(raw_elements)
+        # Should not merge all 10 lines into one single mega-element
+        self.assertGreater(len(merged), 1)
+        for el in merged:
+            self.assertLessEqual(len(el["text"].split()), 55)
+
 
 if __name__ == "__main__":
     unittest.main()

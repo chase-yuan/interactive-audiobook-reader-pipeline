@@ -556,6 +556,8 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         # Bilateral acoustic check: verify reverse coverage of acoustic words if acoustic profile exists
         prefix = canonical.name.removesuffix("_canonical_sentences.json")
         acoustic_path = book_dir / "audio" / f"{prefix}_acoustic_words.json"
+        if not acoustic_path.is_file():
+            acoustic_path = book_dir / f"{prefix}_acoustic_words.json"
         if acoustic_path.is_file():
             try:
                 with acoustic_path.open("r", encoding="utf-8") as af:
@@ -573,8 +575,8 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                             f"{MIN_BILATERAL_ACOUSTIC_WORD_RATIO:.0%} threshold (audio has {total_ac_words} words, "
                             f"text only accounts for {total_aligned_words} words)"
                         )
-            except Exception:
-                pass
+            except (json.JSONDecodeError, KeyError, OSError) as exc:
+                errors.append(f"{label}: failed to parse acoustic words from {acoustic_path.name}: {exc}")
         non_narrated_records = sum(
             1 for item in aligned_data
             if item.get("alignment_status") == "not-applicable"
