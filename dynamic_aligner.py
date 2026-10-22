@@ -231,21 +231,31 @@ def _has_nearby_exact_audio(source_tokens, acoustic_words, ac_tokens, ac_map, ne
     return False
 
 
-def _duplicate_source_fragment_indices(sentences):
-    """Find extraction fragments whose combined text duplicates one record.
+def _duplicate_source_fragment_indices(sentences, window=25):
+    """Find extraction fragments whose combined text duplicates one record,
+    or standalone pull-quotes / callout boxes that duplicate an existing sentence.
 
     Some EPUBs expose one paragraph both as a complete sentence and as several
-    child records (for example ``Venin are real`` plus ``Venin``/``Are``/``Real``).
-    The fragments are print-source duplication, not additional narrated prose.
+    child records (for example ``Venin are real`` plus ``Venin``/``Are``/``Real``),
+    or repeat pull-quotes next to paragraphs. The fragments are print-source
+    duplication, not additional narrated prose.
     """
     duplicate = set()
     for anchor_index, anchor in enumerate(sentences):
         anchor_tokens = tokenize_clean(anchor.get("text", ""))
         if len(anchor_tokens) < 2:
             continue
-        for start in range(anchor_index + 1, len(sentences)):
+        max_lookahead = min(len(sentences), anchor_index + window)
+        for start in range(anchor_index + 1, max_lookahead):
+            # Case 1: Standalone identical pull-quote / callout box (1:1 duplicate)
+            target_tokens = tokenize_clean(sentences[start].get("text", ""))
+            if len(anchor_tokens) >= 3 and target_tokens == anchor_tokens:
+                duplicate.add(start)
+                continue
+
+            # Case 2: Multi-sentence fragment combination (1:N duplicate)
             combined = []
-            for end in range(start, len(sentences)):
+            for end in range(start, max_lookahead):
                 combined.extend(tokenize_clean(sentences[end].get("text", "")))
                 if len(combined) >= len(anchor_tokens):
                     if combined == anchor_tokens and end > start:

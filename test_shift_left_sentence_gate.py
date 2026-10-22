@@ -12,9 +12,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from validate_outputs import validate_canonical_sentences, check_sentence_orthography
+from validate_outputs import validate_canonical_sentences, check_sentence_orthography, auto_heal_canonical_quotes
 from kokoro_synthesizer import clean_acoustic_text, is_standalone_divider
 from extract_epub import clean_and_merge_elements
+from dynamic_aligner import _duplicate_source_fragment_indices
 
 
 class ShiftLeftSentenceGateTests(unittest.TestCase):
@@ -110,6 +111,37 @@ class AcousticCleanserTests(unittest.TestCase):
         self.assertTrue(is_standalone_divider("– – –"))
         self.assertFalse(is_standalone_divider("Chapter 1: The Beginning"))
         self.assertFalse(is_standalone_divider("* Note on method"))
+
+
+    def test_auto_heal_canonical_quotes_straight(self):
+        items = [
+            {"id": "s-0", "text": '"This is an unclosed quote in paragraph one.', "is_heading": False},
+            {"id": "s-1", "text": "This paragraph continues without a closing mark.", "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("unclosed quote" in iss.lower() for iss in issues))
+        healed = auto_heal_canonical_quotes(items)
+        self.assertEqual(validate_canonical_sentences(healed), [])
+        self.assertTrue(healed[-1]["text"].endswith('"'))
+
+    def test_auto_heal_canonical_quotes_curly(self):
+        items = [
+            {"id": "s-0", "text": "“This is an unclosed curly quote.", "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("unclosed quote" in iss.lower() for iss in issues))
+        healed = auto_heal_canonical_quotes(items)
+        self.assertEqual(validate_canonical_sentences(healed), [])
+        self.assertTrue(healed[-1]["text"].endswith("”"))
+
+    def test_duplicate_source_fragment_indices_pull_quote(self):
+        sentences = [
+            {"id": "s-0", "text": "The language instinct got into humans in exactly the same way."},
+            {"id": "s-1", "text": "“ The language instinct got into humans in exactly the same way.”"},
+            {"id": "s-2", "text": "And that is why we communicate so effortlessly."},
+        ]
+        dupes = _duplicate_source_fragment_indices(sentences)
+        self.assertIn(1, dupes)
 
 
 class ElementMergeDehyphenationTests(unittest.TestCase):
