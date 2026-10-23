@@ -381,8 +381,8 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn("e.metaKey || e.ctrlKey || e.altKey", rendered)
             self.assertIn('<span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span>', rendered)
             self.assertIn('<span class="kbd-key">R</span><span>Repeat sentence loop</span>', rendered)
-            self.assertIn('快捷键 T', rendered)
-            self.assertIn('快捷键 R', rendered)
+            self.assertIn('Shortcut: T', rendered)
+            self.assertIn('Shortcut: R', rendered)
 
     def test_unaligned_footnote_without_audio_gap_remains_unmatched_without_overlap(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -420,7 +420,7 @@ class HTMLBuilderTests(unittest.TestCase):
                 }], str(output), release_token=token, release_report_path=report_path,
             )
             rendered = output.read_text(encoding="utf-8")
-            self.assertIn('<button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (快捷键 T)">Dual</button>', rendered)
+            self.assertIn('<button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (Shortcut: T)">Dual</button>', rendered)
             self.assertIn('<button class="focus-dock-btn active" id="focusTransBtn" onclick="toggleFocusTransMode(event)">Dual</button>', rendered)
             self.assertIn('<button class="focus-dock-btn" id="focusBlindBtn" onclick="toggleFocusBlindMode(event)">Audio</button>', rendered)
             self.assertIn('.focus-dock.dock-hidden', rendered)

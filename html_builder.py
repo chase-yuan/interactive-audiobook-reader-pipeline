@@ -165,12 +165,12 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
       </div>
       <div class="drawer-row">
         <div class="drawer-group">
-          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (快捷键 T)">Dual</button>
+          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (Shortcut: T)">Dual</button>
           <button class="pill-btn" onclick="toggleTheme()" aria-label="Switch theme">Theme</button>
         </div>
         <div class="drawer-group"{repeat_group_attr}>
-          <button class="pill-btn" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (快捷键 R)">Repeat</button>
-          <button class="pill-btn" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (快捷键 P)">Focus</button>
+          <button class="pill-btn" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (Shortcut: R)">Repeat</button>
+          <button class="pill-btn" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>
         </div>
         <div class="drawer-group">
           <label class="toggle-pill" aria-label="Auto-scroll to active sentence">
@@ -353,7 +353,8 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                     ws = w["start"]
                     we = w["end"]
                     timing_source = html.escape(w.get("timing_source", "observed"))
-                    word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}" data-timing-source="{timing_source}">{rw}</span>')
+                    ts_attr = f' data-timing-source="{timing_source}"' if timing_source and timing_source != "observed" else ""
+                    word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}"{ts_attr}>{rw}</span>')
             else:
                 c_cnt = max(1, len(s["text"].split()))
                 prev_w_s = -1.0
@@ -366,9 +367,9 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                         if we <= ws:
                             we = round(ws + 0.01, 2)
                         prev_w_s = ws
-                        word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}" data-timing-source="fallback">{html.escape(rw)}</span>')
+                        word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}">{html.escape(rw)}</span>')
                     else:
-                        word_html_list.append(f'<span class="w" data-s="{start_arg}" data-e="{end_arg}" data-timing-source="fallback">{html.escape(rw)}</span>')
+                        word_html_list.append(f'<span class="w" data-s="{start_arg}" data-e="{end_arg}">{html.escape(rw)}</span>')
             
             sentence_text_html = " ".join(word_html_list)
             
@@ -397,8 +398,9 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 "dialogue_attribution_reorder",
             } else 0
             reorder_attr = ' data-reorder="1"' if is_reorder else ''
+            vocab_attr = f' data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}"' if vocab else ''
             html_head += f"""
-      <div class="sentence-unit" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" data-audio-order="{s.get('audio_order', '')}" data-epigraph="{1 if s.get('alignment_method') == 'leading_epigraph_attribution' else 0}"{reorder_attr} data-matched="{has_match}" data-text="{html.escape(raw_text)}" data-trans="{trans}" data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}">
+      <div class="sentence-unit" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" data-audio-order="{s.get('audio_order', '')}" data-epigraph="{1 if s.get('alignment_method') == 'leading_epigraph_attribution' else 0}"{reorder_attr} data-matched="{has_match}"{vocab_attr}>
         <div class="sentence-text{h_class}" onclick="handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})">
           <span class="s-content">{sentence_text_html}</span>{unmatched_tag}
         </div>
@@ -1023,7 +1025,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
           globalPlayBtn.textContent = '⏸ Pause';
           interpolated = true;
         }} else {{
-          showToast('原版有声书音频已在正文末尾结束，已为您展开双语释义');
+          showToast('Audio narration concluded; expanded bilingual study breakdown.');
           interpolated = true;
         }}
       }} else if (nextTime !== null) {{
@@ -1564,7 +1566,7 @@ function gotoNextShadowSentence() {
       return;
     }
   }
-  const nextIdx = (curIdx >= 0 && curIdx + 1 < sentenceTimeIndex.length) ? curIdx + 1 : 0;
+  const nextIdx = Math.min(sentenceTimeIndex.length - 1, Math.max(0, curIdx + 1));
   const target = sentenceTimeIndex[nextIdx];
   if (target && target.el) {
     startSentenceShadowing(target.el);
@@ -1891,6 +1893,25 @@ audio.addEventListener('pause', () => {
   if (focusModeActive) {
     showFocusDock();
   }
+});
+audio.addEventListener('error', (e) => {
+  console.warn('[Audio] Playback error encountered:', audio.error || e);
+  if (globalPlayBtn) globalPlayBtn.textContent = '▶ Play';
+  if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(false);
+  const curSrc = audio.src;
+  if (curSrc && !audio.paused) {
+    const curTime = audio.currentTime;
+    setTimeout(() => {
+      try {
+        audio.load();
+        audio.currentTime = curTime;
+        safePlay(audio);
+      } catch(err) {}
+    }, 1000);
+  }
+});
+audio.addEventListener('stalled', () => {
+  console.warn('[Audio] Media data transfer stalled.');
 });
 let lastProgressReportTime = 0;
 audio.addEventListener('timeupdate', () => {

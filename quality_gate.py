@@ -15,6 +15,9 @@ REQUIRED_IDS = (
     "audioTrack",
     "drawerToggleBtn",
     "controlDrawer",
+    "chineseLockBtn",
+    "repeatBtn",
+    "focusModeBtn",
 )
 REQUIRED_FUNCTIONS = (
     "switchChapter",
@@ -24,6 +27,8 @@ REQUIRED_FUNCTIONS = (
     "cycleFocusFontSize",
     "setShadowRepetitions",
     "toggleFocusMode",
+    "cycleMainRepeat",
+    "toggleChineseLock",
 )
 
 
@@ -243,6 +248,14 @@ def smoke_check_html(html_path: Path, expected_chapters=None, audio_path=None):
     for exp_prop, orig_var in window_exports:
         if orig_var not in JS_LITERALS and not re.search(rf"\b(?:function|const|let|var|class)\s+{re.escape(orig_var)}\b", content):
             errors.append(f"exported variable '{orig_var}' (window.{exp_prop}) is not defined in script")
+
+    # Guard against dangling inline onclick event handlers without declaration
+    onclick_calls = re.findall(r'\bonclick=["\']\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', content)
+    for fn_name in set(onclick_calls):
+        if fn_name in {"closeDropdowns", "event"}:
+            continue
+        if not re.search(rf"\b(?:function\s+{re.escape(fn_name)}\s*\(|(?:const|let|var)\s+{re.escape(fn_name)}\s*=\s*(?:function|\([^)]*\)\s*=>)|window\.{re.escape(fn_name)}\s*=)", content):
+            errors.append(f"inline onclick references undefined function: {fn_name}()")
     chapters = re.findall(r'<section\b[^>]*class="chapter-section[^>]*\bdata-ch="(\d+)"', content)
     if expected_chapters is not None and len(chapters) != expected_chapters:
         errors.append(f"expected {expected_chapters} chapter sections, found {len(chapters)}")

@@ -399,6 +399,13 @@ def auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual 
             force_realign, public_audio_base_url, public_book_id, chapter_metadata_path,
         )
 
+def canonicalize_book_slug(name_or_path: str) -> str:
+    raw_name = Path(name_or_path).name
+    clean_name = re.sub(r"\s*\([^)]*\)", "", raw_name)
+    clean_name = re.sub(r"\s*\[[^\]]*\]", "", clean_name)
+    return re.sub(r"[^a-zA-Z0-9]+", "-", clean_name.strip()).strip("-").lower()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Universal Interactive Audiobook Reader Industrial Pipeline")
     parser.add_argument("--book-dir", required=True, help="Path to book directory in Obsidian")
@@ -413,13 +420,12 @@ def main():
     
     args = parser.parse_args()
 
+    if not args.public_book_id:
+        args.public_book_id = canonicalize_book_slug(args.book_dir)
+
     if args.publish:
         if not args.public_audio_base_url:
             args.public_audio_base_url = "https://audio.audiblelibrary.online"
-        if not args.public_book_id:
-            folder = Path(args.book_dir).name
-            slug = re.sub(r'[^a-zA-Z0-9]+', '-', folder.lower()).strip('-')
-            args.public_book_id = slug
 
     ready_count, master_html_path = auto_discover_and_build(
         book_dir=args.book_dir,
@@ -437,18 +443,14 @@ def main():
     if args.publish:
         audible_publisher = Path(os.environ.get("AUDIBLE_PUBLISHER_SCRIPT", Path.home() / "Vault" / "Audible" / "scripts" / "publish_book.py"))
         if not audible_publisher.is_file():
-            print(f"❌ [PUBLISH FAILED] Publisher script not found at {audible_publisher}")
+            print(f"[PUBLISH FAILED] Publisher script not found at {audible_publisher}")
             raise SystemExit(1)
 
         audio_dir = Path(args.book_dir) / "audio"
         audio_dir_arg = str(audio_dir) if audio_dir.is_dir() else str(args.book_dir)
-        book_id = args.public_book_id
-        if not book_id:
-            raw_name = os.path.basename(os.path.abspath(args.book_dir))
-            clean_name = re.sub(r"\s*\([^)]*\)", "", raw_name)
-            book_id = re.sub(r"[^a-zA-Z0-9]+", "-", clean_name.strip()).strip("-").lower()
+        book_id = args.public_book_id or canonicalize_book_slug(args.book_dir)
 
-        print(f"\n🚀 [PIPELINE -> AUTO-PUBLISH] Triggering automated production release for '{book_id}'...")
+        print(f"\n[PIPELINE -> AUTO-PUBLISH] Triggering automated production release for '{book_id}'...")
         cmd = [
             sys.executable, str(audible_publisher),
             "--id", book_id,
@@ -457,13 +459,13 @@ def main():
         ]
         res = subprocess.run(cmd)
         if res.returncode != 0:
-            print("❌ [PIPELINE -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
+            print("[PIPELINE -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
             raise SystemExit(1)
-        print(f"🎉 [PIPELINE -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
+        print(f"[PIPELINE -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
 
         keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
         if keygen_script.is_file():
-            print("\n🔑 [PIPELINE -> KEYGEN] Emitting production passkey and dispatch copy...")
+            print("\n[PIPELINE -> KEYGEN] Emitting production passkey and dispatch copy...")
             subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
 
 if __name__ == "__main__":

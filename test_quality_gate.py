@@ -18,6 +18,9 @@ class QualityGateSmokeTests(unittest.TestCase):
 <div id="chapterDropdown"></div>
 <div id="drawerToggleBtn"></div>
 <div id="controlDrawer"></div>
+<div id="chineseLockBtn"></div>
+<div id="repeatBtn"></div>
+<div id="focusModeBtn"></div>
 <audio id="audioTrack" src="audio.mp3"></audio>
 {body_content}
 <script>
@@ -28,6 +31,8 @@ function syncPlayback() {{}}
 function cycleFocusFontSize() {{}}
 function setShadowRepetitions() {{}}
 function toggleFocusMode() {{}}
+function cycleMainRepeat() {{}}
+function toggleChineseLock() {{}}
 </script>
 </body>
 </html>
@@ -49,6 +54,24 @@ function toggleFocusMode() {{}}
             path.write_text(self._create_minimal_html(body), encoding="utf-8")
             result = smoke_check_html(path, expected_chapters=1)
             self.assertEqual(result["status"], "passed", result["errors"])
+
+    def test_undefined_inline_onclick_fails_smoke_check(self):
+        body = """
+<section class="chapter-section active" data-ch="1">
+  <button id="badBtn" onclick="nonExistentFunctionCall()">Click</button>
+  <div class="sentence-unit" id="c1-s-1" data-start="0.0" data-end="2.0" data-matched="1">
+    <div class="sentence-text">
+      <span class="w" data-s="0.0" data-e="1.0" data-timing-source="observed">Hello</span>
+    </div>
+  </div>
+</section>
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reader.html"
+            path.write_text(self._create_minimal_html(body), encoding="utf-8")
+            result = smoke_check_html(path, expected_chapters=1)
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(any("nonExistentFunctionCall" in err for err in result["errors"]))
 
     def test_overlapping_sentences_fail_smoke_check(self):
         # Sentence 1 ends at 5.0, Sentence 2 starts at 4.0

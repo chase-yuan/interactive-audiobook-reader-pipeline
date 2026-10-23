@@ -273,7 +273,7 @@ def validate_extracted_sentences_gate(
     if all_gate_failures:
         print("\n[CRITICAL FAILURE] Shift-Left Sentence Gate BLOCKED pipeline execution:", file=sys.stderr)
         for fail in all_gate_failures[:25]:
-            print(f"  ❌ {fail}", file=sys.stderr)
+            print(f"  [GATE FAILURE] {fail}", file=sys.stderr)
         if len(all_gate_failures) > 25:
             print(f"  ... and {len(all_gate_failures) - 25} additional defects.", file=sys.stderr)
         raise RuntimeError(
@@ -449,6 +449,91 @@ def synthesize_synthetic_voice_chapters(
     print("[Stage 3] Kokoro neural voice synthesis completed.")
 
 
+def align_complete_audio_chapters(
+    book_dir: Path,
+    chapters_meta: List[Dict[str, Any]],
+    prefix: str,
+    audio_dir: Optional[Path],
+    concurrency: int = 4,
+) -> None:
+    if not audio_dir or not Path(audio_dir).is_dir():
+        raise FileNotFoundError(f"Studio audio directory required for complete audio mode: {audio_dir}")
+
+    audio_dir = Path(audio_dir).expanduser().resolve()
+    target_audio_dir = book_dir / "audio"
+    target_audio_dir.mkdir(parents=True, exist_ok=True)
+
+    from audio_resolver import resolve_chapter_audio
+    from dynamic_aligner import align_sentences_with_audio
+    from acoustic_whisper import run_mlx_acoustic_extraction
+
+    print(f"\n=== [Stage 3: Forced Alignment (Studio Audio Mode)] ===", flush=True)
+
+    def _align_track(item: Dict[str, Any]) -> bool:
+        num = item["num"]
+        resolution = resolve_chapter_audio(audio_dir, num)
+        audio_src = resolution.path
+        if not audio_src:
+            candidates = [
+                audio_dir / f"chapter_{num:02d}.mp3",
+                audio_dir / f"chapter_{num}.mp3",
+                audio_dir / f"ch_{num:02d}.mp3",
+                audio_dir / f"ch{num:02d}.mp3",
+                audio_dir / f"{num:02d}.mp3",
+            ]
+            for cand in candidates:
+                if cand.is_file():
+                    audio_src = cand
+                    break
+
+        if not audio_src or not audio_src.is_file():
+            raise FileNotFoundError(f"No matching studio audio file found for Chapter {num:02d} in {audio_dir}")
+
+        dest_audio = target_audio_dir / f"chapter_{num:02d}.mp3"
+        if not dest_audio.exists() or dest_audio.stat().st_size != audio_src.stat().st_size:
+            try:
+                if dest_audio.is_symlink() or dest_audio.exists():
+                    dest_audio.unlink()
+                os.symlink(audio_src, dest_audio)
+            except OSError:
+                shutil.copy2(audio_src, dest_audio)
+
+        analysis_path = book_dir / f"{prefix}_ch{num:02d}_full_analysis.json"
+        if not analysis_path.is_file():
+            analysis_path = book_dir / f"{prefix}_ch{num:02d}_linguistic_analysis.json"
+        aligned_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
+        acoustic_path = target_audio_dir / f"{prefix}_ch{num:02d}_acoustic_words.json"
+
+        if not acoustic_path.is_file() or acoustic_path.stat().st_size < 100:
+            print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
+            run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
+
+        print(f"[Stage 3] Forced alignment on Track {num:02d} ({item['label']})...", flush=True)
+        align_sentences_with_audio(
+            str(acoustic_path),
+            str(analysis_path),
+            str(aligned_path),
+            audio_path=str(dest_audio),
+        )
+        return True
+
+    workers = min(concurrency, len(chapters_meta))
+    if workers <= 1:
+        for ch in chapters_meta:
+            _align_track(ch)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_align_track, ch): ch for ch in chapters_meta}
+            try:
+                for f in as_completed(futures):
+                    f.result()
+            except Exception:
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+
+    print("[Stage 3] Studio audio forced alignment completed across all tracks.", flush=True)
+
+
 def build_and_verify_reader(
     book_dir: Path,
     chapters_meta: List[Dict[str, Any]],
@@ -483,8 +568,10 @@ def build_and_verify_reader(
         aligned_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
 
         audio_src = ""
-        if mode in ("complete", "synthetic") and audio_dir:
-            audio_candidate = audio_dir / f"chapter_{num:02d}.mp3"
+        if mode in ("complete", "synthetic"):
+            audio_candidate = book_dir / "audio" / f"chapter_{num:02d}.mp3"
+            if not audio_candidate.exists() and audio_dir:
+                audio_candidate = audio_dir / f"chapter_{num:02d}.mp3"
             if audio_candidate.exists():
                 audio_src = f"./audio/{audio_candidate.name}?v={int(audio_candidate.stat().st_mtime)}"
 
@@ -627,7 +714,8 @@ def build_reader_pipeline(
                 if row.get("display_number") is not None:
                     item["display_number"] = row["display_number"]
                 chapters_meta.append(item)
-        except Exception:
+        except Exception as exc:
+            print(f"[Warning] Failed to parse chapter_metadata.json ({exc}), falling back to raw chapters", file=sys.stderr)
             chapters_meta = []
     else:
         chapters_meta = []
@@ -697,8 +785,16 @@ def build_reader_pipeline(
             speed=voice_speed,
             concurrency=min(concurrency, 4),
         )
+    elif mode == "complete":
+        align_complete_audio_chapters(
+            book_dir=target_dir,
+            chapters_meta=chapters_meta,
+            prefix=prefix,
+            audio_dir=audio_dir,
+            concurrency=concurrency,
+        )
     else:
-        raise NotImplementedError("Complete audio mode integration requires audio tracks in audio_dir")
+        raise ValueError(f"Unknown pipeline mode: {mode}")
 
     out_html = build_and_verify_reader(
         book_dir=target_dir,
@@ -721,12 +817,12 @@ def build_reader_pipeline(
     if publish:
         audible_publisher = Path(os.environ.get("AUDIBLE_PUBLISHER_SCRIPT", Path.home() / "Vault" / "Audible" / "scripts" / "publish_book.py"))
         if not audible_publisher.is_file():
-            print(f"❌ [PUBLISH FAILED] Publisher script not found at {audible_publisher}")
+            print(f"[PUBLISH FAILED] Publisher script not found at {audible_publisher}")
             raise SystemExit(1)
 
         book_id = public_book_id or slug_id
         audio_dir_arg = str(audio_dir) if audio_dir and Path(audio_dir).is_dir() else str(target_dir / "audio")
-        print(f"\n🚀 [UNIVERSAL RUNNER -> AUTO-PUBLISH] Triggering automated production release for '{book_id}'...")
+        print(f"\n[UNIVERSAL RUNNER -> AUTO-PUBLISH] Triggering automated production release for '{book_id}'...")
         cmd = [
             sys.executable, str(audible_publisher),
             "--id", book_id,
@@ -736,13 +832,13 @@ def build_reader_pipeline(
             cmd.extend(["--audio-dir", audio_dir_arg])
         res = subprocess.run(cmd)
         if res.returncode != 0:
-            print("❌ [UNIVERSAL RUNNER -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
+            print("[UNIVERSAL RUNNER -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
             raise SystemExit(1)
-        print(f"🎉 [UNIVERSAL RUNNER -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
+        print(f"[UNIVERSAL RUNNER -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
 
         keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
         if keygen_script.is_file():
-            print("\n🔑 [UNIVERSAL RUNNER -> KEYGEN] Emitting production passkey and dispatch copy...")
+            print("\n[UNIVERSAL RUNNER -> KEYGEN] Emitting production passkey and dispatch copy...")
             subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
 
     if open_in_browser and not publish:

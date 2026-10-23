@@ -231,27 +231,100 @@ def _has_nearby_exact_audio(source_tokens, acoustic_words, ac_tokens, ac_map, ne
     return False
 
 
-def _duplicate_source_fragment_indices(sentences):
-    """Find extraction fragments whose combined text duplicates one record.
+def _duplicate_source_fragment_indices(sentences, window=150):
+    """Find extraction fragments whose combined text duplicates one record,
+    or standalone pull-quotes / callout boxes that duplicate an existing sentence.
 
     Some EPUBs expose one paragraph both as a complete sentence and as several
-    child records (for example ``Venin are real`` plus ``Venin``/``Are``/``Real``).
-    The fragments are print-source duplication, not additional narrated prose.
+    child records (for example ``Venin are real`` plus ``Venin``/``Are``/``Real``),
+    or repeat pull-quotes next to paragraphs. The fragments are print-source
+    duplication, not additional narrated prose.
     """
     duplicate = set()
+    # Global exact multi-word pull-quote detection across the entire chapter
+    seen_exact = {}
+    for idx, s in enumerate(sentences):
+        tokens = tuple(tokenize_clean(s.get("text", "")))
+        if len(tokens) >= 4:
+            if tokens in seen_exact:
+                duplicate.add(idx)
+            else:
+                seen_exact[tokens] = idx
+
     for anchor_index, anchor in enumerate(sentences):
         anchor_tokens = tokenize_clean(anchor.get("text", ""))
         if len(anchor_tokens) < 2:
             continue
-        for start in range(anchor_index + 1, len(sentences)):
+        max_lookahead = min(len(sentences), anchor_index + window)
+        for start in range(anchor_index + 1, max_lookahead):
+            # Case 1: Standalone identical pull-quote / callout box (1:1 duplicate)
+            target_tokens = tokenize_clean(sentences[start].get("text", ""))
+            if len(anchor_tokens) >= 3 and target_tokens == anchor_tokens:
+                duplicate.add(start)
+                continue
+
+            # Case 2: Multi-sentence fragment combination (1:N duplicate)
             combined = []
-            for end in range(start, len(sentences)):
+            for end in range(start, max_lookahead):
                 combined.extend(tokenize_clean(sentences[end].get("text", "")))
                 if len(combined) >= len(anchor_tokens):
                     if combined == anchor_tokens and end > start:
                         duplicate.update(range(start, end + 1))
                     break
     return duplicate
+
+
+def detect_unclaimed_acoustic_segments(acoustic_words, aligned_results, min_words=15):
+    """Detect contiguous clusters of spoken acoustic words not assigned to any sentence."""
+    if not acoustic_words:
+        return []
+    claimed_words = set()
+    for item in aligned_results:
+        if not item.get("has_audio_match"):
+            continue
+        w_start = item.get("word_start")
+        w_end = item.get("word_end")
+        if w_start is not None and w_end is not None and w_end >= w_start:
+            claimed_words.update(range(w_start, w_end + 1))
+        for span in item.get("word_spans", []):
+            if "word_index" in span:
+                claimed_words.add(span["word_index"])
+
+    unclaimed_segments = []
+    curr_segment = []
+    for idx, w in enumerate(acoustic_words):
+        if idx not in claimed_words:
+            curr_segment.append((idx, w))
+        else:
+            if len(curr_segment) >= min_words:
+                st = curr_segment[0][1]["start"]
+                et = curr_segment[-1][1]["end"]
+                preview = " ".join(item[1].get("word", "") for item in curr_segment[:12]) + ("..." if len(curr_segment) > 12 else "")
+                unclaimed_segments.append({
+                    "start_index": curr_segment[0][0],
+                    "end_index": curr_segment[-1][0],
+                    "start_time": round(st, 2),
+                    "end_time": round(et, 2),
+                    "duration": round(et - st, 2),
+                    "word_count": len(curr_segment),
+                    "preview": preview,
+                })
+            curr_segment = []
+
+    if len(curr_segment) >= min_words:
+        st = curr_segment[0][1]["start"]
+        et = curr_segment[-1][1]["end"]
+        preview = " ".join(item[1].get("word", "") for item in curr_segment[:12]) + ("..." if len(curr_segment) > 12 else "")
+        unclaimed_segments.append({
+            "start_index": curr_segment[0][0],
+            "end_index": curr_segment[-1][0],
+            "start_time": round(st, 2),
+            "end_time": round(et, 2),
+            "duration": round(et - st, 2),
+            "word_count": len(curr_segment),
+            "preview": preview,
+        })
+    return unclaimed_segments
 
 
 NUM_WORD_TO_DIGIT = {
@@ -298,7 +371,7 @@ def decode_audio_to_pcm(audio_path, sr=16000):
         ]
         raw = subprocess.check_output(cmd, timeout=300)
         return np.frombuffer(raw, dtype=np.int16)
-    except Exception as exc:
+    except (subprocess.SubprocessError, MemoryError, OSError) as exc:
         print(f"Warning: PCM decoding failed for {audio_path}: {exc}")
         return None
 
@@ -1232,6 +1305,11 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         calibrate_aligned_sentences_pcm(aligned_results, audio_path)
 
     atomic_write_json(aligned_out_path, aligned_results)
+
+    unclaimed = detect_unclaimed_acoustic_segments(acoustic_words, aligned_results, min_words=15)
+    if unclaimed:
+        for seg in unclaimed:
+            print(f"[Acoustic Alert] Unclaimed speech island ({seg['word_count']} words, {seg['duration']}s from {seg['start_time']}s to {seg['end_time']}s): \"{seg['preview']}\"")
         
     matched_count = len(matched_sentences)
     validated_count = sum(item.get("alignment_status") == "validated" for item in aligned_results)
