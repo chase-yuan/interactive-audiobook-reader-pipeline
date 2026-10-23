@@ -431,11 +431,11 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     html_tail = f"""
 </main>
 
-<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
+<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ondblclick="handleFocusDblClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
   <div class="focus-top-bar pocket-header">
     <button class="focus-close-icon pocket-close-icon" id="focusExitBtn" onclick="toggleFocusMode(false)">✕</button>
   </div>
-  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)">
+  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)" ondblclick="handleFocusDblClick(event)">
     <div class="focus-sentence-box pocket-sentence-box" id="focusSentenceBox">
       <div class="focus-sentence-text pocket-sentence-text" id="focusSentenceText"></div>
       <div class="focus-sentence-trans pocket-sentence-trans" id="focusSentenceTrans"></div>
@@ -747,7 +747,7 @@ function switchChapter(chNum, autoPlay) {
         }
       } else if (autoPlay && firstSentence) {
         currentPlayingId = firstSentence.id;
-        firstSentence.classList.add('active');
+        firstSentence.classList.add('active', 'card-collapsed');
         if (autoScrollEnabled && typeof firstSentence.scrollIntoView === 'function') {
           firstSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -944,7 +944,7 @@ function startSentenceShadowing(sentenceEl) {
   audio.currentTime = start;
   safePlay(audio);
   globalPlayBtn.textContent = '⏸ Pause';
-  sentenceEl.classList.add('active');
+  sentenceEl.classList.add('active', 'card-collapsed');
 }
 
 function handleSentenceClick(event, id, start, end, hasMatch) {{
@@ -964,8 +964,8 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
 
   const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
 
-  // If audio is currently playing and user taps the already active sentence, toggle translation collapse
-  if (audio && !audio.paused && el.classList.contains('active') && !isDoubleTap) {{
+  // If user taps the already active sentence, toggle translation collapse
+  if (el.classList.contains('active') && !isDoubleTap) {{
     if (!el.classList.contains('card-collapsed')) {{
       el.classList.add('card-collapsed');
       return;
@@ -1043,6 +1043,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
     }}
   }});
 
+  currentPlayingId = id;
   el.classList.add('active');
   if (isChineseLocked) {{
     el.classList.add('card-collapsed');
@@ -1221,10 +1222,13 @@ function advanceShadowing() {
   if (shadowState.repetitions <= 1) {
     const nextSentence = getNextShadowSentence(shadowState.sentence);
     if (nextSentence) {
-      if (shadowState.sentence) shadowState.sentence.classList.remove('active');
+      if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
-      nextSentence.classList.add('active');
+      currentActiveWordEl = null;
+      currentActiveWordStart = -1;
+      currentActiveWordEnd = -1;
+      nextSentence.classList.add('active', 'card-collapsed');
       updateFocusStatus();
       updateFocusSentenceDisplay();
       if (autoScrollEnabled) {
@@ -1258,15 +1262,18 @@ function advanceShadowing() {
   if (shadowState.completed >= shadowState.repetitions) {
     const nextSentence = getNextShadowSentence(shadowState.sentence);
     if (nextSentence) {
-      if (shadowState.sentence) shadowState.sentence.classList.remove('active');
+      if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
+      currentActiveWordEl = null;
+      currentActiveWordStart = -1;
+      currentActiveWordEnd = -1;
       updateFocusStatus();
       updateFocusSentenceDisplay();
       shadowState.phase = 'pause_buffer';
       shadowState.pauseStartTime = Date.now();
       armShadowPauseWatchdog();
-      nextSentence.classList.add('active');
+      nextSentence.classList.add('active', 'card-collapsed');
       if (autoScrollEnabled) {
         const rect = nextSentence.getBoundingClientRect();
         const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
@@ -1318,6 +1325,7 @@ function advanceShadowing() {
 }
 
 let lastFocusTapTime = 0;
+let focusSingleTapTimer = null;
 let focusBlindMode = false;
 let pocketBlindMode = false;
 let focusShowTrans = true;
@@ -1519,6 +1527,9 @@ function updateFocusSentenceDisplay() {
   }
   
   const el = shadowState.sentence;
+  currentActiveWordEl = null;
+  currentActiveWordStart = -1;
+  currentActiveWordEnd = -1;
   const contentEl = el.querySelector('.s-content') || el.querySelector('.sentence-text');
   if (contentEl) {
     textEl.innerHTML = contentEl.innerHTML;
@@ -1630,15 +1641,52 @@ function toggleFocusBlindMode(e) {
 }
 const togglePocketBlindMode = toggleFocusBlindMode;
 
-function handleFocusSentenceBoxClick(e) {
-  if (e && e.stopPropagation) e.stopPropagation();
-  showFocusDock();
-  const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
-  if (focusBlindMode && box) {
-    box.classList.toggle('revealed');
-  } else {
-    replayCurrentShadowSentence();
+
+function handleFocusDblClick(e) {
+  if (e && e.target && (
+    e.target.closest('#focusDock') ||
+    e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
+  )) {
+    return;
   }
+  if (focusSingleTapTimer) {
+    clearTimeout(focusSingleTapTimer);
+    focusSingleTapTimer = null;
+  }
+  toggleFocusMode(false);
+}
+
+function handleFocusSentenceBoxClick(e) {
+  if (e && e.target && (
+    e.target.closest('#focusDock') ||
+    e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
+  )) {
+    return;
+  }
+  showFocusDock();
+  const now = Date.now();
+  if (now - lastFocusTapTime < 450) {
+    if (focusSingleTapTimer) {
+      clearTimeout(focusSingleTapTimer);
+      focusSingleTapTimer = null;
+    }
+    lastFocusTapTime = 0;
+    toggleFocusMode(false);
+    return;
+  }
+  lastFocusTapTime = now;
+
+  if (focusSingleTapTimer) clearTimeout(focusSingleTapTimer);
+  focusSingleTapTimer = setTimeout(() => {
+    focusSingleTapTimer = null;
+    if (!focusModeActive && !pocketModeActive) return;
+    const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
+    if (focusBlindMode && box) {
+      box.classList.toggle('revealed');
+    } else {
+      replayCurrentShadowSentence();
+    }
+  }, 220);
 }
 const handlePocketSentenceBoxClick = handleFocusSentenceBoxClick;
 
@@ -1701,6 +1749,13 @@ function toggleFocusMode(force) {
   const target = typeof force === 'boolean' ? force : !focusModeActive;
   focusModeActive = target;
   pocketModeActive = target;
+  currentActiveWordEl = null;
+  currentActiveWordStart = -1;
+  currentActiveWordEnd = -1;
+  if (focusSingleTapTimer) {
+    clearTimeout(focusSingleTapTimer);
+    focusSingleTapTimer = null;
+  }
   
   if (focusModeActive) {
     initFocusPreferences();
@@ -1760,8 +1815,8 @@ function toggleFocusMode(force) {
 const togglePocketMode = toggleFocusMode;
 
 function handleFocusOverlayClick(e) {
-  if (e.target && (
-    e.target.closest('#focusDock') || e.target.closest('#focusSentenceBox') ||
+  if (e && e.target && (
+    e.target.closest('#focusDock') ||
     e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
   )) {
     return;
@@ -1769,11 +1824,15 @@ function handleFocusOverlayClick(e) {
   showFocusDock();
   const now = Date.now();
   if (now - lastFocusTapTime < 450) {
-    toggleFocusMode(false);
+    if (focusSingleTapTimer) {
+      clearTimeout(focusSingleTapTimer);
+      focusSingleTapTimer = null;
+    }
     lastFocusTapTime = 0;
-  } else {
-    lastFocusTapTime = now;
+    toggleFocusMode(false);
+    return;
   }
+  lastFocusTapTime = now;
 }
 const handlePocketOverlayClick = handleFocusOverlayClick;
 
@@ -1781,6 +1840,7 @@ window.toggleFocusMode = toggleFocusMode;
 window.togglePocketMode = toggleFocusMode;
 window.toggleFocusPlayPause = toggleFocusPlayPause;
 window.updateFocusPlayBtn = updateFocusPlayBtn;
+window.handleFocusDblClick = handleFocusDblClick;
 window.handleFocusOverlayClick = handleFocusOverlayClick;
 window.handlePocketOverlayClick = handleFocusOverlayClick;
 window.handleFocusTouchStart = handleFocusTouchStart;
@@ -2000,11 +2060,11 @@ document.addEventListener('visibilitychange', () => {
     if (shadowState.phase !== 'idle' && audio && !audio.paused) {
       const curSentence = findSentenceAt(audio.currentTime);
       if (curSentence && curSentence !== shadowState.sentence) {
-        if (shadowState.sentence) shadowState.sentence.classList.remove('active');
+        if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
         shadowState.sentence = curSentence;
         shadowState.completed = 0;
         shadowState.phase = 'playing';
-        curSentence.classList.add('active');
+        curSentence.classList.add('active', 'card-collapsed');
         if (autoScrollEnabled) {
           curSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -2071,6 +2131,7 @@ function syncPlayback() {
             }
             const wordEls = activeUnit._cachedWords;
             let foundWord = null;
+            let foundIndex = -1;
             let foundStart = -1;
             let foundEnd = -1;
             for (let i = 0; i < wordEls.length; i++) {
@@ -2079,6 +2140,7 @@ function syncPlayback() {
               const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
               if (curTime >= ws && curTime < we) {
                 foundWord = w;
+                foundIndex = i;
                 foundStart = ws;
                 foundEnd = we;
                 break;
@@ -2093,10 +2155,12 @@ function syncPlayback() {
                 const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
                 if (pText) {
                   const prevW = pText.querySelector('.w.active-word');
-                  if (prevW && prevW !== foundWord) prevW.classList.remove('active-word');
-                  if (foundWord && foundWord.dataset && foundWord.dataset.s) {
-                    const matchW = pText.querySelector(`.w[data-s="${foundWord.dataset.s}"]`);
-                    if (matchW && !matchW.classList.contains('active-word')) matchW.classList.add('active-word');
+                  if (prevW) prevW.classList.remove('active-word');
+                  if (foundIndex >= 0) {
+                    const focusWords = pText.querySelectorAll('.w');
+                    if (focusWords[foundIndex] && !focusWords[foundIndex].classList.contains('active-word')) {
+                      focusWords[foundIndex].classList.add('active-word');
+                    }
                   }
                 }
               }
@@ -2111,6 +2175,13 @@ function syncPlayback() {
           }
           currentActiveWordStart = -1;
           currentActiveWordEnd = -1;
+          if (focusModeActive || pocketModeActive) {
+            const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
+            if (pText) {
+              const prevW = pText.querySelector('.w.active-word');
+              if (prevW) prevW.classList.remove('active-word');
+            }
+          }
         }
       }
       advanceShadowing();
@@ -2304,6 +2375,7 @@ initMediaSession();
 updateMediaSessionMetadata();
 const focusOverlayEl = document.getElementById('focus-overlay');
 if (focusOverlayEl) {
+  focusOverlayEl.addEventListener('dblclick', handleFocusDblClick);
   focusOverlayEl.addEventListener('pointermove', () => {
     if (focusModeActive) scheduleFocusDockHide();
   });
