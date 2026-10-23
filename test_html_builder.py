@@ -464,6 +464,34 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn("audio.addEventListener('stalled'", rendered)
             self.assertIn("Select a sentence to begin immersion", rendered)
 
+    def test_audio_engine_reliability_and_edge_preconnection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Stability Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # 1. Edge preconnection to audio CDN
+            self.assertIn('<link rel="preconnect" href="https://audio.audiblelibrary.online" crossorigin>', rendered)
+            self.assertIn('<link rel="dns-prefetch" href="https://audio.audiblelibrary.online">', rendered)
+            # 2. Eager audio buffering
+            self.assertIn('preload="auto"', rendered)
+            self.assertNotIn('preload="metadata"', rendered)
+            # 3. Audio buffering stall death spiral regression prevention
+            self.assertNotIn('audioStallTimer', rendered)
+            # 4. readyState seek guard and playSentenceAtTime
+            self.assertIn('function playSentenceAtTime(', rendered)
+            self.assertIn('audio.readyState >= 1', rendered)
+            # 5. Next chapter preloader engine
+            self.assertIn('function preloadNextChapterAudio(', rendered)
+            # 6. Scrubber NaN / non-finite duration guards
+            self.assertIn('Number.isFinite(audio.duration)', rendered)
+
 
 
 
