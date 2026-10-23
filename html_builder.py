@@ -102,6 +102,8 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 <meta name="reader-release-report-sha256" content="{html.escape(report_sha256)}">
 <meta name="reader-build-kind" content="{'experimental-preview' if preview else 'release'}">
 <title>{html.escape(('EXPERIMENTAL PREVIEW — ' if preview else '') + book_title)}: {html.escape(book_subtitle)}</title>
+<link rel="preconnect" href="https://audio.audiblelibrary.online" crossorigin>
+<link rel="dns-prefetch" href="https://audio.audiblelibrary.online">
 <script>
 (function() {{
   try {{
@@ -161,7 +163,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
           <input type="range" class="player-slider" id="playerScrubber" min="0" max="100" value="0" step="0.1" aria-label="Playback scrubber">
         </div>
         <span class="player-time" id="playerTotalTime">00:00</span>
-        <audio id="audioTrack" preload="metadata" src="{html.escape(audio_src)}" class="hidden-audio"{audio_track_attr}></audio>
+        <audio id="audioTrack" playsinline webkit-playsinline preload="auto" src="{html.escape(audio_src)}" class="hidden-audio"{audio_track_attr}></audio>
       </div>
       <div class="drawer-row">
         <div class="drawer-group">
@@ -585,14 +587,16 @@ if (playerScrubber) {
     isUserScrubbing = true;
     const pct = parseFloat(playerScrubber.value) || 0;
     playerScrubber.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
-    if (audio && audio.duration) {
+    if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
       const targetSec = (pct / 100) * audio.duration;
       if (playerCurTime) playerCurTime.textContent = formatAudioTime(targetSec);
     }
   });
   playerScrubber.addEventListener('change', () => {
-    if (audio && audio.duration) {
-      audio.currentTime = (parseFloat(playerScrubber.value) / 100) * audio.duration;
+    if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
+      try {
+        audio.currentTime = (parseFloat(playerScrubber.value) / 100) * audio.duration;
+      } catch(e) {}
     }
     isUserScrubbing = false;
   });
@@ -724,6 +728,128 @@ function findSentenceAt(time) {
   return null;
 }
 
+let currentSeekGen = 0;
+
+function isSameAudioSource(srcA, srcB) {
+  if (!srcA || !srcB) return false;
+  try {
+    const uA = new URL(srcA, window.location.href);
+    const uB = new URL(srcB, window.location.href);
+    return uA.origin === uB.origin && decodeURIComponent(uA.pathname) === decodeURIComponent(uB.pathname);
+  } catch(e) {
+    return srcA === srcB;
+  }
+}
+
+function playSentenceAtTime(start) {
+  if (!audio) return;
+  const thisGen = ++currentSeekGen;
+  
+  const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
+  const targetUrl = activeSec ? resolveAudioSource(activeSec) : audio.getAttribute('src');
+
+  const performPlay = () => {
+    try {
+      audio.currentTime = start;
+    } catch(e) {
+      console.warn("[Audio] Seek error:", e);
+    }
+    const p = audio.play();
+    if (p && p.catch) {
+      p.catch(function(err) {
+        if (err.name !== 'AbortError' && currentSeekGen === thisGen) {
+          console.warn('[Audio] Playback error:', err);
+          if (globalPlayBtn && audio.paused) globalPlayBtn.textContent = '▶ Play';
+        }
+      });
+    }
+    if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
+    startSyncLoop();
+  };
+
+  const targetSentence = findSentenceAt(start);
+  if (targetSentence) {
+    if (!targetSentence._cachedWords) {
+      targetSentence._cachedWords = Array.from(targetSentence.querySelectorAll('.w'));
+    }
+    const firstWord = targetSentence._cachedWords[0];
+    if (currentActiveWordEl && currentActiveWordEl !== firstWord) {
+      currentActiveWordEl.classList.remove('active-word');
+    }
+    if (firstWord) {
+      firstWord.classList.add('active-word');
+      currentActiveWordEl = firstWord;
+    }
+  }
+
+  const isDifferentTrack = targetUrl && (!audio.src || !isSameAudioSource(audio.src, targetUrl));
+
+  if (isDifferentTrack) {
+    audio.src = targetUrl;
+    if (audio.readyState >= 1) {
+      performPlay();
+    } else {
+      audio.addEventListener('loadedmetadata', function onMeta() {
+        if (currentSeekGen === thisGen) {
+          performPlay();
+        }
+      }, { once: true });
+      audio.load();
+    }
+  } else {
+    if (audio.readyState >= 1) {
+      performPlay();
+    } else {
+      audio.addEventListener('loadedmetadata', function onMeta() {
+        if (currentSeekGen === thisGen) {
+          performPlay();
+        }
+      }, { once: true });
+    }
+  }
+}
+window.playSentenceAtTime = playSentenceAtTime;
+
+let nextAudioPreloader = null;
+function preloadNextChapterAudio(nextCh) {
+  if (nextCh === null || nextCh === undefined || nextCh < 0) return;
+  const nextSec = document.getElementById('chapter-' + nextCh) || document.querySelector('.chapter-section[data-ch="' + nextCh + '"]');
+  let rawAudio = null;
+  if (nextSec) {
+    rawAudio = resolveAudioSource(nextSec);
+  }
+  if (!rawAudio) {
+    const nextMenu = document.getElementById('menu-ch-' + nextCh);
+    if (nextMenu && nextMenu.dataset && nextMenu.dataset.audio) {
+      rawAudio = nextMenu.dataset.audio;
+    }
+  }
+  if (!rawAudio) return;
+
+  if (!nextAudioPreloader) {
+    try {
+      if (typeof Audio !== 'undefined') {
+        nextAudioPreloader = new Audio();
+      } else if (document.createElement) {
+        nextAudioPreloader = document.createElement('audio');
+      }
+    } catch(e) {}
+  }
+  if (nextAudioPreloader && nextAudioPreloader.src !== rawAudio) {
+    try {
+      nextAudioPreloader.preload = 'auto';
+      nextAudioPreloader.src = rawAudio;
+      if (typeof nextAudioPreloader.load === 'function') {
+        nextAudioPreloader.load();
+      }
+    } catch(e) {}
+  }
+  if (nextAudioPreloader) {
+    window.nextAudioPreloader = nextAudioPreloader;
+  }
+}
+window.preloadNextChapterAudio = preloadNextChapterAudio;
+
 function switchChapter(chNum, autoPlay) {
   setUserSeeking(false);
   if (chNum > 2 && typeof window.PasskeyGate !== 'undefined' && !window.PasskeyGate.isUnlocked()) {
@@ -776,9 +902,27 @@ function switchChapter(chNum, autoPlay) {
         if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
       }
       const firstSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
-      if (shadowState.phase !== 'idle') {
+      if (shadowState.phase !== 'idle' || (typeof focusModeActive !== 'undefined' && (focusModeActive || pocketModeActive))) {
         if (firstSentence) {
-          startSentenceShadowing(firstSentence);
+          shadowState.sentence = firstSentence;
+          shadowState.completed = 0;
+          currentPlayingId = firstSentence.id;
+          firstSentence.classList.add('active', 'card-collapsed');
+          if (focusModeActive || pocketModeActive) {
+            shadowState.phase = 'playing';
+          }
+          if (autoPlay) {
+            const start = parseFloat(firstSentence.dataset.start);
+            if (Number.isFinite(start)) {
+              playSentenceAtTime(start);
+            } else {
+              safePlay(audio);
+            }
+          }
+          if (typeof updateFocusSentenceDisplay === 'function') updateFocusSentenceDisplay();
+          if (typeof updateFocusStatus === 'function') updateFocusStatus();
+          if (typeof showFocusDock === 'function') showFocusDock();
+          if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(autoPlay);
         }
       } else if (autoPlay && firstSentence) {
         currentPlayingId = firstSentence.id;
@@ -787,22 +931,18 @@ function switchChapter(chNum, autoPlay) {
           firstSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
-      if (typeof focusModeActive !== 'undefined' && (focusModeActive || pocketModeActive)) {
-        shadowState.sentence = firstSentence;
-        if (typeof updateFocusSentenceDisplay === 'function') updateFocusSentenceDisplay();
-        if (typeof updateFocusStatus === 'function') updateFocusStatus();
-        if (typeof showFocusDock === 'function') showFocusDock();
-      }
     }
   });
   rebuildSentenceTimeIndex();
   reportLibraryProgress(chNum, 0);
   updateMediaSessionMetadata();
+  preloadNextChapterAudio(chNum + 1);
   
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 switchChapter(activeChapterNum);
+preloadNextChapterAudio(activeChapterNum + 1);
 
 function toggleDrawer() {
   const isOpen = controlDrawer.classList.contains('open');
@@ -976,9 +1116,12 @@ function startSentenceShadowing(sentenceEl) {
     }
   }
   const start = parseFloat(sentenceEl.dataset.start);
-  audio.currentTime = start;
-  safePlay(audio);
-  globalPlayBtn.textContent = '⏸ Pause';
+  if (Number.isFinite(start)) {
+    playSentenceAtTime(start);
+  } else {
+    safePlay(audio);
+  }
+  if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
   sentenceEl.classList.add('active', 'card-collapsed');
 }
 
@@ -1052,9 +1195,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
 
   if (window.__HAS_AUDIO__ && Number.isFinite(start) && start >= 0) {
     setUserSeeking(true, start);
-    audio.currentTime = start;
-    safePlay(audio);
-    if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
+    playSentenceAtTime(start);
     return;
   } else if (window.__HAS_AUDIO__) {
     const units = activeSec ? Array.from(activeSec.querySelectorAll('.sentence-unit')) : [];
@@ -1084,17 +1225,13 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
         const stepOffset = idx - prevIdx;
         const targetTime = prevTime + (nextTime - prevTime) * (stepOffset / gapSteps);
         setUserSeeking(true, targetTime);
-        audio.currentTime = targetTime;
-        safePlay(audio);
-        if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
+        playSentenceAtTime(targetTime);
         interpolated = true;
       } else if (prevTime !== null) {
         const dur = (audio && Number.isFinite(audio.duration)) ? audio.duration : Infinity;
         if (prevTime < dur - 3) {
           setUserSeeking(true, prevTime);
-          audio.currentTime = prevTime;
-          safePlay(audio);
-          if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
+          playSentenceAtTime(prevTime);
           interpolated = true;
         } else {
           showToast('Audio narration concluded; expanded bilingual study breakdown.');
@@ -1102,9 +1239,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
         }
       } else if (nextTime !== null) {
         setUserSeeking(true, 0);
-        audio.currentTime = 0;
-        safePlay(audio);
-        if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
+        playSentenceAtTime(0);
         interpolated = true;
       }
     }
@@ -2051,48 +2186,46 @@ audio.addEventListener('durationchange', updateAudioPlayerUI);
 audio.addEventListener('seeked', () => {
   setUserSeeking(false);
 });
-let audioStallTimer = null;
-audio.addEventListener('waiting', () => {
-  if (audio && !audio.paused) {
-    if (audioStallTimer) clearTimeout(audioStallTimer);
-    audioStallTimer = setTimeout(() => {
-      if (audio && !audio.paused && audio.readyState < 3) {
-        console.warn('[Audio] Buffering stall detected, refreshing buffer...');
-        const cur = audio.currentTime;
-        audio.currentTime = cur;
-        safePlay(audio);
-      }
-    }, 2500);
-  }
-});
+let audioRecoveryRetries = 0;
+const MAX_AUDIO_RETRIES = 3;
+
 audio.addEventListener('playing', () => {
-  if (audioStallTimer) {
-    clearTimeout(audioStallTimer);
-    audioStallTimer = null;
-  }
+  audioRecoveryRetries = 0;
 });
+
+audio.addEventListener('waiting', () => {
+  // Allow native TCP/HTTP Range buffering to proceed cleanly without issuing abort seeks
+});
+
 audio.addEventListener('stalled', () => {
-  if (audio && !audio.paused && audio.readyState < 3) {
-    if (!audioStallTimer) {
-      audioStallTimer = setTimeout(() => {
-        if (audio && !audio.paused && audio.readyState < 3) {
-          const cur = audio.currentTime;
-          audio.currentTime = cur;
-          safePlay(audio);
-        }
-      }, 3000);
-    }
-  }
+  console.warn('[Audio] Media data transfer stalled; waiting for network pipeline...');
 });
+
 audio.addEventListener('error', (err) => {
   console.warn('[Audio] Media playback error encountered:', err);
   if (globalPlayBtn) globalPlayBtn.textContent = '▶ Play';
   if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(false);
-  showToast('Audio network error. Reconnecting...');
-  if (audio.src) {
-    const cur = audio.currentTime;
-    audio.load();
-    audio.currentTime = cur;
+
+  // Exponential backoff network recovery (clean native stream reconnect without death spiral)
+  if (audioRecoveryRetries < MAX_AUDIO_RETRIES && audio && audio.src) {
+    audioRecoveryRetries++;
+    const retrySec = (Number.isFinite(audio.currentTime) && audio.currentTime >= 0) ? audio.currentTime : 0;
+    const backoffMs = Math.min(1000 * Math.pow(2, audioRecoveryRetries - 1), 4000);
+    console.warn(`[Audio] Retrying connection attempt ${audioRecoveryRetries}/${MAX_AUDIO_RETRIES} in ${backoffMs}ms...`);
+    setTimeout(() => {
+      if (audio) {
+        audio.load();
+        if (audio.readyState >= 1) {
+          try { audio.currentTime = retrySec; } catch(e) {}
+          safePlay(audio);
+        } else {
+          audio.addEventListener('loadedmetadata', function onRetryMeta() {
+            try { audio.currentTime = retrySec; } catch(e) {}
+            safePlay(audio);
+          }, { once: true });
+        }
+      }
+    }, backoffMs);
   }
 });
 audio.addEventListener('ended', () => {
