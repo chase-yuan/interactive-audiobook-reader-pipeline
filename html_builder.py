@@ -213,7 +213,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   </div>
 </header>
 
-<main class="container">
+<main class="reader-main">
 """
 
     for ch in loaded_chapters:
@@ -238,7 +238,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         html_head += f"""
   <!-- CHAPTER {cnum} -->
   <section class="chapter-section{active_cls}" id="chapter-{cnum}" data-audio="{html.escape(caudio)}" data-public-audio="{html.escape(cpublic_audio)}" data-ch="{cnum}">
-    <div class="container chapter-layout">
+    <div class="chapter-layout">
       <div class="prose-column">
         <header class="book-header">
           <h1 class="book-title">{title_html}</h1>
@@ -352,21 +352,20 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 "dialogue_attribution_reorder",
             } else 0
             reorder_attr = ' data-reorder="1"' if is_reorder else ''
+            trans_attr = f' data-trans="{html.escape(trans)}"' if trans else ''
             vocab_attr = f' data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}"' if vocab else ''
 
             s_audio_order = s.get("audio_order", "")
             s_epigraph = 1 if s.get("alignment_method") == "leading_epigraph_attribution" else 0
             click_call = f"handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})"
-            panel_call = f"handleInspectPanelClick(event, '{sid}')"
 
             unit_markup = (
                 f'<span class="sentence-unit s-inline" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" '
                 f'data-audio-order="{s_audio_order}" data-epigraph="{s_epigraph}"{reorder_attr} '
-                f'data-matched="{has_match}"{vocab_attr}>'
+                f'data-matched="{has_match}"{trans_attr}{vocab_attr}>'
                 f'<span class="sentence-text{h_class}" onclick="{click_call}">'
                 f'<span class="s-content">{sentence_text_html}</span>{unmatched_tag}</span>'
-                f'<span class="inspect-panel" onclick="{panel_call}">'
-                f'{inspect_unmatched_notice}<span class="inspect-trans">{trans}</span>{vocab_section}</span></span>'
+                f'</span>'
             )
 
             is_standalone_block = is_h or is_intext_heading or is_citation
@@ -415,13 +414,12 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         html_head += f"""      </div>
       </div>
 
-      <aside class="tufte-margin-rail" aria-label="Sentence Insights">
+      <aside class="tufte-margin-rail" aria-label="Sentence Notes">
         <div class="margin-card" id="margin-card-{cnum}">
           <div class="margin-header">
-            <span class="margin-badge">Sentence Insight</span>
             <span class="margin-sent-id" id="margin-sent-id-{cnum}"></span>
           </div>
-          <div class="margin-trans" id="margin-trans-{cnum}">Select a sentence to view translation</div>
+          <div class="margin-trans" id="margin-trans-{cnum}"><span class="margin-empty-hint">Click any sentence to view translation & vocabulary.</span></div>
           <div class="margin-vocab-list" id="margin-vocab-{cnum}"></div>
         </div>
       </aside>
@@ -433,7 +431,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     html_tail = f"""
   <div class="mobile-popover" id="mobilePopover">
     <div class="popover-header">
-      <span class="popover-badge">Sentence Insight</span>
+      <span class="popover-sent-id" id="mobilePopoverSentId"></span>
       <button class="popover-close-btn" onclick="closeMobilePopover(event)" aria-label="Close translation">✕</button>
     </div>
     <div class="popover-trans" id="mobilePopoverTrans"></div>
@@ -1140,30 +1138,54 @@ function closeMobilePopover(event) {
   if (popover) popover.classList.remove('visible');
 }
 
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function updateSentenceInspectors(sentenceEl) {
   if (!sentenceEl) return;
-  const inspectPanel = sentenceEl.querySelector('.inspect-panel');
-  if (!inspectPanel) return;
+  let transHtml = '';
+  let vocabHtml = '';
 
-  const transEl = inspectPanel.querySelector('.inspect-trans');
-  const vocabEl = inspectPanel.querySelector('.inspect-vocab-list');
-  const transHtml = transEl ? transEl.innerHTML : '';
-  const vocabHtml = vocabEl ? vocabEl.innerHTML : '';
+  const transAttr = sentenceEl.getAttribute('data-trans');
+  if (transAttr) {
+    transHtml = escapeHtml(transAttr);
+  } else {
+    const transEl = sentenceEl.querySelector('.inspect-trans');
+    if (transEl) transHtml = transEl.innerHTML;
+  }
+
+  const vocabRaw = sentenceEl.getAttribute('data-vocab');
+  if (vocabRaw) {
+    try {
+      const vocabList = JSON.parse(vocabRaw);
+      if (Array.isArray(vocabList) && vocabList.length > 0) {
+        vocabHtml = vocabList.map(v =>
+          `<div class="vocab-row"><span class="v-word">${escapeHtml(v.word || '')}</span><span class="v-pos">${escapeHtml(v.pos || '')}</span><span class="v-def">${escapeHtml(v.def || '')}</span></div>`
+        ).join('');
+      }
+    } catch(e) {}
+  } else {
+    const vocabEl = sentenceEl.querySelector('.inspect-vocab-list');
+    if (vocabEl) vocabHtml = vocabEl.innerHTML;
+  }
 
   // 1. Desktop Margin Rail
   const marginTrans = document.getElementById('margin-trans-' + activeChapterNum);
   const marginVocab = document.getElementById('margin-vocab-' + activeChapterNum);
   const marginSentId = document.getElementById('margin-sent-id-' + activeChapterNum);
-  if (marginTrans) marginTrans.innerHTML = transHtml || '<span style="color:var(--text-sub);font-style:italic;">No translation available</span>';
+  if (marginTrans) marginTrans.innerHTML = transHtml || '<span class="margin-empty-hint">No translation available</span>';
   if (marginVocab) marginVocab.innerHTML = vocabHtml;
-  if (marginSentId) marginSentId.textContent = sentenceEl.id ? ('#' + sentenceEl.id.split('-').pop()) : '';
+  if (marginSentId) marginSentId.textContent = sentenceEl.id ? ('§ ' + sentenceEl.id.split('-').pop()) : '';
 
   // 2. Mobile Popover
   const mobileTrans = document.getElementById('mobilePopoverTrans');
   const mobileVocab = document.getElementById('mobilePopoverVocabList');
+  const mobileSentId = document.getElementById('mobilePopoverSentId');
   const mobilePopover = document.getElementById('mobilePopover');
   if (mobileTrans) mobileTrans.innerHTML = transHtml;
   if (mobileVocab) mobileVocab.innerHTML = vocabHtml;
+  if (mobileSentId) mobileSentId.textContent = sentenceEl.id ? ('§ ' + sentenceEl.id.split('-').pop()) : '';
   if (mobilePopover && window.innerWidth < 1024) {
     const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
     if (!isChineseLocked && (transHtml || vocabHtml)) {
@@ -1787,9 +1809,23 @@ function updateFocusSentenceDisplay() {
   
   const vocabEl = document.getElementById('focusSentenceVocab');
   if (vocabEl) {
-    const rawVocab = el.querySelector('.inspect-vocab-list');
-    if (rawVocab && rawVocab.children.length > 0) {
-      vocabEl.innerHTML = rawVocab.innerHTML;
+    let vocabHtml = '';
+    const vocabRaw = el.dataset.vocab;
+    if (vocabRaw) {
+      try {
+        const vocabList = JSON.parse(vocabRaw);
+        if (Array.isArray(vocabList) && vocabList.length > 0) {
+          vocabHtml = vocabList.map(v =>
+            `<div class="vocab-row"><span class="v-word">${escapeHtml(v.word || '')}</span><span class="v-pos">${escapeHtml(v.pos || '')}</span><span class="v-def">${escapeHtml(v.def || '')}</span></div>`
+          ).join('');
+        }
+      } catch(e) {}
+    } else {
+      const rawVocab = el.querySelector('.inspect-vocab-list');
+      if (rawVocab) vocabHtml = rawVocab.innerHTML;
+    }
+    if (vocabHtml) {
+      vocabEl.innerHTML = vocabHtml;
       vocabEl.style.display = 'flex';
     } else {
       vocabEl.innerHTML = '';
