@@ -473,6 +473,27 @@ const playerScrubber = document.getElementById('playerScrubber');
 let isUserScrubbing = false;
 let focusModeActive = false;
 let pocketModeActive = false;
+let isUserSeeking = false;
+let targetSeekTime = -1;
+let seekWatchdogTimer = null;
+
+function setUserSeeking(active, targetTime) {
+  isUserSeeking = active;
+  if (active) {
+    targetSeekTime = (typeof targetTime === 'number' && Number.isFinite(targetTime)) ? targetTime : -1;
+    if (seekWatchdogTimer) clearTimeout(seekWatchdogTimer);
+    seekWatchdogTimer = setTimeout(() => {
+      isUserSeeking = false;
+      targetSeekTime = -1;
+    }, 1000);
+  } else {
+    if (seekWatchdogTimer) {
+      clearTimeout(seekWatchdogTimer);
+      seekWatchdogTimer = null;
+    }
+    targetSeekTime = -1;
+  }
+}
 
 function safePlay(audioEl) {
   if (!audioEl) return;
@@ -687,10 +708,24 @@ function findSentenceAt(time) {
       high = middle - 1;
     }
   }
-  return candidate && time < candidate.end ? candidate.el : null;
+  if (!candidate) return null;
+  if (time < candidate.end) return candidate.el;
+  // Bounded silence gap absorption: absorb inter-sentence gaps up to 1.5s
+  if (time - candidate.end <= 1.5) {
+    const nextIdx = sentenceTimeIndex.indexOf(candidate) + 1;
+    if (nextIdx < sentenceTimeIndex.length) {
+      if (time < sentenceTimeIndex[nextIdx].start) {
+        return candidate.el;
+      }
+    } else {
+      return candidate.el;
+    }
+  }
+  return null;
 }
 
 function switchChapter(chNum, autoPlay) {
+  setUserSeeking(false);
   if (chNum > 2 && typeof window.PasskeyGate !== 'undefined' && !window.PasskeyGate.isUnlocked()) {
     if (audio && !audio.paused) audio.pause();
     if (typeof window.PasskeyGate.openModal === 'function') {
@@ -947,8 +982,8 @@ function startSentenceShadowing(sentenceEl) {
   sentenceEl.classList.add('active', 'card-collapsed');
 }
 
-function handleSentenceClick(event, id, start, end, hasMatch) {{
-  if (event) event.stopPropagation();
+function handleSentenceClick(event, id, start, end, hasMatch) {
+  if (event && event.stopPropagation) event.stopPropagation();
   const el = document.getElementById(id);
   if (!el) return;
   
@@ -957,100 +992,124 @@ function handleSentenceClick(event, id, start, end, hasMatch) {{
   lastSentenceClickTime = now;
   lastSentenceClickId = id;
   
-  if (isDoubleTap && window.__HAS_AUDIO__) {{
+  if (isDoubleTap && window.__HAS_AUDIO__) {
     startSentenceShadowing(el);
     return;
-  }}
+  }
+
+  // Cancel any pending shadow repeat timer
+  if (shadowState.timer) {
+    clearTimeout(shadowState.timer);
+    shadowState.timer = null;
+  }
+  shadowState.pauseStartTime = 0;
+  shadowState.isInternalPause = false;
+  shadowState.completed = 0;
+  shadowState.sentence = el;
+
+  const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
+  if (activeSec) {
+    activeSec.querySelectorAll('.sentence-unit.active').forEach(u => {
+      if (u !== el) u.classList.remove('active', 'card-collapsed');
+    });
+  }
 
   const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+  el.classList.add('active');
+  if (isChineseLocked) {
+    el.classList.add('card-collapsed');
+  } else {
+    el.classList.remove('card-collapsed');
+  }
 
-  // If user taps the already active sentence, toggle translation collapse
-  if (el.classList.contains('active') && !isDoubleTap) {{
-    if (!el.classList.contains('card-collapsed')) {{
-      el.classList.add('card-collapsed');
-      return;
-    }} else if (!isChineseLocked) {{
-      el.classList.remove('card-collapsed');
-      return;
-    }} else {{
-      el.classList.remove('active', 'card-collapsed');
-      return;
-    }}
-  }}
-  
+  currentPlayingId = id;
+
+  // Instant 0ms first word highlight
+  if (!el._cachedWords) {
+    el._cachedWords = Array.from(el.querySelectorAll('.w'));
+  }
+  const firstWord = el._cachedWords[0];
+  if (currentActiveWordEl && currentActiveWordEl !== firstWord) {
+    currentActiveWordEl.classList.remove('active-word');
+  }
+  if (firstWord) {
+    firstWord.classList.add('active-word');
+    currentActiveWordEl = firstWord;
+    currentActiveWordStart = parseFloat(firstWord.dataset.s) || start;
+    currentActiveWordEnd = (el._cachedWords[1] ? parseFloat(el._cachedWords[1].dataset.s) : parseFloat(firstWord.dataset.e)) || (start + 0.3);
+  }
+
+  if (focusModeActive || pocketModeActive) {
+    updateFocusSentenceDisplay();
+    updateFocusStatus();
+  }
+
+  try {
+    localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, id);
+  } catch(e) {}
+
   const isMatched = (hasMatch === undefined || hasMatch === null) ? (Number.isFinite(start) && Number.isFinite(end) && end > start && start >= 0) : Boolean(hasMatch);
-  localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, id);
 
-  if (window.__HAS_AUDIO__ && Number.isFinite(start) && start >= 0) {{
+  if (window.__HAS_AUDIO__ && Number.isFinite(start) && start >= 0) {
+    setUserSeeking(true, start);
     audio.currentTime = start;
     safePlay(audio);
-    globalPlayBtn.textContent = '⏸ Pause';
-  }} else if (window.__HAS_AUDIO__) {{
-    const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
+    if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
+    return;
+  } else if (window.__HAS_AUDIO__) {
     const units = activeSec ? Array.from(activeSec.querySelectorAll('.sentence-unit')) : [];
     const idx = units.indexOf(el);
     let interpolated = false;
-    if (idx !== -1) {{
+    if (idx !== -1) {
       let prevTime = null, prevIdx = -1;
-      for (let i = idx - 1; i >= 0; i--) {{
+      for (let i = idx - 1; i >= 0; i--) {
         const u = units[i];
         const eVal = parseFloat(u.dataset.end);
         const sVal = parseFloat(u.dataset.start);
-        if (Number.isFinite(eVal) && eVal >= 0) {{ prevTime = eVal; prevIdx = i; break; }}
-        if (Number.isFinite(sVal) && sVal >= 0) {{ prevTime = sVal; prevIdx = i; break; }}
-      }}
+        if (Number.isFinite(eVal) && eVal >= 0) { prevTime = eVal; prevIdx = i; break; }
+        if (Number.isFinite(sVal) && sVal >= 0) { prevTime = sVal; prevIdx = i; break; }
+      }
 
       let nextTime = null, nextIdx = -1;
-      for (let i = idx + 1; i < units.length; i++) {{
+      for (let i = idx + 1; i < units.length; i++) {
         const u = units[i];
         const sVal = parseFloat(u.dataset.start);
         const eVal = parseFloat(u.dataset.end);
-        if (Number.isFinite(sVal) && sVal >= 0) {{ nextTime = sVal; nextIdx = i; break; }}
-        if (Number.isFinite(eVal) && eVal >= 0) {{ nextTime = eVal; nextIdx = i; break; }}
-      }}
+        if (Number.isFinite(sVal) && sVal >= 0) { nextTime = sVal; nextIdx = i; break; }
+        if (Number.isFinite(eVal) && eVal >= 0) { nextTime = eVal; nextIdx = i; break; }
+      }
 
-      if (prevTime !== null && nextTime !== null && nextTime >= prevTime) {{
+      if (prevTime !== null && nextTime !== null && nextTime >= prevTime) {
         const gapSteps = nextIdx - prevIdx;
         const stepOffset = idx - prevIdx;
         const targetTime = prevTime + (nextTime - prevTime) * (stepOffset / gapSteps);
+        setUserSeeking(true, targetTime);
         audio.currentTime = targetTime;
         safePlay(audio);
-        globalPlayBtn.textContent = '⏸ Pause';
+        if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
         interpolated = true;
-      }} else if (prevTime !== null) {{
+      } else if (prevTime !== null) {
         const dur = (audio && Number.isFinite(audio.duration)) ? audio.duration : Infinity;
-        if (prevTime < dur - 3) {{
+        if (prevTime < dur - 3) {
+          setUserSeeking(true, prevTime);
           audio.currentTime = prevTime;
           safePlay(audio);
-          globalPlayBtn.textContent = '⏸ Pause';
+          if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
           interpolated = true;
-        }} else {{
+        } else {
           showToast('Audio narration concluded; expanded bilingual study breakdown.');
           interpolated = true;
-        }}
-      }} else if (nextTime !== null) {{
+        }
+      } else if (nextTime !== null) {
+        setUserSeeking(true, 0);
         audio.currentTime = 0;
         safePlay(audio);
-        globalPlayBtn.textContent = '⏸ Pause';
+        if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
         interpolated = true;
-      }}
-    }}
-  }}
-
-  document.querySelectorAll('.sentence-unit.active').forEach(u => {{
-    if (u !== el) {{
-      u.classList.remove('active', 'card-collapsed');
-    }}
-  }});
-
-  currentPlayingId = id;
-  el.classList.add('active');
-  if (isChineseLocked) {{
-    el.classList.add('card-collapsed');
-  }} else {{
-    el.classList.remove('card-collapsed');
-  }}
-}}
+      }
+    }
+  }
+}
 
 function handleInspectPanelClick(event, id) {
   if (event) event.stopPropagation();
@@ -1536,6 +1595,7 @@ function updateFocusSentenceDisplay() {
   } else {
     textEl.textContent = el.textContent;
   }
+  textEl._cachedFocusWords = Array.from(textEl.querySelectorAll('.w'));
   
   if (transEl) {
     const trans = el.dataset.trans || el.querySelector('.inspect-trans')?.textContent || '';
@@ -1955,6 +2015,7 @@ audio.addEventListener('pause', () => {
   }
 });
 audio.addEventListener('error', (e) => {
+  setUserSeeking(false);
   console.warn('[Audio] Playback error encountered:', audio.error || e);
   if (globalPlayBtn) globalPlayBtn.textContent = '▶ Play';
   if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(false);
@@ -1987,6 +2048,9 @@ audio.addEventListener('loadedmetadata', () => {
   updateAudioPlayerUI();
 });
 audio.addEventListener('durationchange', updateAudioPlayerUI);
+audio.addEventListener('seeked', () => {
+  setUserSeeking(false);
+});
 let audioStallTimer = null;
 audio.addEventListener('waiting', () => {
   if (audio && !audio.paused) {
@@ -2081,6 +2145,10 @@ let lastAutoScrollTimestamp = 0;
 function syncPlayback() {
   syncFrameId = null;
   if (!audio.paused) {
+    if (audio.seeking || isUserSeeking) {
+      startSyncLoop();
+      return;
+    }
     const now = performance.now();
     if (now - lastSyncTimestamp >= 25) {
       lastSyncTimestamp = now;
@@ -2110,16 +2178,15 @@ function syncPlayback() {
               updateFocusStatus();
             }
 
-            if (autoScrollEnabled) {
-              const clockNow = Date.now();
-              if (clockNow - lastAutoScrollTimestamp >= 600) {
+            if (!pocketModeActive && !focusModeActive && autoScrollEnabled) {
+              requestAnimationFrame(() => {
+                if (pocketModeActive || focusModeActive || !autoScrollEnabled) return;
                 const rect = activeUnit.getBoundingClientRect();
                 const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
-                if (!inView) {
-                  lastAutoScrollTimestamp = clockNow;
+                if (!inView && typeof activeUnit.scrollIntoView === 'function') {
                   activeUnit.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
-              }
+              });
             }
           }
           
@@ -2157,9 +2224,12 @@ function syncPlayback() {
                   const prevW = pText.querySelector('.w.active-word');
                   if (prevW) prevW.classList.remove('active-word');
                   if (foundIndex >= 0) {
-                    const focusWords = pText.querySelectorAll('.w');
-                    if (focusWords[foundIndex] && !focusWords[foundIndex].classList.contains('active-word')) {
-                      focusWords[foundIndex].classList.add('active-word');
+                    if (!pText._cachedFocusWords) {
+                      pText._cachedFocusWords = Array.from(pText.querySelectorAll('.w'));
+                    }
+                    const focusWord = pText._cachedFocusWords[foundIndex];
+                    if (focusWord && !focusWord.classList.contains('active-word')) {
+                      focusWord.classList.add('active-word');
                     }
                   }
                 }
