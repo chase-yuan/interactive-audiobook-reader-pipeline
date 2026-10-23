@@ -431,11 +431,11 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     html_tail = f"""
 </main>
 
-<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ondblclick="handleFocusDblClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
+<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
   <div class="focus-top-bar pocket-header">
     <button class="focus-close-icon pocket-close-icon" id="focusExitBtn" onclick="toggleFocusMode(false)">✕</button>
   </div>
-  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)" ondblclick="handleFocusDblClick(event)">
+  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)">
     <div class="focus-sentence-box pocket-sentence-box" id="focusSentenceBox">
       <div class="focus-sentence-text pocket-sentence-text" id="focusSentenceText"></div>
       <div class="focus-sentence-trans pocket-sentence-trans" id="focusSentenceTrans"></div>
@@ -1702,51 +1702,15 @@ function toggleFocusBlindMode(e) {
 const togglePocketBlindMode = toggleFocusBlindMode;
 
 
-function handleFocusDblClick(e) {
-  if (e && e.target && (
-    e.target.closest('#focusDock') ||
-    e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
-  )) {
-    return;
-  }
-  if (focusSingleTapTimer) {
-    clearTimeout(focusSingleTapTimer);
-    focusSingleTapTimer = null;
-  }
-  toggleFocusMode(false);
-}
-
 function handleFocusSentenceBoxClick(e) {
-  if (e && e.target && (
-    e.target.closest('#focusDock') ||
-    e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
-  )) {
-    return;
-  }
+  if (e && e.stopPropagation) e.stopPropagation();
   showFocusDock();
-  const now = Date.now();
-  if (now - lastFocusTapTime < 450) {
-    if (focusSingleTapTimer) {
-      clearTimeout(focusSingleTapTimer);
-      focusSingleTapTimer = null;
-    }
-    lastFocusTapTime = 0;
-    toggleFocusMode(false);
-    return;
+  const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
+  if (focusBlindMode && box) {
+    box.classList.toggle('revealed');
+  } else {
+    replayCurrentShadowSentence();
   }
-  lastFocusTapTime = now;
-
-  if (focusSingleTapTimer) clearTimeout(focusSingleTapTimer);
-  focusSingleTapTimer = setTimeout(() => {
-    focusSingleTapTimer = null;
-    if (!focusModeActive && !pocketModeActive) return;
-    const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
-    if (focusBlindMode && box) {
-      box.classList.toggle('revealed');
-    } else {
-      replayCurrentShadowSentence();
-    }
-  }, 220);
 }
 const handlePocketSentenceBoxClick = handleFocusSentenceBoxClick;
 
@@ -1884,15 +1848,11 @@ function handleFocusOverlayClick(e) {
   showFocusDock();
   const now = Date.now();
   if (now - lastFocusTapTime < 450) {
-    if (focusSingleTapTimer) {
-      clearTimeout(focusSingleTapTimer);
-      focusSingleTapTimer = null;
-    }
-    lastFocusTapTime = 0;
     toggleFocusMode(false);
-    return;
+    lastFocusTapTime = 0;
+  } else {
+    lastFocusTapTime = now;
   }
-  lastFocusTapTime = now;
 }
 const handlePocketOverlayClick = handleFocusOverlayClick;
 
@@ -1900,7 +1860,6 @@ window.toggleFocusMode = toggleFocusMode;
 window.togglePocketMode = toggleFocusMode;
 window.toggleFocusPlayPause = toggleFocusPlayPause;
 window.updateFocusPlayBtn = updateFocusPlayBtn;
-window.handleFocusDblClick = handleFocusDblClick;
 window.handleFocusOverlayClick = handleFocusOverlayClick;
 window.handlePocketOverlayClick = handleFocusOverlayClick;
 window.handleFocusTouchStart = handleFocusTouchStart;
