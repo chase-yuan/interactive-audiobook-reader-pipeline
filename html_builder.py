@@ -413,29 +413,19 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
         html_head += f"""      </div>
       </div>
-
-      <aside class="tufte-margin-rail" aria-label="Sentence Notes">
-        <div class="margin-card" id="margin-card-{cnum}">
-          <div class="margin-header">
-            <span class="margin-sent-id" id="margin-sent-id-{cnum}"></span>
-          </div>
-          <div class="margin-trans" id="margin-trans-{cnum}"><span class="margin-empty-hint">Click any sentence to view translation & vocabulary.</span></div>
-          <div class="margin-vocab-list" id="margin-vocab-{cnum}"></div>
-        </div>
-      </aside>
     </div>
   </section>
 """
 
     book_id_json = json.dumps(book_id)
     html_tail = f"""
-  <div class="mobile-popover" id="mobilePopover">
-    <div class="popover-header">
-      <span class="popover-sent-id" id="mobilePopoverSentId"></span>
-      <button class="popover-close-btn" onclick="closeMobilePopover(event)" aria-label="Close translation">✕</button>
+  <div class="sentence-hud" id="sentenceHud" role="dialog" aria-label="Sentence translation and notes">
+    <div class="hud-header">
+      <span class="hud-sent-id" id="hudSentId"></span>
+      <button class="hud-close-btn" onclick="closeSentenceHud(event)" aria-label="Close notes">✕</button>
     </div>
-    <div class="popover-trans" id="mobilePopoverTrans"></div>
-    <div class="popover-vocab-list" id="mobilePopoverVocabList"></div>
+    <div class="hud-trans" id="hudTrans"></div>
+    <div class="hud-vocab-list" id="hudVocabList"></div>
   </div>
 </main>
 
@@ -1009,6 +999,7 @@ function setLanguageMode(mode) {
   if (isEnglish) {
     document.documentElement.setAttribute('data-hide-chinese', 'true');
     document.querySelectorAll('.sentence-unit.active').forEach(u => u.classList.add('card-collapsed'));
+    if (typeof closeSentenceHud === 'function') closeSentenceHud();
   } else {
     document.documentElement.removeAttribute('data-hide-chinese');
   }
@@ -1132,18 +1123,51 @@ function startSentenceShadowing(sentenceEl) {
 }
 
 
-function closeMobilePopover(event) {
+let currentHudSentenceId = null;
+
+function closeSentenceHud(event) {
   if (event && event.stopPropagation) event.stopPropagation();
-  const popover = document.getElementById('mobilePopover');
-  if (popover) popover.classList.remove('visible');
+  const hud = document.getElementById('sentenceHud');
+  if (hud) {
+    hud.classList.remove('visible');
+  }
+  currentHudSentenceId = null;
 }
 
-function escapeHtml(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function positionHud(targetEl, hudEl) {
+  if (!targetEl || !hudEl) return;
+  const rect = targetEl.getBoundingClientRect();
+  const hudWidth = Math.min(580, window.innerWidth - 32);
+  hudEl.style.width = hudWidth + 'px';
+
+  const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+  const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
+  let left = rect.left + scrollX + (rect.width / 2) - (hudWidth / 2);
+  const minLeft = scrollX + 16;
+  const maxLeft = scrollX + window.innerWidth - hudWidth - 16;
+  left = Math.max(minLeft, Math.min(maxLeft, left));
+
+  const spaceBelow = window.innerHeight - rect.bottom;
+  let top;
+  if (spaceBelow < 200 && rect.top > 200) {
+    top = rect.top + scrollY - hudEl.offsetHeight - 8;
+  } else {
+    top = rect.bottom + scrollY + 8;
+  }
+
+  hudEl.style.left = Math.round(left) + 'px';
+  hudEl.style.top = Math.round(top) + 'px';
 }
 
-function updateSentenceInspectors(sentenceEl) {
+function showSentenceHud(sentenceEl) {
   if (!sentenceEl) return;
+  const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+  if (isChineseLocked) return;
+
+  const hud = document.getElementById('sentenceHud');
+  if (!hud) return;
+
   let transHtml = '';
   let vocabHtml = '';
 
@@ -1170,29 +1194,60 @@ function updateSentenceInspectors(sentenceEl) {
     if (vocabEl) vocabHtml = vocabEl.innerHTML;
   }
 
-  // 1. Desktop Margin Rail
-  const marginTrans = document.getElementById('margin-trans-' + activeChapterNum);
-  const marginVocab = document.getElementById('margin-vocab-' + activeChapterNum);
-  const marginSentId = document.getElementById('margin-sent-id-' + activeChapterNum);
-  if (marginTrans) marginTrans.innerHTML = transHtml || '<span class="margin-empty-hint">No translation available</span>';
-  if (marginVocab) marginVocab.innerHTML = vocabHtml;
-  if (marginSentId) marginSentId.textContent = sentenceEl.id ? ('§ ' + sentenceEl.id.split('-').pop()) : '';
+  if (!transHtml && !vocabHtml) {
+    closeSentenceHud();
+    return;
+  }
 
-  // 2. Mobile Popover
-  const mobileTrans = document.getElementById('mobilePopoverTrans');
-  const mobileVocab = document.getElementById('mobilePopoverVocabList');
-  const mobileSentId = document.getElementById('mobilePopoverSentId');
-  const mobilePopover = document.getElementById('mobilePopover');
-  if (mobileTrans) mobileTrans.innerHTML = transHtml;
-  if (mobileVocab) mobileVocab.innerHTML = vocabHtml;
-  if (mobileSentId) mobileSentId.textContent = sentenceEl.id ? ('§ ' + sentenceEl.id.split('-').pop()) : '';
-  if (mobilePopover && window.innerWidth < 1024) {
-    const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
-    if (!isChineseLocked && (transHtml || vocabHtml)) {
-      mobilePopover.classList.add('visible');
-    }
+  const transTarget = document.getElementById('hudTrans');
+  const vocabTarget = document.getElementById('hudVocabList');
+  const sentIdTarget = document.getElementById('hudSentId');
+
+  if (transTarget) transTarget.innerHTML = transHtml;
+  if (vocabTarget) vocabTarget.innerHTML = vocabHtml;
+  if (sentIdTarget) sentIdTarget.textContent = sentenceEl.id ? ('§ ' + sentenceEl.id.split('-').pop()) : '';
+
+  hud.style.display = 'block';
+  positionHud(sentenceEl, hud);
+  hud.classList.add('visible');
+  currentHudSentenceId = sentenceEl.id;
+}
+
+function toggleSentenceHud(sentenceEl) {
+  if (!sentenceEl) return;
+  if (currentHudSentenceId === sentenceEl.id) {
+    closeSentenceHud();
+  } else {
+    showSentenceHud(sentenceEl);
   }
 }
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function updateSentenceInspectors(sentenceEl) {
+  // Pure focus playback: do not auto-open or flash HUD during continuous audio reading
+}
+
+document.addEventListener('click', function(e) {
+  const hud = document.getElementById('sentenceHud');
+  if (!hud || !hud.classList.contains('visible')) return;
+  if (hud.contains(e.target) || e.target.closest('.sentence-text') || e.target.closest('.sentence-unit')) {
+    return;
+  }
+  closeSentenceHud();
+});
+
+window.addEventListener('resize', function() {
+  if (currentHudSentenceId) {
+    const el = document.getElementById(currentHudSentenceId);
+    const hud = document.getElementById('sentenceHud');
+    if (el && hud && hud.classList.contains('visible')) {
+      positionHud(el, hud);
+    }
+  }
+});
 
 function handleSentenceClick(event, id, start, end, hasMatch) {
   if (event && event.stopPropagation) event.stopPropagation();
@@ -1230,10 +1285,11 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
   el.classList.add('active');
   if (isChineseLocked) {
     el.classList.add('card-collapsed');
+    closeSentenceHud();
   } else {
     el.classList.remove('card-collapsed');
+    toggleSentenceHud(el);
   }
-  updateSentenceInspectors(el);
 
   currentPlayingId = id;
 
