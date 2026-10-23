@@ -37,13 +37,13 @@ def _check_temporal_integrity(content: str) -> list:
     errors = []
     chapter_blocks = re.findall(r'<section\b[^>]*class="chapter-section[^>]*data-ch="(\d+)"[^>]*>(.*?)</section>', content, re.DOTALL)
     word_re = re.compile(r'<span class="w"[^>]*?data-s="([^"]+)"[^>]*?data-e="([^"]+)"[^>]*?(?:data-timing-source="([^"]+)")?[^>]*?>([^<]*)</span>')
-    sent_re = re.compile(r'<div class="sentence-unit"[^>]*?id="([^"]+)"[^>]*?data-start="([^"]+)"[^>]*?data-end="([^"]+)"[^>]*?data-matched="([^"]+)"', re.DOTALL)
+    sent_re = re.compile(r'<(?:div|span) class="sentence-unit"[^>]*?id="([^"]+)"[^>]*?data-start="([^"]+)"[^>]*?data-end="([^"]+)"[^>]*?data-matched="([^"]+)"', re.DOTALL)
 
     for ch_num, ch_content in chapter_blocks:
-        units = ch_content.split('<div class="sentence-unit"')
+        units = re.split(r'<(?:div|span) class="sentence-unit"', ch_content)
         prev_end = None
         for u in units[1:]:
-            m = sent_re.search('<div class="sentence-unit"' + u[:400])
+            m = sent_re.search('<span class="sentence-unit"' + u[:400]) or sent_re.search('<div class="sentence-unit"' + u[:400])
             if not m:
                 continue
             uid, s_str, e_str, matched_str = m.group(1), m.group(2), m.group(3), m.group(4)

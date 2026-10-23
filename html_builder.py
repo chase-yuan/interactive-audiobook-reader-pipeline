@@ -238,12 +238,14 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         html_head += f"""
   <!-- CHAPTER {cnum} -->
   <section class="chapter-section{active_cls}" id="chapter-{cnum}" data-audio="{html.escape(caudio)}" data-public-audio="{html.escape(cpublic_audio)}" data-ch="{cnum}">
-    <header class="book-header">
-      <h1 class="book-title">{title_html}</h1>
-      <div class="book-author">{html.escape(book_author)}</div>
-    </header>
+    <div class="container chapter-layout">
+      <div class="prose-column">
+        <header class="book-header">
+          <h1 class="book-title">{title_html}</h1>
+          <div class="book-author">{html.escape(book_author)}</div>
+        </header>
 
-    <div class="book-content">
+        <div class="book-content">
 """
         if has_audio and csents:
             def is_sentence_explicitly_estimated(sent):
@@ -252,84 +254,30 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 return any(w.get("timing_source") == "estimated" for w in sent.get("word_spans", []))
 
             valid_flags = []
-            for s in csents:
-                start_chk = s.get("audio_start", s.get("start"))
-                end_chk = s.get("audio_end", s.get("end"))
-                is_valid = isinstance(start_chk, (int, float)) and isinstance(end_chk, (int, float)) and start_chk >= 0 and end_chk >= start_chk
-                valid_flags.append(is_valid)
+            # Resolve canonical metadata if available to preserve EPUB paragraph structure
+        canonical_path = c.get('aligned_json', '').replace('_aligned_sentences.json', '_canonical_sentences.json')
+        canonical_map = {}
+        if os.path.exists(canonical_path):
+            try:
+                with open(canonical_path, 'r', encoding='utf-8') as cf:
+                    for item in json.load(cf):
+                        if 'id' in item and 'elem_idx' in item:
+                            canonical_map[item['id']] = item['elem_idx']
+            except Exception:
+                pass
 
-            gap_groups = []
-            curr_group = []
-            for idx, is_v in enumerate(valid_flags):
-                s = csents[idx]
-                is_divider = s.get("text", "").strip() in ['* * *', '***', '---', '* * * *', '– – –', '— — —', '… … …', '• • •']
-                is_estimated = is_sentence_explicitly_estimated(s)
-                if not is_v and not is_divider and not is_estimated:
-                    curr_group.append(idx)
-                else:
-                    if curr_group:
-                        gap_groups.append(curr_group)
-                        curr_group = []
-            if curr_group:
-                gap_groups.append(curr_group)
-
-            for group in gap_groups:
-                prev_idx = group[0] - 1
-                next_idx = group[-1] + 1
-                has_prev = prev_idx >= 0 and valid_flags[prev_idx]
-                has_next = next_idx < len(csents) and valid_flags[next_idx]
-                if not has_prev or not has_next:
-                    for g_idx in group:
-                        csents[g_idx]["audio_start"] = None
-                        csents[g_idx]["audio_end"] = None
-                        csents[g_idx]["has_audio_match"] = False
-                        csents[g_idx]["word_spans"] = []
-                    continue
-                t_prev = csents[prev_idx].get("audio_end", csents[prev_idx].get("end"))
-                t_next = csents[next_idx].get("audio_start", csents[next_idx].get("start"))
-                if not isinstance(t_prev, (int, float)) or not isinstance(t_next, (int, float)) or t_next <= t_prev:
-                    # Invariant: No physical acoustic gap exists between surrounding spoken sentences.
-                    # Unnarrated footnotes/dividers MUST NOT fabricate artificial timestamps that collide with t_next.
-                    for g_idx in group:
-                        csents[g_idx]["audio_start"] = None
-                        csents[g_idx]["audio_end"] = None
-                        csents[g_idx]["has_audio_match"] = False
-                        csents[g_idx]["word_spans"] = []
-                    continue
-                total_duration = t_next - t_prev
-                words_per_s = [max(1, len(csents[g_idx].get("text", "").split())) for g_idx in group]
-                total_w = sum(words_per_s)
-                cum_w = 0
-                for g_idx, w_cnt in zip(group, words_per_s):
-                    s_t = round(t_prev + total_duration * (cum_w / total_w), 2)
-                    cum_w += w_cnt
-                    e_t = round(t_prev + total_duration * (cum_w / total_w), 2)
-                    if has_next:
-                        e_t = min(t_next, e_t)
-                    if e_t <= s_t:
-                        e_t = round(min(t_next if has_next else s_t + 0.1, s_t + 0.05), 2)
-                    csents[g_idx]["audio_start"] = s_t
-                    csents[g_idx]["audio_end"] = e_t
-                    csents[g_idx]["has_audio_match"] = True
-                    raw_words = csents[g_idx].get("text", "").split()
-                    c_cnt = max(1, len(raw_words))
-                    w_spans = []
-                    prev_w_s = -1.0
-                    for m_i, rw in enumerate(raw_words):
-                        ws = round(s_t + (e_t - s_t) * (m_i / c_cnt), 2)
-                        we = round(s_t + (e_t - s_t) * ((m_i + 1) / c_cnt), 2)
-                        if ws <= prev_w_s:
-                            ws = round(prev_w_s + 0.01, 2)
-                        if we <= ws:
-                            we = round(ws + 0.01, 2)
-                        prev_w_s = ws
-                        w_spans.append({"word": rw, "start": ws, "end": we, "timing_source": "interpolated"})
-                    csents[g_idx]["word_spans"] = w_spans
+        prose_blocks = []
+        current_p_units = []
+        current_elem_idx = None
 
         for s in csents:
             if s.get("text", "").strip() in ['* * *', '***', '---', '* * * *', '– – –', '— — —', '… … …', '• • •']:
+                if current_p_units:
+                    prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                    current_p_units = []
+                    current_elem_idx = None
                 div_symbol = html.escape(s.get("text", "").strip())
-                html_head += f'      <div class="scene-divider" aria-hidden="true"><span>{div_symbol}</span></div>\n'
+                prose_blocks.append(f'        <div class="scene-divider" aria-hidden="true"><span>{div_symbol}</span></div>')
                 continue
 
             raw_sid = s["id"]
@@ -387,12 +335,16 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 vocab_section = f'<div class="inspect-vocab-list">{"".join(vocab_html_list)}</div>'
                 
             h_class = ""
+            is_intext_heading = bool(re.match(r"^CHAPTER\s+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|[A-Z\-]+|\d+)\s*$", raw_text.strip(), re.IGNORECASE))
+            is_citation = raw_text.strip().startswith(("—", "–", "--", "- "))
+
             if is_h:
                 h_class += " chapter-heading-1"
-            elif re.match(r"^CHAPTER\s+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|[A-Z\-]+|\d+)\s*$", raw_text.strip(), re.IGNORECASE):
+            elif is_intext_heading:
                 h_class += " chapter-intext-heading"
-            elif raw_text.strip().startswith(("—", "–", "--", "- ")):
+            elif is_citation:
                 h_class += " epigraph-citation"
+
             is_reorder = 1 if s.get("alignment_method") in {
                 "leading_epigraph_attribution",
                 "chapter_heading_numeric_variant",
@@ -401,36 +353,92 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             } else 0
             reorder_attr = ' data-reorder="1"' if is_reorder else ''
             vocab_attr = f' data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}"' if vocab else ''
-            html_head += f"""
-      <div class="sentence-unit" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" data-audio-order="{s.get('audio_order', '')}" data-epigraph="{1 if s.get('alignment_method') == 'leading_epigraph_attribution' else 0}"{reorder_attr} data-matched="{has_match}"{vocab_attr}>
-        <div class="sentence-text{h_class}" onclick="handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})">
-          <span class="s-content">{sentence_text_html}</span>{unmatched_tag}
-        </div>
-        <div class="inspect-panel" onclick="handleInspectPanelClick(event, '{sid}')">
-          {inspect_unmatched_notice}
-          <div class="inspect-trans">{trans}</div>
-          {vocab_section}
-        </div>
-      </div>
-"""
+
+            s_audio_order = s.get("audio_order", "")
+            s_epigraph = 1 if s.get("alignment_method") == "leading_epigraph_attribution" else 0
+            click_call = f"handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})"
+            panel_call = f"handleInspectPanelClick(event, '{sid}')"
+
+            unit_markup = (
+                f'<span class="sentence-unit s-inline" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" '
+                f'data-audio-order="{s_audio_order}" data-epigraph="{s_epigraph}"{reorder_attr} '
+                f'data-matched="{has_match}"{vocab_attr}>'
+                f'<span class="sentence-text{h_class}" onclick="{click_call}">'
+                f'<span class="s-content">{sentence_text_html}</span>{unmatched_tag}</span>'
+                f'<span class="inspect-panel" onclick="{panel_call}">'
+                f'{inspect_unmatched_notice}<span class="inspect-trans">{trans}</span>{vocab_section}</span></span>'
+            )
+
+            is_standalone_block = is_h or is_intext_heading or is_citation
+
+            if is_standalone_block:
+                if current_p_units:
+                    prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                    current_p_units = []
+                    current_elem_idx = None
+                block_cls = "prose-heading-block" if (is_h or is_intext_heading) else "prose-epigraph-block"
+                prose_blocks.append(f'        <div class="{block_cls}">{unit_markup}</div>')
+                continue
+
+            elem_idx = s.get("elem_idx")
+            if elem_idx is None and raw_sid in canonical_map:
+                elem_idx = canonical_map[raw_sid]
+
+            if elem_idx is not None:
+                if current_p_units and current_elem_idx != elem_idx:
+                    prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                    current_p_units = []
+                current_p_units.append(unit_markup)
+                current_elem_idx = elem_idx
+            else:
+                current_p_units.append(unit_markup)
+                prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                current_p_units = []
+                current_elem_idx = None
+
+        if current_p_units:
+            prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+
+        html_head += "\n".join(prose_blocks) + "\n"
 
         editorial_notice = ch.get("editorial_notice")
         if editorial_notice:
             html_head += f"""
-      <div class="editorial-notice-box">
-        <span class="notice-badge">Editor's Note</span>
-        <div class="notice-content">
-          {html.escape(editorial_notice)}
+        <div class="editorial-notice-box">
+          <span class="notice-badge">Editor's Note</span>
+          <div class="notice-content">
+            {html.escape(editorial_notice)}
+          </div>
         </div>
-      </div>
 """
 
-        html_head += """    </div>
+        html_head += f"""      </div>
+      </div>
+
+      <aside class="tufte-margin-rail" aria-label="Sentence Insights">
+        <div class="margin-card" id="margin-card-{cnum}">
+          <div class="margin-header">
+            <span class="margin-badge">Sentence Insight</span>
+            <span class="margin-sent-id" id="margin-sent-id-{cnum}"></span>
+          </div>
+          <div class="margin-trans" id="margin-trans-{cnum}">Select a sentence to view translation</div>
+          <div class="margin-vocab-list" id="margin-vocab-{cnum}"></div>
+        </div>
+      </aside>
+    </div>
   </section>
 """
 
     book_id_json = json.dumps(book_id)
     html_tail = f"""
+  <div class="mobile-popover" id="mobilePopover">
+    <div class="popover-header">
+      <span class="popover-badge">Sentence Insight</span>
+      <button class="popover-close-btn" onclick="closeMobilePopover(event)" aria-label="Close translation">✕</button>
+    </div>
+    <div class="popover-trans" id="mobilePopoverTrans"></div>
+    <div class="popover-vocab-list" id="mobilePopoverVocabList"></div>
+  </div>
 </main>
 
 <div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ondblclick="handleFocusDblClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
@@ -1125,6 +1133,45 @@ function startSentenceShadowing(sentenceEl) {
   sentenceEl.classList.add('active', 'card-collapsed');
 }
 
+
+function closeMobilePopover(event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  const popover = document.getElementById('mobilePopover');
+  if (popover) popover.classList.remove('visible');
+}
+
+function updateSentenceInspectors(sentenceEl) {
+  if (!sentenceEl) return;
+  const inspectPanel = sentenceEl.querySelector('.inspect-panel');
+  if (!inspectPanel) return;
+
+  const transEl = inspectPanel.querySelector('.inspect-trans');
+  const vocabEl = inspectPanel.querySelector('.inspect-vocab-list');
+  const transHtml = transEl ? transEl.innerHTML : '';
+  const vocabHtml = vocabEl ? vocabEl.innerHTML : '';
+
+  // 1. Desktop Margin Rail
+  const marginTrans = document.getElementById('margin-trans-' + activeChapterNum);
+  const marginVocab = document.getElementById('margin-vocab-' + activeChapterNum);
+  const marginSentId = document.getElementById('margin-sent-id-' + activeChapterNum);
+  if (marginTrans) marginTrans.innerHTML = transHtml || '<span style="color:var(--text-sub);font-style:italic;">No translation available</span>';
+  if (marginVocab) marginVocab.innerHTML = vocabHtml;
+  if (marginSentId) marginSentId.textContent = sentenceEl.id ? ('#' + sentenceEl.id.split('-').pop()) : '';
+
+  // 2. Mobile Popover
+  const mobileTrans = document.getElementById('mobilePopoverTrans');
+  const mobileVocab = document.getElementById('mobilePopoverVocabList');
+  const mobilePopover = document.getElementById('mobilePopover');
+  if (mobileTrans) mobileTrans.innerHTML = transHtml;
+  if (mobileVocab) mobileVocab.innerHTML = vocabHtml;
+  if (mobilePopover && window.innerWidth < 1024) {
+    const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+    if (!isChineseLocked && (transHtml || vocabHtml)) {
+      mobilePopover.classList.add('visible');
+    }
+  }
+}
+
 function handleSentenceClick(event, id, start, end, hasMatch) {
   if (event && event.stopPropagation) event.stopPropagation();
   const el = document.getElementById(id);
@@ -1164,6 +1211,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
   } else {
     el.classList.remove('card-collapsed');
   }
+  updateSentenceInspectors(el);
 
   currentPlayingId = id;
 
@@ -2304,6 +2352,7 @@ function syncPlayback() {
               if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
             });
             activeUnit.classList.add('active', 'card-collapsed');
+            updateSentenceInspectors(activeUnit);
 
             if (focusModeActive || pocketModeActive) {
               shadowState.sentence = activeUnit;
