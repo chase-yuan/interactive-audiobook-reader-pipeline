@@ -307,15 +307,28 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
             parser.feed(raw_html)
             cleaned_elements = clean_and_merge_elements(parser.elements)
 
+            def _matches_marker(marker_str, element):
+                if not marker_str:
+                    return False
+                m_clean = marker_str.strip().lower()
+                el_txt = element.get('text', '').strip().lower()
+                pattern = rf"(?<![a-z0-9]){re.escape(m_clean)}(?![a-z0-9])"
+                if not re.search(pattern, el_txt):
+                    return False
+                # If marker is short (<= 3 words), prevent casual substring collisions in body text
+                if len(m_clean.split()) <= 3:
+                    return is_heading_element(element) or len(el_txt.split()) <= 25
+                return True
+
             active = (start_marker is None)
             for el in cleaned_elements:
                 tag = el['tag']
                 txt = el['text']
                 cls = el.get('class', '').lower()
 
-                if not active and start_marker and start_marker.lower() in txt.lower():
+                if not active and start_marker and _matches_marker(start_marker, el):
                     active = True
-                elif active and stop_marker and stop_marker.lower() in txt.lower():
+                elif active and stop_marker and _matches_marker(stop_marker, el):
                     break
                 if not active:
                     continue

@@ -473,10 +473,5 @@ def main():
             raise SystemExit(1)
         print(f"[PIPELINE -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
 
-        keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
-        if keygen_script.is_file():
-            print("\n[PIPELINE -> KEYGEN] Emitting production passkey and dispatch copy...")
-            subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
-
 if __name__ == "__main__":
     main()

@@ -32,7 +32,6 @@ setup(
         "mlx_acoustic_worker",
         "intake_reconciler",
         "kokoro_synthesizer",
-        "local_publisher",
         "pdf_intake_normalizer",
         "publisher",
         "reader_theme",

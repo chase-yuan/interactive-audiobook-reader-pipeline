@@ -202,6 +202,22 @@ class ElementMergeDehyphenationTests(unittest.TestCase):
             res_start = extract_chapter_from_epub(epub_path, "test.html::start=Part 2", out_json)
             self.assertEqual([x["text"] for x in res_start], ["Part 2", "Second section.", "Part 3", "Third section."])
 
+    def test_extract_chapter_marker_ignores_body_text_collision(self):
+        with tempfile.TemporaryDirectory() as td:
+            epub_path = os.path.join(td, "collision.epub")
+            out_json = os.path.join(td, "collision_out.json")
+            long_body_para = "<p>In this comprehensive introductory treatise we explore how the concepts of Part 2 were originally drafted in an earlier volume before the author revised the complete taxonomy.</p>"
+            with zipfile.ZipFile(epub_path, "w") as z:
+                z.writestr("test.html", f"<html><body><h1>Part 1</h1><p>First section.</p>{long_body_para}<p>Still section 1.</p><h1>Part 2</h1><p>Second section.</p></body></html>")
+
+            # stop=Part 2 must NOT trigger on the long body paragraph, but on <h1>Part 2</h1>
+            res_stop = extract_chapter_from_epub(epub_path, "test.html::stop=Part 2", out_json)
+            self.assertEqual(len(res_stop), 4)
+            self.assertEqual(res_stop[0]["text"], "Part 1")
+            self.assertEqual(res_stop[1]["text"], "First section.")
+            self.assertIn("In this comprehensive introductory treatise", res_stop[2]["text"])
+            self.assertEqual(res_stop[3]["text"], "Still section 1.")
+
 
 if __name__ == "__main__":
     unittest.main()

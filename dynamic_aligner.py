@@ -113,15 +113,22 @@ NUMBER_PHRASE_VARIANTS = (
 ROMAN_NUMERAL_MAP = {
     "i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5",
     "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10",
-    "xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15"
+    "xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15",
+    "xvi": "16", "xvii": "17", "xviii": "18", "xix": "19", "xx": "20",
+    "xxi": "21", "xxii": "22", "xxiii": "23", "xxiv": "24", "xxv": "25",
+    "xxvi": "26", "xxvii": "27", "xxviii": "28", "xxix": "29", "xxx": "30",
+    "xxxi": "31", "xxxii": "32", "xxxiii": "33", "xxxiv": "34", "xxxv": "35",
+    "xxxvi": "36", "xxxvii": "37", "xxxviii": "38", "xxxix": "39", "xl": "40",
+    "xli": "41", "xlii": "42", "xliii": "43", "xliv": "44", "xlv": "45",
+    "xlvi": "46", "xlvii": "47", "xlviii": "48", "xlix": "49", "l": "50"
 }
 
 def tokenize_clean(text):
     # Strip footnote reference citations attached to punctuation (e.g. Reserve.1, business.”2, Doddsville.3)
     normalized = re.sub(r'(?<=[.!?\"\'”’\)])\d+\b', '', str(text))
     normalized = normalized.lower().replace("’", "'").replace("…", " ").replace("%", " percent ")
-    # Convert Roman numerals followed by period in headings/numbers into digits (e.g. 'I.' -> '1.')
-    normalized = re.sub(r'\b([ivx]+)\.(?=\s|$)', lambda m: ROMAN_NUMERAL_MAP.get(m.group(1).lower(), m.group(1)) + '.', normalized)
+    # Convert Roman numerals followed by period in headings/numbers into digits (e.g. 'I.' -> '1.', 'XXI.' -> '21.')
+    normalized = re.sub(r'\b([ivxl]+)\.(?=\s|$)', lambda m: ROMAN_NUMERAL_MAP.get(m.group(1).lower(), m.group(1)) + '.', normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     for phrase, canonical in ASR_PHRASE_VARIANTS + NUMBER_PHRASE_VARIANTS:
         normalized = re.sub(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", canonical, normalized)

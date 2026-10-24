@@ -206,6 +206,14 @@ class AcousticAlignmentRemediationTests(unittest.TestCase):
             self.assertFalse(results[1]["has_audio_match"])
             self.assertTrue(results[1]["is_tabular"])
 
+    def test_roman_numeral_conversion_up_to_fifty(self):
+        """Test Roman numeral expansion up to 50 (I through L) for heading normalization."""
+        from dynamic_aligner import tokenize_clean
+        self.assertEqual(tokenize_clean("Chapter XVI."), ["chapter", "16"])
+        self.assertEqual(tokenize_clean("Chapter XXI."), ["chapter", "21"])
+        self.assertEqual(tokenize_clean("Chapter XXXIV."), ["chapter", "34"])
+        self.assertEqual(tokenize_clean("Chapter L."), ["chapter", "50"])
+
 
 if __name__ == "__main__":
     unittest.main()

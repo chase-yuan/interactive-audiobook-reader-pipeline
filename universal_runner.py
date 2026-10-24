@@ -857,11 +857,6 @@ def build_reader_pipeline(
             raise SystemExit(1)
         print(f"[UNIVERSAL RUNNER -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
 
-        keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
-        if keygen_script.is_file():
-            print("\n[UNIVERSAL RUNNER -> KEYGEN] Emitting production passkey and dispatch copy...")
-            subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
-
     if open_in_browser and not publish:
         try:
             if sys.platform == "darwin":
