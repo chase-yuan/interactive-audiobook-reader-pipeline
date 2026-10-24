@@ -647,6 +647,16 @@ if (playerScrubber) {
 
 let isProgrammaticAutoScroll = false;
 let programmaticScrollTimer = null;
+let isKeyboardNavigating = false;
+let keyboardNavTimer = null;
+
+function setKeyboardNavigating() {
+  isKeyboardNavigating = true;
+  if (keyboardNavTimer) clearTimeout(keyboardNavTimer);
+  keyboardNavTimer = setTimeout(() => {
+    isKeyboardNavigating = false;
+  }, 1200);
+}
 
 function performAutoScroll(element) {
   if (!element || typeof element.scrollIntoView !== 'function') return;
@@ -685,6 +695,7 @@ function scheduleMainDockHide() {
 }
 
 function showMainDock() {
+  if (focusModeActive || pocketModeActive || isKeyboardNavigating) return;
   const dock = document.getElementById('bottomControlDock');
   if (!dock) return;
   dock.classList.remove('dock-idle-hidden');
@@ -693,11 +704,25 @@ function showMainDock() {
 
 function onUserDockActivity() {
   const e = arguments[0];
-  if (isProgrammaticAutoScroll && e && (e.type === 'scroll' || e.type === 'pointermove')) {
-    return;
-  }
-  if (e && (e.type === 'pointerdown' || e.type === 'touchstart')) {
-    isProgrammaticAutoScroll = false;
+  if (focusModeActive || pocketModeActive || isKeyboardNavigating) return;
+  if (isProgrammaticAutoScroll) return;
+  
+  if (e) {
+    if (e.type === 'scroll') {
+      // AP5 Ergonomic Flow: Natural reading page scroll must NEVER pop open player dock
+      return;
+    }
+    if (e.type === 'pointermove') {
+      // Reveal dock only when pointer enters the bottom activation strip (bottom 72px) or is over the dock
+      const dock = document.getElementById('bottomControlDock');
+      const isNearBottom = (typeof e.clientY === 'number') ? (e.clientY >= window.innerHeight - 72) : false;
+      if (!isNearBottom && !(dock && dock._isMouseOver)) {
+        return;
+      }
+    }
+    if (e.type === 'pointerdown' || e.type === 'touchstart') {
+      isProgrammaticAutoScroll = false;
+    }
   }
   showMainDock();
 }
@@ -1761,7 +1786,7 @@ function advanceShadowing() {
       nextSentence.classList.add('active', 'card-collapsed');
       updateFocusStatus();
       updateFocusSentenceDisplay();
-      if (autoScrollEnabled) {
+      if (autoScrollEnabled && !focusModeActive && !pocketModeActive) {
         const rect = nextSentence.getBoundingClientRect();
         const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
         if (!inView) {
@@ -1802,7 +1827,7 @@ function advanceShadowing() {
       shadowState.pauseStartTime = Date.now();
       armShadowPauseWatchdog();
       nextSentence.classList.add('active', 'card-collapsed');
-      if (autoScrollEnabled) {
+      if (autoScrollEnabled && !focusModeActive && !pocketModeActive) {
         const rect = nextSentence.getBoundingClientRect();
         const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
         if (!inView) {
@@ -1975,7 +2000,7 @@ function cycleFocusRepetitions(e) {
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) repBtn.textContent = `${nextRep}×`;
   updateFocusStatus();
-  scheduleFocusDockHide();
+  scheduleFocusDockHide(true);
 }
 
 function updateFocusStatus() {
@@ -2230,9 +2255,14 @@ const handlePocketTouchEnd = handleFocusTouchEnd;
 let focusDockHideTimer = null;
 
 function scheduleFocusDockHide() {
+  const forceReset = arguments[0];
   const dock = document.getElementById('focusDock');
   if (!dock) return;
   if (dock.classList.contains('dock-hidden')) return;
+  if (forceReset && focusDockHideTimer) {
+    clearTimeout(focusDockHideTimer);
+    focusDockHideTimer = null;
+  }
   if (focusDockHideTimer) return;
 
   const isAudioActive = audio && (!audio.paused || shadowState.isInternalPause);
@@ -2250,6 +2280,7 @@ function scheduleFocusDockHide() {
 }
 
 function showFocusDock() {
+  if (isKeyboardNavigating) return;
   const dock = document.getElementById('focusDock');
   if (dock) dock.classList.remove('dock-hidden');
   if (focusDockHideTimer) {
@@ -2273,6 +2304,8 @@ function toggleFocusMode(force) {
   }
   
   if (focusModeActive) {
+    const bottomDock = document.getElementById('bottomControlDock');
+    if (bottomDock) bottomDock.classList.add('dock-idle-hidden');
     initFocusPreferences();
     showFocusDock();
     const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
@@ -2547,7 +2580,7 @@ audio.addEventListener('error', (err) => {
   }
 });
 audio.addEventListener('ended', () => {
-  if (focusModeActive) {
+  if (focusModeActive && shadowState.phase === 'idle') {
     showFocusDock();
   }
   if (shadowState.phase !== 'idle') {
@@ -2709,6 +2742,12 @@ window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) {
     return;
   }
+  setKeyboardNavigating();
+  isProgrammaticAutoScroll = true;
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+  programmaticScrollTimer = setTimeout(() => {
+    isProgrammaticAutoScroll = false;
+  }, 1200);
 
   if (focusModeActive || pocketModeActive) {
     if (e.key === 'Escape') {
@@ -2919,8 +2958,10 @@ initMediaSession();
 updateMediaSessionMetadata();
 const focusOverlayEl = document.getElementById('focus-overlay');
 if (focusOverlayEl) {
-  focusOverlayEl.addEventListener('pointermove', () => {
-    if (focusModeActive) showFocusDock();
+  focusOverlayEl.addEventListener('pointermove', (e) => {
+    if (focusModeActive && typeof e.clientY === 'number' && e.clientY >= window.innerHeight - 64) {
+      showFocusDock();
+    }
   });
   focusOverlayEl.addEventListener('pointerdown', () => {
     if (focusModeActive) showFocusDock();
@@ -2928,7 +2969,8 @@ if (focusOverlayEl) {
 }
 const focusDockEl = document.getElementById('focusDock');
 if (focusDockEl) {
-  focusDockEl.addEventListener('pointerdown', () => {
+  focusDockEl.addEventListener('pointerdown', (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
     showFocusDock();
   });
 }

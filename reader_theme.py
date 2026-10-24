@@ -469,7 +469,7 @@ body {
 }
 
 .dock-play-btn:active {
-  transform: scale(0.96);
+  opacity: 0.88;
 }
 
 .dock-chip {
@@ -499,7 +499,7 @@ body {
 }
 
 .dock-chip:active {
-  transform: scale(0.96);
+  opacity: 0.88;
 }
 
 .dock-chip.active {
@@ -679,7 +679,7 @@ body {
 }
 
 .theme-dot:hover {
-  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .theme-dot.active {
@@ -1136,7 +1136,7 @@ body {
 }
 
 .pill-btn:active {
-  transform: scale(0.98);
+  opacity: 0.88;
 }
 
 .pill-btn.active {

@@ -565,6 +565,31 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertEqual(meta_plain["author"], "Author")
             self.assertEqual(meta_plain["subtitle"], "Bilingual Synchronized Reader")
 
+    def test_keyboard_nav_and_focus_repeat_dock_immunity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Dock Immunity Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # 1. Keyboard navigation flag & timer
+            self.assertIn("let isKeyboardNavigating = false;", rendered)
+            self.assertIn("function setKeyboardNavigating()", rendered)
+            self.assertIn("setKeyboardNavigating();", rendered)
+            # 2. Main dock suppressed on scroll and keyboard navigation
+            self.assertIn("if (focusModeActive || pocketModeActive || isKeyboardNavigating) return;", rendered)
+            self.assertIn("if (e.type === 'scroll')", rendered)
+            self.assertIn("window.innerHeight - 72", rendered)
+            # 3. Focus mode dock autohide force reset & ended check
+            self.assertIn("if (focusModeActive && shadowState.phase === 'idle')", rendered)
+            self.assertIn("window.innerHeight - 64", rendered)
+            self.assertIn("scheduleFocusDockHide(true);", rendered)
+
 
 
 
