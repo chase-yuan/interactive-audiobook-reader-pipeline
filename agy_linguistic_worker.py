@@ -203,7 +203,13 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
         try:
             cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
             verify_analysis(cached_data, batch)
-            return cached_data
+            merged_cached = []
+            for idx, c_item in enumerate(cached_data):
+                if idx < len(batch) and batch[idx].get("id") == c_item.get("id"):
+                    merged_cached.append({**batch[idx], **c_item})
+                else:
+                    merged_cached.append(c_item)
+            return merged_cached
         except Exception:
             pass
 
@@ -292,7 +298,10 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                 rec = returned_map[item["id"]]
                 if rec.get("text") != item.get("text") and can_reconcile_text(rec.get("text"), item.get("text")):
                     rec["text"] = item.get("text")
-                ordered_batch.append(rec)
+                # Structural Continuity Invariant: preserve canonical layout metadata
+                # (elem_idx, is_heading, is_tabular, tag) from item into analysis record
+                merged_rec = {**item, **rec}
+                ordered_batch.append(merged_rec)
             verify_analysis(ordered_batch, batch)
             try:
                 atomic_write_json(cache_file, ordered_batch)

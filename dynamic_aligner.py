@@ -809,11 +809,40 @@ def _leading_epigraph_attributions(sentences, acoustic_words, ac_tokens, ac_map,
         "alignment_reason": "leading_narrator_prefix", "fallback_used": False,
     }}
 
-def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_out_path, audio_path=None):
+def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_out_path, audio_path=None, canonical_json_path=None):
     with open(analysis_json_path, "r", encoding="utf-8") as f:
         sentences = json.load(f)
     with open(acoustic_json_path, "r", encoding="utf-8") as f:
         acoustic_data = json.load(f)
+
+    # Ground-Truth Topology Resolution: Inherit canonical layout metadata (elem_idx, is_heading, tag, is_tabular)
+    canonical_meta = {}
+    if canonical_json_path is None:
+        cand = str(analysis_json_path).replace("_full_analysis.json", "_canonical_sentences.json").replace("_linguistic_analysis.json", "_canonical_sentences.json")
+        if os.path.isfile(cand):
+            canonical_json_path = cand
+    if canonical_json_path and os.path.isfile(canonical_json_path):
+        try:
+            with open(canonical_json_path, "r", encoding="utf-8") as cf:
+                for c_item in json.load(cf):
+                    cid = c_item.get("id")
+                    if cid:
+                        canonical_meta[cid] = c_item
+        except Exception:
+            pass
+
+    for s in sentences:
+        cid = s.get("id")
+        if cid in canonical_meta:
+            c = canonical_meta[cid]
+            if s.get("elem_idx") is None and c.get("elem_idx") is not None:
+                s["elem_idx"] = c.get("elem_idx")
+            if "is_heading" not in s and "is_heading" in c:
+                s["is_heading"] = c.get("is_heading")
+            if "is_tabular" not in s and "is_tabular" in c:
+                s["is_tabular"] = c.get("is_tabular")
+            if "tag" not in s and "tag" in c:
+                s["tag"] = c.get("tag")
         
     acoustic_words = acoustic_data.get("words", [])
     total_ac = len(acoustic_words)

@@ -134,7 +134,8 @@ def auto_heal_canonical_quotes(items: list[dict]) -> list[dict]:
     
     In English publishing, multi-paragraph quotes or OCR artifacts sometimes leave
     an odd count of straight quotes or unmatched curly quotes. This healer closes
-    the discourse quote so physical release gates pass cleanly without syntax blocking.
+    the discourse quote so physical release gates pass cleanly without syntax blocking,
+    while defensively preventing duplicate/corrupted quotes (e.g. `""` or `””`).
     """
     if not items:
         return items
@@ -142,12 +143,38 @@ def auto_heal_canonical_quotes(items: list[dict]) -> list[dict]:
     open_curly = full_text.count("“") - full_text.count("”")
     open_straight = full_text.count('"') % 2
 
+    last_text = items[-1].get("text", "").rstrip()
+
     if open_straight == 1:
-        items[-1]["text"] = items[-1]["text"].rstrip() + '"'
+        if not last_text.endswith(('"', '”', "’")):
+            items[-1]["text"] = last_text + '"'
+        else:
+            for it in reversed(items):
+                t = it.get("text", "").rstrip()
+                if t.count('"') % 2 == 1 and not t.endswith(('"', '”')):
+                    it["text"] = t + '"'
+                    break
+
     if open_curly > 0:
-        items[-1]["text"] = items[-1]["text"].rstrip() + ("”" * open_curly)
+        if not last_text.endswith(('"', '”', "’")):
+            items[-1]["text"] = last_text + ("”" * min(open_curly, 2))
+        else:
+            for it in reversed(items):
+                t = it.get("text", "").rstrip()
+                if (t.count("“") - t.count("”")) > 0 and not t.endswith(('"', '”')):
+                    it["text"] = t + "”"
+                    break
     elif open_curly < 0:
-        items[0]["text"] = ("“" * (-open_curly)) + items[0]["text"].lstrip()
+        first_text = items[0].get("text", "").lstrip()
+        if not first_text.startswith(('"', '“', "‘")):
+            items[0]["text"] = ("“" * min(-open_curly, 2)) + first_text
+        else:
+            for it in items:
+                t = it.get("text", "").lstrip()
+                if (t.count("”") - t.count("“")) > 0 and not t.startswith(('"', '“')):
+                    it["text"] = "“" + t
+                    break
+
     return items
 
 
@@ -195,6 +222,21 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
         if curr_group:
             groups.append(curr_group)
 
+        # 3a. Whole-chapter abnormal single-sentence density gate (catches legacy 1-to-1 elem_idx shredding)
+        prose_groups = [g for g in groups if not g[0].get("is_heading")]
+        if len(prose_groups) >= 15:
+            single_prose = [
+                g for g in prose_groups
+                if len(g) == 1 and not g[0].get("text", "").strip().startswith(("“", "\"", "‘", "'"))
+            ]
+            density_ratio = len(single_prose) / len(prose_groups)
+            if density_ratio > 0.70:
+                issues.append(
+                    f"Abnormal single-sentence paragraph density ({density_ratio:.1%}, "
+                    f"{len(single_prose)}/{len(prose_groups)} paragraphs: legacy 1-to-1 elem_idx fragmentation detected)"
+                )
+
+        # 3b. Local consecutive single-sentence expository explosion gate
         consecutive_single_prose = []
         for g in groups:
             if len(g) == 1:
@@ -203,19 +245,20 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 is_h = it.get("is_heading", False)
                 is_dialogue = text.startswith(("“", "\"", "‘", "'")) or text.endswith(("”", "\"", "’"))
                 is_list = bool(re.match(r"^(\d+[\.\)]|[a-zA-Z][\.\)]|[-•*])\s+", text))
+                is_numeric_fact = bool(re.match(r"^[\d,.]+\s+", text))
                 is_short = len(text.split()) < 6
-                if not is_h and not is_dialogue and not is_list and not is_short:
+                if not is_h and not is_dialogue and not is_list and not is_numeric_fact and not is_short:
                     consecutive_single_prose.append(it.get("id", "?"))
                 else:
-                    if len(consecutive_single_prose) >= 4:
+                    if len(consecutive_single_prose) >= 8:
                         issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
                     consecutive_single_prose = []
             else:
-                if len(consecutive_single_prose) >= 4:
+                if len(consecutive_single_prose) >= 8:
                     issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
                 consecutive_single_prose = []
 
-        if len(consecutive_single_prose) >= 4:
+        if len(consecutive_single_prose) >= 8:
             issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
 
     return issues
@@ -384,6 +427,16 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                                 for i in range(len(data)):
                                     a_data[i]["text"] = data[i]["text"]
                                 analysis.write_text(json.dumps(a_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                        except Exception:
+                            pass
+                    aligned_path = book_dir / canonical.name.replace("_canonical_sentences.json", "_aligned_sentences.json")
+                    if aligned_path.exists():
+                        try:
+                            alg_data = json.loads(aligned_path.read_text(encoding="utf-8"))
+                            if isinstance(alg_data, list) and len(alg_data) == len(data):
+                                for i in range(len(data)):
+                                    alg_data[i]["text"] = data[i]["text"]
+                                aligned_path.write_text(json.dumps(alg_data, indent=2, ensure_ascii=False), encoding="utf-8")
                         except Exception:
                             pass
         if ortho_issues:
@@ -679,6 +732,10 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             1 for item in aligned_data
             if item.get("alignment_status") == "not-applicable"
             and item.get("alignment_reason") in {"non_narrated_content", "non_narrated_text", "duplicate_source_fragment", "out_of_scope_reference"}
+            and not item.get("editorial_omission")
+            and not item.get("is_print_only")
+            and not item.get("is_back_matter")
+            and not (item.get("non_narrated_evidence") or {}).get("basis") in {"publisher_back_matter", "structural_tabular"}
         )
         non_narrated_ratio = non_narrated_records / len(aligned_data) if aligned_data else 0.0
         is_excessive_omission = (

@@ -515,7 +515,16 @@ def align_complete_audio_chapters(
         aligned_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
         acoustic_path = target_audio_dir / f"{prefix}_ch{num:02d}_acoustic_words.json"
 
-        if not force and aligned_path.is_file() and aligned_path.stat().st_size > 100:
+        can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
+        needs_realign = force or not (aligned_path.is_file() and aligned_path.stat().st_size > 100)
+        if not needs_realign:
+            # Shift-Left Cache Invalidation: Re-align if canonical or analysis ground truth has been updated
+            if can_path.is_file() and can_path.stat().st_mtime > aligned_path.stat().st_mtime:
+                needs_realign = True
+            elif analysis_path.is_file() and analysis_path.stat().st_mtime > aligned_path.stat().st_mtime:
+                needs_realign = True
+
+        if not needs_realign:
             return True
 
         if not acoustic_path.is_file() or acoustic_path.stat().st_size < 100:

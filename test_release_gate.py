@@ -498,6 +498,72 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertEqual(len(rep["chapters"]), 1)
             self.assertEqual(rep["chapters"][0]["chapter"], 1)
 
+    def test_punchy_style_book_passes_release_gate(self):
+        # Enforce that modern punchy authors (like Morgan Housel) pass the release gate cleanly
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+
+            c1 = [
+                {"id": "s-1", "text": "This is an opening sentence.", "elem_idx": 1, "is_heading": False},
+                {"id": "s-2", "text": "This is a supporting sentence.", "elem_idx": 1, "is_heading": False},
+                {"id": "s-3", "text": "The lesson here is not to be like Ronald.", "elem_idx": 2, "is_heading": False},
+                {"id": "s-4", "text": "The fascinating thing about finance is its uniqueness.", "elem_idx": 3, "is_heading": False},
+                {"id": "s-5", "text": "I struggle to think of any other field.", "elem_idx": 4, "is_heading": False},
+                {"id": "s-6", "text": "This is a concluding sentence in a multi-sentence paragraph.", "elem_idx": 5, "is_heading": False},
+                {"id": "s-7", "text": "It proves the central argument of the chapter.", "elem_idx": 5, "is_heading": False},
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = []
+            for idx, item in enumerate(a1):
+                alg1.append({
+                    **item,
+                    "word_spans": [{"word": item["text"].split()[0], "start": float(idx), "end": float(idx) + 0.8, "timing_source": "observed"}],
+                    "raw_start": float(idx), "raw_end": float(idx) + 0.8,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": len(item["text"].split()),
+                    "source_token_count": len(item["text"].split()), "match_ratio": 1.0,
+                })
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            self.assertEqual(validate(root, rep_path), 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+
+    def test_legacy_1to1_shredding_blocks_release_gate(self):
+        # Enforce that legacy 1-to-1 shredded books (where every sentence is its own paragraph) are caught
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+
+            c1 = [
+                {"id": f"s-{i}", "text": f"This is an isolated single-sentence prose paragraph number {i}.", "elem_idx": i, "is_heading": False}
+                for i in range(20)
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = []
+            for idx, item in enumerate(a1):
+                alg1.append({
+                    **item,
+                    "word_spans": [{"word": "This", "start": float(idx), "end": float(idx) + 0.8, "timing_source": "observed"}],
+                    "raw_start": float(idx), "raw_end": float(idx) + 0.8,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 9,
+                    "source_token_count": 9, "match_ratio": 1.0,
+                })
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            self.assertNotEqual(validate(root, rep_path), 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertFalse(rep["release_ready"])
+            self.assertTrue(any("abnormal single-sentence paragraph density" in err.lower() for err in rep["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main()

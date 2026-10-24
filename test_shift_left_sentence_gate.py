@@ -86,10 +86,33 @@ class ShiftLeftSentenceGateTests(unittest.TestCase):
     def test_consecutive_single_sentence_anomaly_fails_gate(self):
         items = [
             {"id": f"s-{i}", "text": f"This is an isolated single-sentence prose paragraph number {i}.", "elem_idx": i, "is_heading": False}
-            for i in range(5)
+            for i in range(10)
         ]
         issues = validate_canonical_sentences(items)
         self.assertTrue(any("consecutive single-sentence paragraph explosion" in iss.lower() for iss in issues))
+
+    def test_punchy_author_style_passes_gate(self):
+        # Authors like Morgan Housel intentionally write 3-4 punchy single-sentence paragraphs
+        items = [
+            {"id": "s-0", "text": "This is the first sentence of an opening paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": "This is the second sentence of the opening paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-2", "text": "The lesson here is not to be more like Ronald and less like Richard.", "elem_idx": 2, "is_heading": False},
+            {"id": "s-3", "text": "The fascinating thing about these stories is how unique they are to finance.", "elem_idx": 3, "is_heading": False},
+            {"id": "s-4", "text": "I struggle to think of any other industry with this dynamic.", "elem_idx": 4, "is_heading": False},
+            {"id": "s-5", "text": "This is a closing multi-sentence paragraph.", "elem_idx": 5, "is_heading": False},
+            {"id": "s-6", "text": "It concludes the discussion with strong supporting evidence.", "elem_idx": 5, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertEqual(issues, [])
+
+    def test_abnormal_single_sentence_density_fails_gate(self):
+        # Legacy books where elem_idx was mapped 1-to-1 for every sentence (e.g. Financial Intelligence)
+        items = [
+            {"id": f"s-{i}", "text": f"This is a prose sentence from an old OCR transcription number {i}.", "elem_idx": i, "is_heading": False}
+            for i in range(25)
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("abnormal single-sentence paragraph density" in iss.lower() for iss in issues))
 
     def test_cohesive_paragraphs_pass_gate(self):
         items = [

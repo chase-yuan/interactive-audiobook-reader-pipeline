@@ -423,6 +423,61 @@ def extract_book_metadata(target: Path | str) -> Dict[str, str]:
     }
 
 
+def reconstruct_legacy_paragraphs(canonical_items: List[Dict], target_sentences: int = 4) -> List[Dict]:
+    """Reconstruct natural book paragraphs for legacy books where elem_idx was mapped 1-to-1 to sentences.
+    
+    Detects if > 85% of sentences have individual, unique elem_idx values (legacy artificial shredding),
+    and clusters adjacent non-heading prose sentences into cohesive 3-5 sentence book paragraphs.
+    """
+    if not canonical_items:
+        return canonical_items
+
+    unique_elems = set(it.get("elem_idx") for it in canonical_items if it.get("elem_idx") is not None)
+    is_shredded = len(canonical_items) >= 15 and (len(unique_elems) / len(canonical_items)) > 0.85
+    if not is_shredded:
+        return canonical_items
+
+    new_items = []
+    current_elem = 0
+    current_count = 0
+    current_words = 0
+
+    for it in canonical_items:
+        new_it = dict(it)
+        text = str(it.get("text", "")).strip()
+        is_h = bool(it.get("is_heading"))
+        is_quote = text.startswith(("“", "\"", "‘", "'"))
+        is_div = text in ("* * *", "***", "---", "• • •")
+        word_count = len(text.split())
+
+        if is_h or is_div:
+            current_elem += 1
+            new_it["elem_idx"] = current_elem
+            new_items.append(new_it)
+            current_elem += 1
+            current_count = 0
+            current_words = 0
+            continue
+
+        should_break = False
+        if current_count >= target_sentences or current_words >= 80:
+            should_break = True
+        elif is_quote and current_count >= 2:
+            should_break = True
+
+        if should_break and current_count > 0:
+            current_elem += 1
+            current_count = 0
+            current_words = 0
+
+        new_it["elem_idx"] = current_elem
+        new_items.append(new_it)
+        current_count += 1
+        current_words += word_count
+
+    return new_items
+
+
 def _print_table(plan: Dict) -> None:
     print("KIND       CHAPTERS                         AUDIO                            CONFIDENCE")
     for row in plan["mappings"]:

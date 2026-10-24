@@ -163,8 +163,11 @@ class AgyLinguisticWorkerTests(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_120_sentence_chunking_and_merging_mock_subprocess(self, mock_run):
-        # 120 canonical sentences
-        canonical = [{"id": f"s-{i:03d}", "text": f"This is sentence {i}."} for i in range(1, 121)]
+        # 120 canonical sentences with paragraph and heading layout metadata
+        canonical = [
+            {"id": f"s-{i:03d}", "text": f"This is sentence {i}.", "elem_idx": i // 3, "is_heading": (i == 1), "tag": "h1" if i == 1 else "p"}
+            for i in range(1, 121)
+        ]
 
         def fake_subprocess_run(cmd, cwd=None, text=None, capture_output=None, timeout=None, **kwargs):
             prompt = cmd[-1]
@@ -228,6 +231,9 @@ class AgyLinguisticWorkerTests(unittest.TestCase):
                 self.assertEqual(record["text"], f"This is sentence {i}.")
                 self.assertEqual(record["trans"], f"这是句子 {expected_id}。")
                 self.assertEqual(record["vocab"], [{"word": "sentence", "pos": "n.", "def": "句子"}])
+                self.assertEqual(record["elem_idx"], i // 3)
+                self.assertEqual(record["is_heading"], (i == 1))
+                self.assertEqual(record["tag"], "h1" if i == 1 else "p")
 
     @patch("subprocess.run")
     def test_subprocess_failure_raises(self, mock_run):

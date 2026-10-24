@@ -177,13 +177,26 @@ def is_heading_element(el: dict) -> bool:
     tag = el.get("tag", "").lower()
     if tag.startswith("h") and len(tag) <= 2 and tag[1:].isdigit():
         return True
+    if tag in ("header", "hgroup"):
+        return True
+    role = el.get("role", "").lower()
+    if role in ("heading", "doc-subtitle", "doc-chapter"):
+        return True
+
     cls = el.get("class", "").lower()
     classes = set(cls.split())
-    heading_markers = {"h", "h1", "h2", "h3", "h4", "h5", "h6", "cn", "fm-co1", "title", "chapter-title", "heading", "subheading", "calibre_12"}
+    heading_patterns = {"h", "h1", "h2", "h3", "h4", "h5", "h6", "cn", "fm-co1", "title", "chapter-title", "heading", "subheading", "section-title", "part-title", "unit-title", "book-title"}
+    has_heading_class = bool(classes & heading_patterns or any(p in cls for p in ["chapter-head", "chap-title", "section-head", "subhead"]))
+
     txt = el.get("text", "").strip()
-    is_short = len(txt.split()) <= 15 and not re.search(r"[.!?…].*[.!?…]", txt)
-    if is_short and (classes & heading_markers or cls in heading_markers):
+    is_short = len(txt.split()) <= 18 and not re.search(r"[.!?…].*[.!?…]", txt)
+    if is_short and has_heading_class:
         return True
+
+    # Detect speech, lecture, or numbered section headings e.g. "Talk 11: ...", "Rule 3: ...", "Principle 5: ..."
+    if re.match(r"^(Talk|Speech|Lecture|Chapter|Part|Section|Rule|Principle)\s+\d+\b", txt, re.IGNORECASE) and len(txt.split()) <= 25:
+        return True
+
     return is_title_text(txt)
 
 
