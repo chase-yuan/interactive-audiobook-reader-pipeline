@@ -31,6 +31,7 @@ from quality_gate import smoke_check_html
 from artifact_io import atomic_write_json
 from chapter_metadata import load_chapter_metadata
 from content_profile import COMPLETE, load_content_profile
+from intake_reconciler import extract_book_metadata
 
 
 def _run_align_worker(task):
@@ -162,60 +163,13 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
     audio_dir = os.path.join(book_dir, "audio")
     
     # Auto-infer book metadata if omitted
-    folder_name = os.path.basename(book_dir)
-    
-    # Try discovering rich book metadata from ebook/ folder if present
-    ebook_dir = os.path.join(book_dir, "ebook")
-    if os.path.isdir(ebook_dir) and (not book_title or not book_author or book_author == "Author"):
-        for fname in sorted(os.listdir(ebook_dir)):
-            if fname.lower().endswith(".epub"):
-                epub_file = os.path.join(ebook_dir, fname)
-                try:
-                    import zipfile
-                    import xml.etree.ElementTree as ET
-                    with zipfile.ZipFile(epub_file, 'r') as z:
-                        for n in z.namelist():
-                            if n.endswith('.opf'):
-                                tree = ET.fromstring(z.read(n))
-                                ns = {'dc': 'http://purl.org/dc/elements/1.1/'}
-                                t_el = tree.find('.//dc:title', ns)
-                                c_el = tree.find('.//dc:creator', ns)
-                                if t_el is not None and t_el.text and not book_title:
-                                    raw_epub_title = t_el.text.strip()
-                                    if ":" in raw_epub_title:
-                                        p = raw_epub_title.split(":", 1)
-                                        book_title = p[0].strip()
-                                        if not book_subtitle or book_subtitle == "Bilingual Synchronized Reader":
-                                            book_subtitle = p[1].strip()
-                                    else:
-                                        book_title = raw_epub_title
-                                if c_el is not None and c_el.text and (not book_author or book_author == "Author"):
-                                    book_author = c_el.text.strip()
-                                break
-                except Exception:
-                    pass
-                if book_title and book_author and book_author != "Author":
-                    break
-            elif " - " in fname and (not book_author or book_author == "Author"):
-                stem = os.path.splitext(fname)[0]
-                ef_parts = stem.split(" - ")
-                if len(ef_parts) > 1 and (not book_author or book_author == "Author"):
-                    book_author = ef_parts[1].strip()
-                if not book_title and ef_parts[0].strip():
-                    cand = ef_parts[0].replace("_", " ").strip()
-                    if cand:
-                        book_title = cand
-
-    if " - " in folder_name and (not book_title or not book_author):
-        parts = folder_name.split(" - ")
-        if not book_title:
-            book_title = parts[0].strip()
-        if not book_author:
-            book_author = parts[1].strip()
-    elif not book_title:
-        book_title = folder_name
-    if not book_author:
-        book_author = "Author"
+    inferred_meta = extract_book_metadata(book_dir)
+    if not book_title:
+        book_title = inferred_meta["title"]
+    if not book_subtitle:
+        book_subtitle = inferred_meta["subtitle"]
+    if not book_author or book_author == "Author":
+        book_author = inferred_meta["author"]
         
     master_html_name = f"{book_title.replace(' ', '_')}_Interactive_Reader.html"
     master_html_path = os.path.join(book_dir, master_html_name)

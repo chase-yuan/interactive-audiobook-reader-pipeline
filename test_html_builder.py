@@ -528,6 +528,42 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertNotIn('repBtn.setAttribute(\'title\'', rendered)
             # 6. Zero toast callers
             self.assertIn('#reader-toast {\n  display: none !important;\n}', rendered)
+            # 7. Scrubber touch release safety (iOS Safari dropped change event defense)
+            self.assertIn("function commitScrubberChange()", rendered)
+            self.assertIn("playerScrubber.addEventListener('touchend', commitScrubberChange", rendered)
+            self.assertIn("playerScrubber.addEventListener('touchcancel'", rendered)
+            self.assertIn("playerScrubber.addEventListener('pointerup', commitScrubberChange", rendered)
+            # 8. Silent reading idle timer (4500ms auto-hide during paused/text-only reading)
+            self.assertIn("DOCK_SILENT_IDLE_DELAY = 4500", rendered)
+            self.assertIn("const delay = isAudioActive ? DOCK_IDLE_DELAY : DOCK_SILENT_IDLE_DELAY;", rendered)
+            self.assertIn("window.addEventListener('scroll', onUserDockActivity", rendered)
+            self.assertIn("document.addEventListener('touchstart', onUserDockActivity", rendered)
+            # 9. Audio recovery retry reset on user interaction (prevent bricking)
+            self.assertIn("audioRecoveryRetries = 0;", rendered)
+            self.assertIn("const MAX_AUDIO_RETRIES = 3;", rendered)
+            # 10. Lock screen background resume immediate sentence latch
+            self.assertIn("if (curSentence.id !== currentPlayingId)", rendered)
+            # 11. Landscape mobile ergonomics media query
+            self.assertIn("@media (max-height: 520px) and (orientation: landscape)", rendered)
+
+    def test_extract_book_metadata_unification(self):
+        from intake_reconciler import extract_book_metadata
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            # Test direct folder name splitting
+            book_dir = tmp_path / "Nassim Nicholas Taleb - Antifragile"
+            book_dir.mkdir()
+            meta = extract_book_metadata(book_dir)
+            self.assertEqual(meta["title"], "Nassim Nicholas Taleb")
+            self.assertEqual(meta["author"], "Antifragile")
+
+            # Test standard folder
+            plain_dir = tmp_path / "Antifragile"
+            plain_dir.mkdir()
+            meta_plain = extract_book_metadata(plain_dir)
+            self.assertEqual(meta_plain["title"], "Antifragile")
+            self.assertEqual(meta_plain["author"], "Author")
+            self.assertEqual(meta_plain["subtitle"], "Bilingual Synchronized Reader")
 
 
 

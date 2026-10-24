@@ -481,6 +481,8 @@ let pocketModeActive = false;
 let isUserSeeking = false;
 let targetSeekTime = -1;
 let seekWatchdogTimer = null;
+let audioRecoveryRetries = 0;
+const MAX_AUDIO_RETRIES = 3;
 
 function setUserSeeking(active, targetTime) {
   isUserSeeking = active;
@@ -502,6 +504,7 @@ function setUserSeeking(active, targetTime) {
 
 function safePlay(audioEl) {
   if (!audioEl) return;
+  audioRecoveryRetries = 0;
   const p = audioEl.play();
   if (p && typeof p.catch === 'function') {
     p.catch(function(err) {
@@ -599,6 +602,16 @@ function updateAudioPlayerUI() {
 }
 
 if (playerScrubber) {
+  function commitScrubberChange() {
+    if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
+      try {
+        audio.currentTime = (parseFloat(playerScrubber.value) / 100) * audio.duration;
+      } catch(e) {}
+    }
+    isUserScrubbing = false;
+    scheduleMainDockHide();
+  }
+
   playerScrubber.addEventListener('input', () => {
     isUserScrubbing = true;
     if (dockIdleTimer) {
@@ -612,15 +625,23 @@ if (playerScrubber) {
       if (playerCurTime) playerCurTime.textContent = formatAudioTime(targetSec);
     }
   });
-  playerScrubber.addEventListener('change', () => {
-    if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
-      try {
-        audio.currentTime = (parseFloat(playerScrubber.value) / 100) * audio.duration;
-      } catch(e) {}
-    }
+  playerScrubber.addEventListener('change', commitScrubberChange);
+  playerScrubber.addEventListener('touchend', commitScrubberChange, { passive: true });
+  playerScrubber.addEventListener('touchcancel', () => {
     isUserScrubbing = false;
     scheduleMainDockHide();
+  }, { passive: true });
+  playerScrubber.addEventListener('pointerup', commitScrubberChange);
+  window.addEventListener('pointerup', () => {
+    if (isUserScrubbing) {
+      commitScrubberChange();
+    }
   });
+  window.addEventListener('touchend', () => {
+    if (isUserScrubbing) {
+      commitScrubberChange();
+    }
+  }, { passive: true });
 }
 
 let isProgrammaticAutoScroll = false;
@@ -638,23 +659,28 @@ function performAutoScroll(element) {
 
 let dockIdleTimer = null;
 const DOCK_IDLE_DELAY = 3500;
+const DOCK_SILENT_IDLE_DELAY = 4500;
 
 function scheduleMainDockHide() {
   if (dockIdleTimer) {
     clearTimeout(dockIdleTimer);
     dockIdleTimer = null;
   }
-  if (!audio || (audio.paused && !shadowState.isInternalPause)) return;
   const dock = document.getElementById('bottomControlDock');
   if (!dock || dock.classList.contains('expanded')) return;
+  if (typeof controlDrawer !== 'undefined' && controlDrawer && controlDrawer.classList.contains('open')) return;
   if (isUserScrubbing) return;
   if (dock._isMouseOver) return;
 
+  const isAudioActive = audio && (!audio.paused || shadowState.isInternalPause);
+  const delay = isAudioActive ? DOCK_IDLE_DELAY : DOCK_SILENT_IDLE_DELAY;
+
   dockIdleTimer = setTimeout(() => {
-    if (!audio || (audio.paused && !shadowState.isInternalPause)) return;
-    if (!dock || dock.classList.contains('expanded') || isUserScrubbing || dock._isMouseOver) return;
-    dock.classList.add('dock-idle-hidden');
-  }, DOCK_IDLE_DELAY);
+    const d = document.getElementById('bottomControlDock');
+    if (!d || d.classList.contains('expanded') || isUserScrubbing || d._isMouseOver) return;
+    if (typeof controlDrawer !== 'undefined' && controlDrawer && controlDrawer.classList.contains('open')) return;
+    d.classList.add('dock-idle-hidden');
+  }, delay);
 }
 
 function showMainDock() {
@@ -669,7 +695,7 @@ function onUserDockActivity() {
   if (isProgrammaticAutoScroll && e && (e.type === 'scroll' || e.type === 'pointermove')) {
     return;
   }
-  if (e && e.type === 'pointerdown') {
+  if (e && (e.type === 'pointerdown' || e.type === 'touchstart')) {
     isProgrammaticAutoScroll = false;
   }
   const dock = document.getElementById('bottomControlDock');
@@ -998,6 +1024,8 @@ window.preloadNextChapterAudio = preloadNextChapterAudio;
 
 function switchChapter(chNum, autoPlay) {
   setUserSeeking(false);
+  // Architectural boundary: Client-side PasskeyGate is an interactive preview guard.
+  // In production delivery, chapters are physically chunk-sliced and access-controlled by publisher.py.
   if (chNum > 2 && typeof window.PasskeyGate !== 'undefined' && !window.PasskeyGate.isUnlocked()) {
     if (audio && !audio.paused) audio.pause();
     if (typeof window.PasskeyGate.openModal === 'function') {
@@ -1420,6 +1448,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
   if (chapterDropdown && chapterDropdown.classList.contains('open')) {
     chapterDropdown.classList.remove('open');
   }
+  audioRecoveryRetries = 0;
   showMainDock();
   const el = document.getElementById(id);
   if (!el) return;
@@ -2469,8 +2498,6 @@ audio.addEventListener('durationchange', updateAudioPlayerUI);
 audio.addEventListener('seeked', () => {
   setUserSeeking(false);
 });
-let audioRecoveryRetries = 0;
-const MAX_AUDIO_RETRIES = 3;
 
 audio.addEventListener('playing', () => {
   audioRecoveryRetries = 0;
@@ -2537,16 +2564,30 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     stopSyncLoop();
   } else {
-    if (shadowState.phase !== 'idle' && audio && !audio.paused) {
+    if (audio && !audio.paused) {
       const curSentence = findSentenceAt(audio.currentTime);
-      if (curSentence && curSentence !== shadowState.sentence) {
-        if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
-        shadowState.sentence = curSentence;
-        shadowState.completed = 0;
-        shadowState.phase = 'playing';
-        curSentence.classList.add('active', 'card-collapsed');
-        if (autoScrollEnabled) {
-          performAutoScroll(curSentence);
+      if (curSentence) {
+        if (shadowState.phase !== 'idle') {
+          if (curSentence !== shadowState.sentence) {
+            if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
+            shadowState.sentence = curSentence;
+            shadowState.completed = 0;
+            shadowState.phase = 'playing';
+            curSentence.classList.add('active', 'card-collapsed');
+            if (autoScrollEnabled) {
+              performAutoScroll(curSentence);
+            }
+          }
+        } else {
+          if (curSentence.id !== currentPlayingId) {
+            const oldUnit = currentPlayingId ? document.getElementById(currentPlayingId) : null;
+            if (oldUnit) oldUnit.classList.remove('active');
+            currentPlayingId = curSentence.id;
+            curSentence.classList.add('active');
+            if (autoScrollEnabled) {
+              performAutoScroll(curSentence);
+            }
+          }
         }
       }
     }
@@ -2855,6 +2896,9 @@ if (focusDockEl) {
 }
 document.addEventListener('pointermove', onUserDockActivity);
 document.addEventListener('pointerdown', onUserDockActivity);
+document.addEventListener('touchstart', onUserDockActivity, { passive: true });
+window.addEventListener('scroll', onUserDockActivity, { passive: true });
+document.addEventListener('keydown', onUserDockActivity);
 const bottomControlDock = document.getElementById('bottomControlDock');
 if (bottomControlDock) {
   bottomControlDock.addEventListener('mouseenter', () => {

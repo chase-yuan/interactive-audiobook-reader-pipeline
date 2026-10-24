@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 PIPELINE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from intake_reconciler import parse_epub
+from intake_reconciler import parse_epub, extract_book_metadata
 from extract_epub import extract_chapter_from_epub
 from agy_linguistic_worker import process_canonical_sentences, PROMPT_PATH, verify_analysis
 from validate_outputs import validate, validate_canonical_sentences

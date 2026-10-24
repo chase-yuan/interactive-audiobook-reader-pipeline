@@ -2004,4 +2004,39 @@ body {
     width: 240px;
   }
 }
+
+/* Landscape Mobile Optimization (Short Viewport Ergonomics) */
+@media (max-height: 520px) and (orientation: landscape) {
+  :root {
+    --font-size-base: 1.05rem;
+    --line-height-base: 1.6;
+  }
+  .reader-container {
+    padding-bottom: calc(var(--space-2xl) + 40px);
+  }
+  .bottom-control-dock {
+    height: 40px;
+    bottom: max(var(--space-2xs), env(safe-area-inset-bottom, 4px));
+    padding: 0 var(--space-sm);
+  }
+  .nav-bar {
+    padding: var(--space-2xs) var(--space-md);
+  }
+  #focus-overlay,
+  #pocket-overlay {
+    padding: max(var(--space-2xs), env(safe-area-inset-top, 4px)) var(--space-md) max(var(--space-2xs), env(safe-area-inset-bottom, 4px)) var(--space-md);
+  }
+  .focus-dock {
+    height: 38px;
+    margin-top: var(--space-xs);
+  }
+  .focus-sentence-text {
+    font-size: 1.12rem;
+    line-height: 1.45;
+  }
+  .focus-sentence-zh {
+    font-size: 0.92rem;
+    margin-top: var(--space-2xs);
+  }
+}
 """
