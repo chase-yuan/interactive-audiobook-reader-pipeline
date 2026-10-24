@@ -284,8 +284,9 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
 
                 is_h = (
                     tag.startswith('h')
-                    or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title')
+                    or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'calibre_', 'calibre_12')
                     or any(c in cls.split() for c in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'heading'))
+                    or (len(txt.split()) <= 4 and not re.search(r"[.!?…]$", txt.strip()) and (txt.isupper() or txt.istitle() or cls in ('calibre_', 'calibre_12')))
                 )
                 
                 is_tabular = bool(el.get("is_tabular")) or bool(re.search(r"Click (?:here )?for a larger image of this (?:table|chart|figure)", txt, re.IGNORECASE))

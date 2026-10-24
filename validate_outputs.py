@@ -110,13 +110,15 @@ def check_sentence_orthography(text: str, is_heading: bool = False, check_standa
         issues.append("Trailing hyphen at line boundary (chopped word)")
 
     if not is_heading:
-        # 2. Lowercase start (unmerged sentence fragment)
-        if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
+        # 2. Lowercase start (unmerged sentence fragment, ignoring parenthesized enumeration bullets like (a), (ii))
+        clean_start = re.sub(r"^\s*\([a-zA-Z0-9ivxLCDM]+\)\s*", "", text_s)
+        if re.match(r"^\s*[\"“‘'(\[]*[a-z]", clean_start):
             issues.append("Sentence starts with lowercase continuation letter")
 
-        # 3. Orphan single word without terminal punctuation
-        words = text_s.split()
-        if len(words) == 1 and not re.search(r"[.!?…”\")\]]$", text_s):
+        # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers)
+        clean_word = re.sub(r"\d+$", "", text_s)
+        words = clean_word.split()
+        if len(words) == 1 and not re.search(r"[.!?…”\")\]]$", clean_word):
             issues.append("Orphan word fragment without terminal punctuation")
 
     if check_standalone_quotes:
