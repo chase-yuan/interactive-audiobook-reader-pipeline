@@ -585,13 +585,16 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn("if (focusModeActive || pocketModeActive || isKeyboardNavigating) return;", rendered)
             self.assertIn("if (e.type === 'scroll')", rendered)
             self.assertIn("window.innerHeight - 72", rendered)
-            # 3. Focus mode dock autohide force reset & ended check
+            # 3. Focus mode dock autohide & ergonomics
             self.assertIn("if (focusModeActive && shadowState.phase === 'idle')", rendered)
             self.assertIn("window.innerHeight - 64", rendered)
             self.assertIn("scheduleFocusDockHide(true);", rendered)
-
-
-
-
-
-
+            # 4. Focus mode: single click replays without waking dock, double click exits
+            self.assertIn("function handleFocusDblClick(e) {\n  if (e && e.stopPropagation) e.stopPropagation();\n  toggleFocusMode(false);\n}", rendered)
+            self.assertIn("function handleFocusSentenceBoxClick(e) {", rendered)
+            self.assertIn("replayCurrentShadowSentence();", rendered)
+            # 5. Mobile chapter menu closes marginalia and blocks collision
+            self.assertIn("function toggleChapterDropdown(event) {\n  if (event && event.stopPropagation) event.stopPropagation();\n  hideMarginalia();", rendered)
+            self.assertIn("if (chapterDropdown && chapterDropdown.classList.contains('open')) return;", rendered)
+            # 6. Auto-hide scheduled on initial page load
+            self.assertIn("scheduleMainDockHide();\n</script>", rendered)

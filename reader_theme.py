@@ -1304,6 +1304,16 @@ body {
   margin-bottom: var(--space-md);
 }
 
+.book-chapter-label {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin-bottom: var(--space-xs);
+}
+
 .book-title {
   font-size: var(--font-size-h1);
   font-weight: 700;

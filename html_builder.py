@@ -77,6 +77,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             'audio': c['audio'],
             'public_audio': c.get('public_audio'),
             'editorial_notice': c.get('editorial_notice'),
+            'aligned_json': c.get('aligned_json'),
             'sentences': sents
         })
         
@@ -90,17 +91,24 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     audio_track_attr = "" if has_audio else ' style="display: none;"'
     repeat_group_attr = "" if has_audio else ' style="display: none;"'
     
-    clean_short_title = re.sub(r'[\(\[]\s*(?:unabridged|audiobook|edition|anniversary|deluxe)\s*[\)\]]', '', book_title, flags=re.I).strip()
+    clean_short_title = re.sub(r'[\(\[]\s*(?:unabridged|audiobook|edition|anniversary|deluxe|version)\s*[\)\]]', '', book_title, flags=re.I).strip()
     for sep in [':', ' - ', ' — ', ' – ']:
         if sep in clean_short_title:
             cand = clean_short_title.split(sep)[0].strip()
             if len(cand) >= 3:
                 clean_short_title = cand
                 break
-    if len(clean_short_title) > 28 and ' ' in clean_short_title:
+    if len(clean_short_title) > 16:
+        for word_sep in [" Things That ", " How to ", " The Story of ", " Why "]:
+            if word_sep.lower() in clean_short_title.lower():
+                clean_short_title = re.split(word_sep, clean_short_title, flags=re.IGNORECASE)[0].strip()
+                break
+    if len(clean_short_title) > 22 and ' ' in clean_short_title:
         words = clean_short_title.split()
-        if len(words) > 3:
-            clean_short_title = " ".join(words[:3])
+        if len(words) >= 2 and len(" ".join(words[:2])) <= 22:
+            clean_short_title = " ".join(words[:2])
+        elif len(words) > 0:
+            clean_short_title = words[0]
 
     html_head = f"""<!DOCTYPE html>
 <html lang="en" data-theme="sepia">
@@ -202,7 +210,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
             valid_flags = []
             # Resolve canonical metadata if available to preserve EPUB paragraph structure and heading hierarchy
-        canonical_path = c.get('aligned_json', '').replace('_aligned_sentences.json', '_canonical_sentences.json')
+        canonical_path = ch.get('aligned_json', '').replace('_aligned_sentences.json', '_canonical_sentences.json')
         canonical_map = {}
         canonical_headings = set()
         if os.path.exists(canonical_path):
@@ -439,7 +447,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   </div>
 </div>
 
-<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
+<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ondblclick="handleFocusDblClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
   <div class="focus-top-bar pocket-header">
     <button class="focus-close-icon pocket-close-icon" id="focusExitBtn" onclick="toggleFocusMode(false)">✕</button>
   </div>
@@ -724,6 +732,13 @@ function onUserDockActivity() {
     }
     if (e.type === 'pointerdown' || e.type === 'touchstart') {
       isProgrammaticAutoScroll = false;
+      const dock = document.getElementById('bottomControlDock');
+      const clientY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
+      const isNearBottom = (typeof clientY === 'number') ? (clientY >= window.innerHeight - 72) : false;
+      const isTargetOnDock = Boolean(dock && e.target && dock.contains(e.target));
+      if (!isNearBottom && !isTargetOnDock) {
+        return;
+      }
     }
   }
   showMainDock();
@@ -820,6 +835,7 @@ window.toggleAutoScrollPill = toggleAutoScrollPill;
 // Chapter Switching
 function toggleChapterDropdown(event) {
   if (event && event.stopPropagation) event.stopPropagation();
+  hideMarginalia();
   if (controlDrawer) controlDrawer.classList.remove('open');
   const dock = document.getElementById('bottomControlDock');
   if (dock) dock.classList.remove('expanded');
@@ -1364,6 +1380,7 @@ function positionMarginalia(targetEl, noteEl) {
 
 function showMarginaliaForSentence(sentenceEl, forceShow = false) {
   if (!sentenceEl) return;
+  if (chapterDropdown && chapterDropdown.classList.contains('open')) return;
   const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
   if (isChineseLocked && !forceShow) return;
 
@@ -2207,8 +2224,7 @@ const togglePocketBlindMode = toggleFocusBlindMode;
 
 function handleFocusDblClick(e) {
   if (e && e.stopPropagation) e.stopPropagation();
-  // Double-clicking inside focus mode never accidentally exits focus mode
-  showFocusDock();
+  toggleFocusMode(false);
 }
 
 function handleFocusSentenceBoxClick(e) {
@@ -2218,7 +2234,6 @@ function handleFocusSentenceBoxClick(e) {
   )) {
     return;
   }
-  showFocusDock();
   const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
   if (focusBlindMode && box && !box.classList.contains('revealed')) {
     box.classList.add('revealed');
@@ -2228,8 +2243,9 @@ function handleFocusSentenceBoxClick(e) {
 const handlePocketSentenceBoxClick = handleFocusSentenceBoxClick;
 
 function handleFocusTouchStart(e) {
-  showFocusDock();
   if ((!focusModeActive && !pocketModeActive) || !e.touches || e.touches.length !== 1) return;
+  const isNearBottom = (typeof e.touches[0].clientY === 'number') && (e.touches[0].clientY >= window.innerHeight - 64);
+  if (isNearBottom) showFocusDock();
   focusTouchStartY = e.touches[0].clientY;
   focusTouchStartX = e.touches[0].clientX;
   focusTouchStartTime = Date.now();
@@ -2268,7 +2284,7 @@ function scheduleFocusDockHide() {
   if (focusDockHideTimer) return;
 
   const isAudioActive = audio && (!audio.paused || shadowState.isInternalPause);
-  const delay = isAudioActive ? 3000 : 4500;
+  const delay = isAudioActive ? 2800 : 3500;
 
   if (focusModeActive) {
     focusDockHideTimer = setTimeout(() => {
@@ -2282,7 +2298,10 @@ function scheduleFocusDockHide() {
 }
 
 function showFocusDock() {
-  if (isKeyboardNavigating) return;
+  if (isKeyboardNavigating) {
+    scheduleFocusDockHide();
+    return;
+  }
   const dock = document.getElementById('focusDock');
   if (dock) dock.classList.remove('dock-hidden');
   if (focusDockHideTimer) {
@@ -2309,7 +2328,9 @@ function toggleFocusMode(force) {
     const bottomDock = document.getElementById('bottomControlDock');
     if (bottomDock) bottomDock.classList.add('dock-idle-hidden');
     initFocusPreferences();
-    showFocusDock();
+    const fDock = document.getElementById('focusDock');
+    if (fDock) fDock.classList.remove('dock-hidden');
+    scheduleFocusDockHide(true);
     const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
     const curTime = (audio && Number.isFinite(audio.currentTime)) ? audio.currentTime : 0;
     const cur = findSentenceAt(curTime);
@@ -2364,6 +2385,7 @@ function toggleFocusMode(force) {
 }
 const togglePocketMode = toggleFocusMode;
 
+let lastFocusOverlayTapTime = 0;
 function handleFocusOverlayClick(e) {
   if (e && e.target && (
     e.target.closest('#focusDock') ||
@@ -2371,7 +2393,16 @@ function handleFocusOverlayClick(e) {
   )) {
     return;
   }
-  showFocusDock();
+  const now = Date.now();
+  if (now - lastFocusOverlayTapTime < 350) {
+    lastFocusOverlayTapTime = 0;
+    toggleFocusMode(false);
+    return;
+  }
+  lastFocusOverlayTapTime = now;
+  if (typeof e.clientY === 'number' && e.clientY >= window.innerHeight - 64) {
+    showFocusDock();
+  }
 }
 const handlePocketOverlayClick = handleFocusOverlayClick;
 
@@ -2960,13 +2991,16 @@ initMediaSession();
 updateMediaSessionMetadata();
 const focusOverlayEl = document.getElementById('focus-overlay');
 if (focusOverlayEl) {
+  focusOverlayEl.addEventListener('dblclick', handleFocusDblClick);
   focusOverlayEl.addEventListener('pointermove', (e) => {
     if (focusModeActive && typeof e.clientY === 'number' && e.clientY >= window.innerHeight - 64) {
       showFocusDock();
     }
   });
-  focusOverlayEl.addEventListener('pointerdown', () => {
-    if (focusModeActive) showFocusDock();
+  focusOverlayEl.addEventListener('pointerdown', (e) => {
+    if (focusModeActive && typeof e.clientY === 'number' && e.clientY >= window.innerHeight - 64) {
+      showFocusDock();
+    }
   });
 }
 const focusDockEl = document.getElementById('focusDock');
@@ -2991,6 +3025,7 @@ if (bottomControlDock) {
     scheduleMainDockHide();
   });
 }
+scheduleMainDockHide();
 </script>
 </body>
 </html>
