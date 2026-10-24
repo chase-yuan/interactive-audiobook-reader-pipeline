@@ -1893,6 +1893,7 @@ function cycleFocusFontSize(e) {
   try {
     localStorage.setItem('reader_focus_font_scale', String(nextScale));
   } catch (err) {}
+  scheduleFocusDockHide();
 }
 
 function adjustFocusFontScale(delta) {
@@ -1906,6 +1907,7 @@ function adjustFocusFontScale(delta) {
   try {
     localStorage.setItem('reader_focus_font_scale', String(next));
   } catch (err) {}
+  scheduleFocusDockHide();
 }
 
 function initFocusPreferences() {
@@ -1958,6 +1960,7 @@ function toggleFocusTransMode(e) {
     localStorage.setItem('reader_focus_show_trans', focusShowTrans ? '1' : '0');
   } catch (err) {}
   applyFocusTransVisibility();
+  scheduleFocusDockHide();
 }
 
 function cycleFocusRepetitions(e) {
@@ -1972,6 +1975,7 @@ function cycleFocusRepetitions(e) {
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) repBtn.textContent = `${nextRep}×`;
   updateFocusStatus();
+  scheduleFocusDockHide();
 }
 
 function updateFocusStatus() {
@@ -2169,6 +2173,7 @@ function toggleFocusBlindMode(e) {
     btn.textContent = 'Audio';
     btn.classList.toggle('active', focusBlindMode);
   }
+  scheduleFocusDockHide();
 }
 const togglePocketBlindMode = toggleFocusBlindMode;
 
@@ -2225,25 +2230,32 @@ const handlePocketTouchEnd = handleFocusTouchEnd;
 let focusDockHideTimer = null;
 
 function scheduleFocusDockHide() {
-  if (focusDockHideTimer) {
-    clearTimeout(focusDockHideTimer);
-    focusDockHideTimer = null;
-  }
   const dock = document.getElementById('focusDock');
   if (!dock) return;
-  dock.classList.remove('dock-hidden');
-  if (focusModeActive && audio && !audio.paused) {
+  if (dock.classList.contains('dock-hidden')) return;
+  if (focusDockHideTimer) return;
+
+  const isAudioActive = audio && (!audio.paused || shadowState.isInternalPause);
+  const delay = isAudioActive ? 3000 : 4500;
+
+  if (focusModeActive) {
     focusDockHideTimer = setTimeout(() => {
-      if (focusModeActive && audio && !audio.paused) {
-        dock.classList.add('dock-hidden');
+      focusDockHideTimer = null;
+      const d = document.getElementById('focusDock');
+      if (d && focusModeActive) {
+        d.classList.add('dock-hidden');
       }
-    }, 3000);
+    }, delay);
   }
 }
 
 function showFocusDock() {
   const dock = document.getElementById('focusDock');
   if (dock) dock.classList.remove('dock-hidden');
+  if (focusDockHideTimer) {
+    clearTimeout(focusDockHideTimer);
+    focusDockHideTimer = null;
+  }
   scheduleFocusDockHide();
 }
 
@@ -2908,7 +2920,7 @@ updateMediaSessionMetadata();
 const focusOverlayEl = document.getElementById('focus-overlay');
 if (focusOverlayEl) {
   focusOverlayEl.addEventListener('pointermove', () => {
-    if (focusModeActive) scheduleFocusDockHide();
+    if (focusModeActive) showFocusDock();
   });
   focusOverlayEl.addEventListener('pointerdown', () => {
     if (focusModeActive) showFocusDock();
