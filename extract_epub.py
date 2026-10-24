@@ -243,6 +243,7 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
 
     canonical_items = []
     s_idx = 0
+    global_elem_idx = 0
     with zipfile.ZipFile(epub_path, 'r') as z:
         for spec in href_specs:
             if isinstance(spec, dict):
@@ -270,7 +271,7 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
             cleaned_elements = clean_and_merge_elements(parser.elements)
 
             active = (start_marker is None)
-            for elem_idx, el in enumerate(cleaned_elements):
+            for el in cleaned_elements:
                 tag = el['tag']
                 txt = el['text']
                 cls = el.get('class', '').lower()
@@ -293,25 +294,27 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                 if is_h:
                     canonical_items.append({
                         "id": f"s-{s_idx}",
-                        "elem_idx": len(canonical_items),
+                        "elem_idx": global_elem_idx,
                         "tag": tag,
                         "text": txt,
                         "is_heading": True,
                         "is_tabular": is_tabular
                     })
                     s_idx += 1
+                    global_elem_idx += 1
                 else:
                     sents = split_into_atomic_sentences(txt)
                     for s in sents:
                         canonical_items.append({
                             "id": f"s-{s_idx}",
-                            "elem_idx": len(canonical_items),
+                            "elem_idx": global_elem_idx,
                             "tag": tag,
                             "text": s,
                             "is_heading": False,
                             "is_tabular": is_tabular
                         })
                         s_idx += 1
+                    global_elem_idx += 1
                 
     atomic_write_json(out_json_path, canonical_items)
         
