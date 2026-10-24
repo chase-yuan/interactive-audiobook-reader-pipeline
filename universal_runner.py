@@ -111,6 +111,8 @@ def infer_chapter_role_and_label(index: int, title: str, href: str) -> Tuple[str
     elif m_arabic:
         ch_num = int(m_arabic.group(1))
         return "chapter", ch_num, f"Chapter {ch_num}"
+    elif "prologue" in lower_t or "prologue" in lower_h:
+        return "preface", None, "Prologue"
     elif "preface" in lower_t or "preface" in lower_h or "foreword" in lower_t:
         lbl = "Preface"
         if "first" in lower_t:
@@ -134,7 +136,11 @@ def infer_chapter_role_and_label(index: int, title: str, href: str) -> Tuple[str
     elif "conclusion" in lower_t:
         return "chapter", None, "Conclusions"
     else:
-        return "chapter", None, title[:24].strip()
+        clean = title.strip()
+        if len(clean) > 36:
+            m = re.match(r"^(.{1,35})\b", clean)
+            clean = m.group(1).strip() if m else clean[:36].strip()
+        return "chapter", None, clean
 
 
 def discover_epub_chapters(

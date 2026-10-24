@@ -175,8 +175,10 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         disp_part = rf"|\b(?:Chapter\s+)?{re.escape(disp_num)}(?!\d)\s*[\.\:—–-]\s*" if disp_num else ""
         prefix_pattern = rf"^(?:{re.escape(ch['label'])}\s*[:—–-]?\s*{disp_part})"
         sub_title = re.sub(prefix_pattern, "", clean_title, flags=re.IGNORECASE).strip()
-        if not sub_title or clean_title.upper() == ch_heading_label or clean_title.upper() == f"CHAPTER {cnum}":
+        if not sub_title or len(sub_title) <= 2 or clean_title.upper() == ch_heading_label or clean_title.upper() == f"CHAPTER {cnum}":
             title_html = safe_heading_label
+        elif safe_heading_label in clean_title.upper() and len(sub_title) < 4:
+            title_html = html.escape(clean_title.upper())
         else:
             title_html = f"{safe_heading_label}<br>{html.escape(sub_title)}"
         
