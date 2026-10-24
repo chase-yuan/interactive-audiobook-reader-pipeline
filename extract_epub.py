@@ -231,11 +231,12 @@ def clean_and_merge_elements(elements):
 
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     if isinstance(chapter_internal_path, (list, tuple)):
-        hrefs = list(chapter_internal_path)
+        href_specs = list(chapter_internal_path)
     else:
-        hrefs = [chapter_internal_path]
+        href_specs = [chapter_internal_path]
 
-    for h in hrefs:
+    for spec in href_specs:
+        h = spec["href"] if isinstance(spec, dict) else (spec.split("::")[0] if isinstance(spec, str) and "::" in spec else spec)
         pure = PurePosixPath(h)
         if pure.is_absolute() or ".." in pure.parts:
             raise ValueError(f"Insecure chapter internal path: {h}")
@@ -243,16 +244,44 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     canonical_items = []
     s_idx = 0
     with zipfile.ZipFile(epub_path, 'r') as z:
-        for h in hrefs:
+        for spec in href_specs:
+            if isinstance(spec, dict):
+                h = spec["href"]
+                start_marker = spec.get("start")
+                stop_marker = spec.get("stop")
+            elif isinstance(spec, str) and "::" in spec:
+                parts = spec.split("::")
+                h = parts[0]
+                start_marker = None
+                stop_marker = None
+                for param in parts[1:]:
+                    if param.startswith("start="):
+                        start_marker = param[6:]
+                    elif param.startswith("stop="):
+                        stop_marker = param[5:]
+            else:
+                h = spec
+                start_marker = None
+                stop_marker = None
+
             raw_html = z.read(h).decode('utf-8')
             parser = ChapterParser()
             parser.feed(raw_html)
             cleaned_elements = clean_and_merge_elements(parser.elements)
 
+            active = (start_marker is None)
             for elem_idx, el in enumerate(cleaned_elements):
                 tag = el['tag']
                 txt = el['text']
                 cls = el.get('class', '').lower()
+
+                if not active and start_marker and start_marker.lower() in txt.lower():
+                    active = True
+                elif active and stop_marker and stop_marker.lower() in txt.lower():
+                    break
+                if not active:
+                    continue
+
                 is_h = (
                     tag.startswith('h')
                     or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title')

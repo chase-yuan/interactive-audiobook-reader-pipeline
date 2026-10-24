@@ -8,13 +8,15 @@ Enforces 4-Dimensional Orthogonal Boundary Test Matrix:
 """
 
 import json
+import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from validate_outputs import validate_canonical_sentences, check_sentence_orthography, auto_heal_canonical_quotes
 from kokoro_synthesizer import clean_acoustic_text, is_standalone_divider
-from extract_epub import clean_and_merge_elements
+from extract_epub import clean_and_merge_elements, extract_chapter_from_epub
 from dynamic_aligner import _duplicate_source_fragment_indices
 
 
@@ -186,6 +188,19 @@ class ElementMergeDehyphenationTests(unittest.TestCase):
         self.assertGreater(len(merged), 1)
         for el in merged:
             self.assertLessEqual(len(el["text"].split()), 55)
+
+    def test_extract_chapter_with_start_and_stop_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            epub_path = os.path.join(td, "test.epub")
+            out_json = os.path.join(td, "out.json")
+            with zipfile.ZipFile(epub_path, "w") as z:
+                z.writestr("test.html", "<html><body><h1>Part 1</h1><p>First section.</p><h1>Part 2</h1><p>Second section.</p><h1>Part 3</h1><p>Third section.</p></body></html>")
+            
+            res_stop = extract_chapter_from_epub(epub_path, "test.html::stop=Part 2", out_json)
+            self.assertEqual([x["text"] for x in res_stop], ["Part 1", "First section."])
+            
+            res_start = extract_chapter_from_epub(epub_path, "test.html::start=Part 2", out_json)
+            self.assertEqual([x["text"] for x in res_start], ["Part 2", "Second section.", "Part 3", "Third section."])
 
 
 if __name__ == "__main__":
