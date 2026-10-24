@@ -147,6 +147,46 @@ class ChapterParser(HTMLParser):
             self.stack[-1][2].append(data)
 
 
+def is_title_text(txt: str) -> bool:
+    if not txt:
+        return False
+    words = [w for w in re.findall(r"[a-zA-Z0-9'’]+", txt)]
+    if not words or len(words) > 12:
+        return False
+    if re.search(r"[.!?…]$", txt.strip()):
+        return False
+    if txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction ", "Book ", "Prologue", "Epilogue", "Table ", "Figure ")):
+        return True
+    minor_words = {"a", "an", "the", "and", "but", "or", "for", "nor", "on", "in", "at", "to", "from", "by", "with", "of", "off", "out", "as", "into", "over", "up", "down"}
+    cap_count = 0
+    significant_count = 0
+    for w in words:
+        if w.lower() in minor_words:
+            continue
+        significant_count += 1
+        if w[0].isupper():
+            cap_count += 1
+    if significant_count > 0 and cap_count == significant_count:
+        return True
+    if txt.isupper():
+        return True
+    return False
+
+
+def is_heading_element(el: dict) -> bool:
+    tag = el.get("tag", "").lower()
+    if tag.startswith("h") and len(tag) <= 2 and tag[1:].isdigit():
+        return True
+    cls = el.get("class", "").lower()
+    classes = set(cls.split())
+    heading_markers = {"h", "h1", "h2", "h3", "h4", "h5", "h6", "cn", "fm-co1", "title", "chapter-title", "heading", "subheading", "calibre_12"}
+    txt = el.get("text", "").strip()
+    is_short = len(txt.split()) <= 15 and not re.search(r"[.!?…].*[.!?…]", txt)
+    if is_short and (classes & heading_markers or cls in heading_markers):
+        return True
+    return is_title_text(txt)
+
+
 def clean_and_merge_elements(elements):
     """
     Clean and merge adjacent block elements:
@@ -184,10 +224,10 @@ def clean_and_merge_elements(elements):
         curr_txt = curr.get("text", "").strip()
         next_txt = next_el.get("text", "").strip()
 
-        is_curr_heading = curr_tag.startswith("h")
-        is_next_heading = next_tag.startswith("h")
+        is_curr_heading = is_heading_element(curr)
+        is_next_heading = is_heading_element(next_el)
 
-        # Never merge headings with non-headings
+        # Never merge headings with non-headings, or headings with other headings
         if is_curr_heading or is_next_heading:
             merged.append(curr)
             curr = next_el
@@ -209,10 +249,7 @@ def clean_and_merge_elements(elements):
         next_starts_lower = bool(re.match(r"^\s*[\"“‘'(\[]*[a-z]", next_txt))
 
         # Case C: Check if curr_txt is a title or header
-        is_title = (
-            curr_txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction "))
-            or (len(curr_txt.split()) <= 8 and (curr_txt.istitle() or curr_txt.isupper()) and not curr_txt.endswith(":"))
-        )
+        is_title = is_title_text(curr_txt)
 
         curr_has_terminal = bool(re.search(r"[.!?…”\"’)]$", curr_txt))
 
@@ -283,12 +320,7 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                 if not active:
                     continue
 
-                is_h = (
-                    tag.startswith('h')
-                    or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'calibre_', 'calibre_12')
-                    or any(c in cls.split() for c in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'heading'))
-                    or (len(txt.split()) <= 4 and not re.search(r"[.!?…]$", txt.strip()) and (txt.isupper() or txt.istitle() or cls in ('calibre_', 'calibre_12')))
-                )
+                is_h = is_heading_element(el)
                 
                 is_tabular = bool(el.get("is_tabular")) or bool(re.search(r"Click (?:here )?for a larger image of this (?:table|chart|figure)", txt, re.IGNORECASE))
                 if is_h:

@@ -211,6 +211,11 @@ def get_reader_css() -> str:
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--nav-height, 56px) + var(--space-xl, 24px));
+}
+
 body {
   font-family: var(--font-serif);
   background-color: var(--bg-page);
@@ -1365,12 +1370,19 @@ body {
 .prose-heading-block {
   margin-top: var(--space-5xl);
   margin-bottom: var(--space-xl);
+  scroll-margin-top: calc(var(--nav-height, 56px) + var(--space-xl, 24px));
 }
 
 .prose-epigraph-block {
   margin: var(--space-3xl) 0;
   padding-left: var(--space-xl);
   border-left: var(--space-xs) solid var(--border);
+  scroll-margin-top: calc(var(--nav-height, 56px) + var(--space-xl, 24px));
+}
+
+.sentence-unit,
+.sentence-text {
+  scroll-margin-top: calc(var(--nav-height, 56px) + var(--space-xl, 24px));
 }
 
 /* Inline Sentence Units */
