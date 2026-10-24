@@ -10,6 +10,7 @@ from agy_linguistic_worker import (
     CHUNK_SIZE,
     _json_from_output,
     build_batch_prompt,
+    can_reconcile_text,
     chunk_sentences,
     main,
     process_canonical_sentences,
@@ -64,6 +65,20 @@ class AgyLinguisticWorkerTests(unittest.TestCase):
         # Markdown fenced with commentary
         with_commentary = "Here is the result:\n```json\n" + plain + "\n```\nDone."
         self.assertEqual(_json_from_output(with_commentary), [{"id": "s-1", "text": "Hello", "trans": "你好", "vocab": []}])
+
+    def test_can_reconcile_text(self):
+        canonical = 'Morton Meyers writes: “Over 144,000 plant extracts, not a single drug reached status.'
+        # Typographic quote normalization
+        straight_quotes = 'Morton Meyers writes: "Over 144,000 plant extracts, not a single drug reached status.'
+        self.assertTrue(can_reconcile_text(straight_quotes, canonical))
+
+        # Minor spacing or footnote normalization
+        minor_divergence = 'Morton Meyers writes: "Over 144,000 plant extracts, not a single drug reached status."'
+        self.assertTrue(can_reconcile_text(minor_divergence, canonical))
+
+        # Completely changed text should reject
+        completely_different = 'This is an entirely different sentence.'
+        self.assertFalse(can_reconcile_text(completely_different, canonical))
 
     def test_verify_analysis_contract(self):
         canonical = [

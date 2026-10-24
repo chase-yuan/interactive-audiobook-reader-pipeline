@@ -117,6 +117,27 @@ def build_batch_prompt(base_prompt: str, batch: list[dict], batch_idx: int, tota
     )
 
 
+def can_reconcile_text(candidate: Any, reference: Any) -> bool:
+    if not isinstance(candidate, str) or not isinstance(reference, str):
+        return False
+    if candidate == reference:
+        return True
+
+    def _norm(s: str) -> str:
+        s = s.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+        s = s.replace("—", "-").replace("–", "-")
+        return re.sub(r"\s+", " ", s).strip()
+
+    n_cand = _norm(candidate)
+    n_ref = _norm(reference)
+    if n_cand == n_ref:
+        return True
+
+    import difflib
+    ratio = difflib.SequenceMatcher(None, n_cand, n_ref).ratio()
+    return ratio >= 0.85
+
+
 def verify_analysis(data: Any, canonical_data: list[dict]) -> None:
     if not isinstance(data, list):
         raise RuntimeError("analysis output must be a list")
@@ -266,7 +287,12 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                 time.sleep(1)
                 continue
 
-            ordered_batch = [returned_map[item["id"]] for item in batch]
+            ordered_batch = []
+            for item in batch:
+                rec = returned_map[item["id"]]
+                if rec.get("text") != item.get("text") and can_reconcile_text(rec.get("text"), item.get("text")):
+                    rec["text"] = item.get("text")
+                ordered_batch.append(rec)
             verify_analysis(ordered_batch, batch)
             try:
                 atomic_write_json(cache_file, ordered_batch)
