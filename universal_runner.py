@@ -216,6 +216,10 @@ def setup_book_directory(
             }
             if item.get("display_number") is not None:
                 row["display_number"] = item["display_number"]
+            if item.get("hrefs"):
+                row["hrefs"] = item["hrefs"]
+            elif item.get("href"):
+                row["href"] = item["href"]
             metadata_rows.append(row)
 
         atomic_write_json(metadata_path, {
@@ -234,11 +238,11 @@ def extract_chapters_sentences(
     print(f"\n=== [Stage 1: EPUB Sentence Extraction ({len(chapters_meta)} tracks)] ===", flush=True)
     for item in chapters_meta:
         num = item["num"]
-        href = item["href"]
+        hrefs = item.get("hrefs") or ([item["href"]] if item.get("href") else [])
         can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
         if not force and can_path.is_file() and can_path.stat().st_size > 50:
             continue
-        extract_chapter_from_epub(str(epub_path), href, str(can_path))
+        extract_chapter_from_epub(str(epub_path), hrefs, str(can_path))
     print("[Stage 1] Sentence extraction completed.")
 
 
@@ -710,6 +714,7 @@ def build_reader_pipeline(
                     "title": row["title"],
                     "label": row.get("label", row["title"][:20]),
                     "href": href,
+                    "hrefs": row.get("hrefs") or ([href] if href else []),
                 }
                 if row.get("display_number") is not None:
                     item["display_number"] = row["display_number"]

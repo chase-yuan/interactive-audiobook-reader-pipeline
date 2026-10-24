@@ -447,7 +447,16 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 and not item.get("fallback_used")
                 and float(item.get("match_ratio", 0.0)) >= 0.5
             )
-            non_narrated = item.get("alignment_status") == "not-applicable" and item.get("alignment_reason") in {"non_narrated_content", "non_narrated_text", "duplicate_source_fragment", "out_of_scope_reference"}
+            non_narrated = (
+                item.get("alignment_status") == "not-applicable"
+                and item.get("alignment_reason") in {
+                    "non_narrated_content",
+                    "non_narrated_text",
+                    "duplicate_source_fragment",
+                    "out_of_scope_reference",
+                    "structural_tabular_omitted_by_narrator",
+                }
+            )
             out_of_scope = item.get("alignment_reason") == "out_of_scope_reference"
             if content_mode not in (COMPLETE, SYNTHETIC) and not is_heading:
                 if item_id in scoped_ids and out_of_scope:

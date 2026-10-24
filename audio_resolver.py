@@ -73,6 +73,11 @@ def resolve_chapter_audio(audio_dir, chapter_number):
         key=lambda p: _natural_keys(p.name),
     )
     if 1 <= chapter_number <= len(all_audio):
-        return AudioResolution((all_audio[chapter_number - 1],))
+        candidate = all_audio[chapter_number - 1]
+        # Guard: if the candidate explicitly declares a different chapter number, do not false-match
+        explicit_nums = re.findall(r"(?:chapter|ch)[ _-]*(\d+)", candidate.name, re.IGNORECASE)
+        if explicit_nums and any(int(n) != chapter_number for n in explicit_nums):
+            return AudioResolution(())
+        return AudioResolution((candidate,))
 
     return AudioResolution(())

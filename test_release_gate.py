@@ -384,6 +384,55 @@ class ReleaseGateTests(unittest.TestCase):
             report = json.loads(rep_path.read_text(encoding="utf-8"))
             self.assertTrue(any("release ceiling" in err for err in report["errors"]))
 
+    def test_structural_tabular_omission_exempted_from_ceiling(self):
+        """Pillar 3: Structural tables omitted by narrator must NOT trigger excessive omission ceiling."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_fixture(root)
+            aligned_file = root / "book_ch01_aligned_sentences.json"
+            canonical_file = root / "book_ch01_canonical_sentences.json"
+            analysis_file = root / "book_ch01_full_analysis.json"
+
+            # Create 80 sentences: 10 narrated prose, 70 structural tabular omissions (> 60 count ceiling)
+            can_list = []
+            ana_list = []
+            ali_list = []
+            for i in range(80):
+                sid = f"s-{i+1}"
+                is_table = i >= 10
+                text = f"Sentence {i+1}."
+                can_list.append({"id": sid, "text": text, "is_tabular": is_table})
+                ana_list.append({"id": sid, "text": text, "trans": f"句子 {i+1}。", "vocab": []})
+                if is_table:
+                    ali_list.append({
+                        "id": sid, "text": text, "trans": f"句子 {i+1}。", "vocab": [],
+                        "has_audio_match": False, "start": None, "end": None, "word_spans": [],
+                        "alignment_status": "not-applicable", "alignment_reason": "structural_tabular_omitted_by_narrator",
+                        "is_tabular": True,
+                        "source_token_count": 2, "matched_token_count": 0,
+                    })
+                else:
+                    ali_list.append({
+                        "id": sid, "text": text, "trans": f"句子 {i+1}。", "vocab": [],
+                        "has_audio_match": True, "start": float(i * 2), "end": float(i * 2 + 1.5),
+                        "word_spans": [
+                            {"word": "Sentence", "start": float(i * 2), "end": float(i * 2 + 0.8), "timing_source": "observed"},
+                            {"word": f"{i+1}.", "start": float(i * 2 + 0.9), "end": float(i * 2 + 1.5), "timing_source": "observed"},
+                        ],
+                        "alignment_status": "validated",
+                        "source_token_count": 2, "matched_token_count": 2, "match_ratio": 1.0,
+                    })
+
+            canonical_file.write_text(json.dumps(can_list), encoding="utf-8")
+            analysis_file.write_text(json.dumps(ana_list), encoding="utf-8")
+            aligned_file.write_text(json.dumps(ali_list), encoding="utf-8")
+
+            rep_path = root / "reader_validation_report.json"
+            self.assertEqual(validate(root, rep_path), 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+            self.assertEqual(len(rep["errors"]), 0)
+
     def test_overlapping_sentences_block_release(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

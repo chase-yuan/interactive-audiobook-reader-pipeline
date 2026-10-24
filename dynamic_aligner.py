@@ -1252,7 +1252,8 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             # Sentence without a standalone acoustic match (e.g. a heading or
             # a failed attribution). Do not invent a playable timestamp.
             word_spans = [{"word": rw, "start": None, "end": None} for rw in raw_words]
-            structural_non_narrated = _is_non_narrated_text(s.get("text", ""))
+            is_tabular = s.get("is_tabular", False) or s.get("tag") in ("table", "tr", "th", "td")
+            structural_non_narrated = _is_non_narrated_text(s.get("text", "")) or is_tabular
             proven_duplicate = s_idx in inferred_duplicate
             inferred_omission = s_idx in inferred_non_narrated
             non_narrated = structural_non_narrated or proven_duplicate or inferred_omission
@@ -1274,9 +1275,10 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "alignment_method": "unmatched",
                 "fallback_used": False,
                 "alignment_status": "not-applicable" if s.get("is_heading") or non_narrated else "review-required",
-                "alignment_reason": "duplicate_source_fragment" if s_idx in inferred_duplicate else "non_narrated_text" if non_narrated else "ambiguous_short_sentence" if len(tokenize_clean(s.get("text", ""))) <= 2 else "no_sufficient_global_match",
+                "alignment_reason": "structural_tabular_omitted_by_narrator" if is_tabular else "duplicate_source_fragment" if s_idx in inferred_duplicate else "non_narrated_text" if non_narrated else "ambiguous_short_sentence" if len(tokenize_clean(s.get("text", ""))) <= 2 else "no_sufficient_global_match",
+                "is_tabular": is_tabular,
                 "non_narrated_evidence": {
-                    "basis": "duplicate_source_fragment" if s_idx in inferred_duplicate else "publisher_back_matter" if non_narrated and (
+                    "basis": "structural_tabular" if is_tabular else "duplicate_source_fragment" if s_idx in inferred_duplicate else "publisher_back_matter" if non_narrated and (
                         str(s.get("text", "")).lower().startswith(("the love doesn’t end here", "the love doesn't end here", "join the entangled insiders"))
                         or str(s.get("text", "")).lower().strip() == "notes"
                     ) else "acoustic_window_absence" if inferred_omission else "typographic_pause_marker",

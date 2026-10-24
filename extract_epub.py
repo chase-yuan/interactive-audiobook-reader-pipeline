@@ -65,19 +65,23 @@ def split_into_atomic_sentences(text):
     return sentences
 
 class ChapterParser(HTMLParser):
-    BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "div"}
+    BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "div", "tr", "th", "td"}
 
     def __init__(self):
         super().__init__()
         self.elements = []
         self.stack = []  # list of (tag, attrs_dict, text_chunks)
         self.ignored_tags = []
+        self.table_depth = 0
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
         cls = attrs_dict.get("class", "").lower()
         elem_id = attrs_dict.get("id", "").lower()
         epub_type = attrs_dict.get("epub:type", "").lower()
+
+        if tag in ("table", "thead", "tbody", "tfoot"):
+            self.table_depth += 1
 
         if (
             self.ignored_tags
@@ -104,16 +108,22 @@ class ChapterParser(HTMLParser):
                 text = "".join(self.stack[-1][2]).strip()
                 if text:
                     parent_tag, parent_attrs, _ = self.stack[-1]
+                    p_cls = parent_attrs.get("class", "").lower()
+                    is_tab = self.table_depth > 0 or parent_tag in ("table", "tr", "th", "td") or any(w in p_cls for w in ["table", "tabular"])
                     self.elements.append({
                         "tag": parent_tag,
                         "class": parent_attrs.get("class", ""),
-                        "text": re.sub(r"\s+", " ", text)
+                        "text": re.sub(r"\s+", " ", text),
+                        "is_tabular": is_tab,
                     })
                 self.stack[-1][2].clear()
 
             self.stack.append((tag, attrs_dict, []))
 
     def handle_endtag(self, tag):
+        if tag in ("table", "thead", "tbody", "tfoot"):
+            self.table_depth = max(0, self.table_depth - 1)
+
         if self.ignored_tags:
             if tag == self.ignored_tags[-1]:
                 self.ignored_tags.pop()
@@ -123,10 +133,13 @@ class ChapterParser(HTMLParser):
             popped_tag, popped_attrs, text_chunks = self.stack.pop()
             text = "".join(text_chunks).strip()
             if text:
+                p_cls = popped_attrs.get("class", "").lower()
+                is_tab = self.table_depth > 0 or popped_tag in ("table", "tr", "th", "td") or any(w in p_cls for w in ["table", "tabular"])
                 self.elements.append({
                     "tag": popped_tag,
                     "class": popped_attrs.get("class", ""),
-                    "text": re.sub(r"\s+", " ", text)
+                    "text": re.sub(r"\s+", " ", text),
+                    "is_tabular": is_tab,
                 })
 
     def handle_data(self, data):
@@ -180,6 +193,12 @@ def clean_and_merge_elements(elements):
             curr = next_el
             continue
 
+        # Never merge tabular elements with non-tabular prose
+        if bool(curr.get("is_tabular")) != bool(next_el.get("is_tabular")):
+            merged.append(curr)
+            curr = next_el
+            continue
+
         # Case A: Trailing hyphen at the end of curr_txt: e.g. "oversimplifi-"
         if re.search(r"\b[a-zA-Z]+-\s*$", curr_txt):
             base = re.sub(r"-\s*$", "", curr_txt)
@@ -211,50 +230,58 @@ def clean_and_merge_elements(elements):
 
 
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
-    pure = PurePosixPath(chapter_internal_path)
-    if pure.is_absolute() or ".." in pure.parts:
-        raise ValueError(f"Insecure chapter internal path: {chapter_internal_path}")
+    if isinstance(chapter_internal_path, (list, tuple)):
+        hrefs = list(chapter_internal_path)
+    else:
+        hrefs = [chapter_internal_path]
 
-    with zipfile.ZipFile(epub_path, 'r') as z:
-        raw_html = z.read(chapter_internal_path).decode('utf-8')
-        
-    parser = ChapterParser()
-    parser.feed(raw_html)
-    
-    cleaned_elements = clean_and_merge_elements(parser.elements)
-    
+    for h in hrefs:
+        pure = PurePosixPath(h)
+        if pure.is_absolute() or ".." in pure.parts:
+            raise ValueError(f"Insecure chapter internal path: {h}")
+
     canonical_items = []
     s_idx = 0
-    for elem_idx, el in enumerate(cleaned_elements):
-        tag = el['tag']
-        txt = el['text']
-        cls = el.get('class', '').lower()
-        is_h = (
-            tag.startswith('h')
-            or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title')
-            or any(c in cls.split() for c in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'heading'))
-        )
-        
-        if is_h:
-            canonical_items.append({
-                "id": f"s-{s_idx}",
-                "elem_idx": elem_idx,
-                "tag": tag,
-                "text": txt,
-                "is_heading": True
-            })
-            s_idx += 1
-        else:
-            sents = split_into_atomic_sentences(txt)
-            for s in sents:
-                canonical_items.append({
-                    "id": f"s-{s_idx}",
-                    "elem_idx": elem_idx,
-                    "tag": tag,
-                    "text": s,
-                    "is_heading": False
-                })
-                s_idx += 1
+    with zipfile.ZipFile(epub_path, 'r') as z:
+        for h in hrefs:
+            raw_html = z.read(h).decode('utf-8')
+            parser = ChapterParser()
+            parser.feed(raw_html)
+            cleaned_elements = clean_and_merge_elements(parser.elements)
+
+            for elem_idx, el in enumerate(cleaned_elements):
+                tag = el['tag']
+                txt = el['text']
+                cls = el.get('class', '').lower()
+                is_h = (
+                    tag.startswith('h')
+                    or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title')
+                    or any(c in cls.split() for c in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'heading'))
+                )
+                
+                is_tabular = bool(el.get("is_tabular")) or bool(re.search(r"Click (?:here )?for a larger image of this (?:table|chart|figure)", txt, re.IGNORECASE))
+                if is_h:
+                    canonical_items.append({
+                        "id": f"s-{s_idx}",
+                        "elem_idx": len(canonical_items),
+                        "tag": tag,
+                        "text": txt,
+                        "is_heading": True,
+                        "is_tabular": is_tabular
+                    })
+                    s_idx += 1
+                else:
+                    sents = split_into_atomic_sentences(txt)
+                    for s in sents:
+                        canonical_items.append({
+                            "id": f"s-{s_idx}",
+                            "elem_idx": len(canonical_items),
+                            "tag": tag,
+                            "text": s,
+                            "is_heading": False,
+                            "is_tabular": is_tabular
+                        })
+                        s_idx += 1
                 
     atomic_write_json(out_json_path, canonical_items)
         
