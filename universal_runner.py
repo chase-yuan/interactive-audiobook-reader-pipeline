@@ -465,6 +465,7 @@ def align_complete_audio_chapters(
     prefix: str,
     audio_dir: Optional[Path],
     concurrency: int = 4,
+    force: bool = False,
 ) -> None:
     if not audio_dir or not Path(audio_dir).is_dir():
         raise FileNotFoundError(f"Studio audio directory required for complete audio mode: {audio_dir}")
@@ -513,6 +514,9 @@ def align_complete_audio_chapters(
             analysis_path = book_dir / f"{prefix}_ch{num:02d}_linguistic_analysis.json"
         aligned_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
         acoustic_path = target_audio_dir / f"{prefix}_ch{num:02d}_acoustic_words.json"
+
+        if not force and aligned_path.is_file() and aligned_path.stat().st_size > 100:
+            return True
 
         if not acoustic_path.is_file() or acoustic_path.stat().st_size < 100:
             print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
