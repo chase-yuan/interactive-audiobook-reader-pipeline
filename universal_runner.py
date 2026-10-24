@@ -802,7 +802,7 @@ def build_reader_pipeline(
             chapters_meta=chapters_meta,
             prefix=prefix,
             audio_dir=audio_dir,
-            concurrency=min(concurrency, 2),
+            concurrency=1,
         )
     else:
         raise ValueError(f"Unknown pipeline mode: {mode}")
