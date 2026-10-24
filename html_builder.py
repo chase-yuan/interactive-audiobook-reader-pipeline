@@ -427,6 +427,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     <div class="shortcuts-table">
       <div class="shortcut-item"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
       <div class="shortcut-item"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
+      <div class="shortcut-item"><span class="kbd-key">[ / ]</span><span>Previous / Next chapter</span></div>
       <div class="shortcut-item"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
       <div class="shortcut-item"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>
       <div class="shortcut-item"><span class="kbd-key">P</span><span>Focus Mode (Immersion)</span></div>
@@ -698,12 +699,7 @@ function onUserDockActivity() {
   if (e && (e.type === 'pointerdown' || e.type === 'touchstart')) {
     isProgrammaticAutoScroll = false;
   }
-  const dock = document.getElementById('bottomControlDock');
-  if (!dock) return;
-  if (dock.classList.contains('dock-idle-hidden')) {
-    dock.classList.remove('dock-idle-hidden');
-  }
-  scheduleMainDockHide();
+  showMainDock();
 }
 
 let activeChapterNum = parseInt(localStorage.getItem(STORAGE_PREFIX + 'active_ch') || String(window.__INITIAL_CHAPTER__), 10);
@@ -1092,7 +1088,7 @@ function switchChapter(chNum, autoPlay) {
           }
           if (typeof updateFocusSentenceDisplay === 'function') updateFocusSentenceDisplay();
           if (typeof updateFocusStatus === 'function') updateFocusStatus();
-          if (typeof showFocusDock === 'function') showFocusDock();
+          if (typeof scheduleFocusDockHide === 'function') scheduleFocusDockHide();
           if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(autoPlay);
         }
       } else if (autoPlay && firstSentence) {
@@ -1449,7 +1445,7 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
     chapterDropdown.classList.remove('open');
   }
   audioRecoveryRetries = 0;
-  showMainDock();
+  scheduleMainDockHide();
   const el = document.getElementById(id);
   if (!el) return;
   
@@ -2097,7 +2093,7 @@ const updatePocketSentenceDisplay = updateFocusSentenceDisplay;
 
 function gotoNextShadowSentence() {
   if (!sentenceTimeIndex || !sentenceTimeIndex.length) return;
-  showFocusDock();
+  scheduleFocusDockHide();
   let curIdx = shadowState.sentence ? sentenceTimeIndex.findIndex(item => item.el === shadowState.sentence) : -1;
   if (curIdx === -1) {
     const curSentence = findSentenceAt(audio.currentTime);
@@ -2122,7 +2118,7 @@ function gotoNextShadowSentence() {
 
 function gotoPreviousShadowSentence() {
   if (!sentenceTimeIndex || !sentenceTimeIndex.length) return;
-  showFocusDock();
+  scheduleFocusDockHide();
   let curIdx = shadowState.sentence ? sentenceTimeIndex.findIndex(item => item.el === shadowState.sentence) : -1;
   if (curIdx === -1) {
     const curSentence = findSentenceAt(audio.currentTime);
@@ -2448,9 +2444,9 @@ audio.addEventListener('pause', () => {
   globalPlayBtn.textContent = '▶ Play';
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   stopSyncLoop();
-  showMainDock();
+  scheduleMainDockHide();
   if (focusModeActive) {
-    showFocusDock();
+    scheduleFocusDockHide();
   }
 });
 audio.addEventListener('error', (e) => {
@@ -2703,7 +2699,6 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (focusModeActive || pocketModeActive) {
-    showFocusDock();
     if (e.key === 'Escape') {
       e.preventDefault();
       toggleFocusMode(false);
@@ -2818,8 +2813,30 @@ window.addEventListener('keydown', (e) => {
   }
   if (currentIndex === -1) currentIndex = 0;
   
+  if (e.key === '[' || e.code === 'BracketLeft') {
+    e.preventDefault();
+    const prevCh = Math.max(0, activeChapterNum - 1);
+    if (prevCh !== activeChapterNum) switchChapter(prevCh, true);
+    return;
+  }
+  if (e.key === ']' || e.code === 'BracketRight') {
+    e.preventDefault();
+    const nextCh = activeChapterNum + 1;
+    const nextOption = document.getElementById('menu-ch-' + nextCh) || 
+                       document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+    if (nextOption) switchChapter(nextCh, true);
+    return;
+  }
+
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
     e.preventDefault();
+    if (currentIndex === 0 && e.key === 'ArrowLeft') {
+      const prevCh = Math.max(0, activeChapterNum - 1);
+      if (prevCh !== activeChapterNum) {
+        switchChapter(prevCh, true);
+        return;
+      }
+    }
     const targetIdx = Math.max(0, currentIndex - 1);
     const targetUnit = units[targetIdx];
     if (targetUnit) {
@@ -2837,6 +2854,15 @@ window.addEventListener('keydown', (e) => {
     }
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     e.preventDefault();
+    if (currentIndex === units.length - 1 && e.key === 'ArrowRight') {
+      const nextCh = activeChapterNum + 1;
+      const nextOption = document.getElementById('menu-ch-' + nextCh) || 
+                         document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+      if (nextOption) {
+        switchChapter(nextCh, true);
+        return;
+      }
+    }
     const targetIdx = Math.min(units.length - 1, currentIndex + 1);
     const targetUnit = units[targetIdx];
     if (targetUnit) {
@@ -2898,7 +2924,6 @@ document.addEventListener('pointermove', onUserDockActivity);
 document.addEventListener('pointerdown', onUserDockActivity);
 document.addEventListener('touchstart', onUserDockActivity, { passive: true });
 window.addEventListener('scroll', onUserDockActivity, { passive: true });
-document.addEventListener('keydown', onUserDockActivity);
 const bottomControlDock = document.getElementById('bottomControlDock');
 if (bottomControlDock) {
   bottomControlDock.addEventListener('mouseenter', () => {
