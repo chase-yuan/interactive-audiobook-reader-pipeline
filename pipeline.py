@@ -163,6 +163,49 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
     
     # Auto-infer book metadata if omitted
     folder_name = os.path.basename(book_dir)
+    
+    # Try discovering rich book metadata from ebook/ folder if present
+    ebook_dir = os.path.join(book_dir, "ebook")
+    if os.path.isdir(ebook_dir) and (not book_title or not book_author or book_author == "Author"):
+        for fname in sorted(os.listdir(ebook_dir)):
+            if fname.lower().endswith(".epub"):
+                epub_file = os.path.join(ebook_dir, fname)
+                try:
+                    import zipfile
+                    import xml.etree.ElementTree as ET
+                    with zipfile.ZipFile(epub_file, 'r') as z:
+                        for n in z.namelist():
+                            if n.endswith('.opf'):
+                                tree = ET.fromstring(z.read(n))
+                                ns = {'dc': 'http://purl.org/dc/elements/1.1/'}
+                                t_el = tree.find('.//dc:title', ns)
+                                c_el = tree.find('.//dc:creator', ns)
+                                if t_el is not None and t_el.text and not book_title:
+                                    raw_epub_title = t_el.text.strip()
+                                    if ":" in raw_epub_title:
+                                        p = raw_epub_title.split(":", 1)
+                                        book_title = p[0].strip()
+                                        if not book_subtitle or book_subtitle == "Bilingual Synchronized Reader":
+                                            book_subtitle = p[1].strip()
+                                    else:
+                                        book_title = raw_epub_title
+                                if c_el is not None and c_el.text and (not book_author or book_author == "Author"):
+                                    book_author = c_el.text.strip()
+                                break
+                except Exception:
+                    pass
+                if book_title and book_author and book_author != "Author":
+                    break
+            elif " - " in fname and (not book_author or book_author == "Author"):
+                stem = os.path.splitext(fname)[0]
+                ef_parts = stem.split(" - ")
+                if len(ef_parts) > 1 and (not book_author or book_author == "Author"):
+                    book_author = ef_parts[1].strip()
+                if not book_title and ef_parts[0].strip():
+                    cand = ef_parts[0].replace("_", " ").strip()
+                    if cand:
+                        book_title = cand
+
     if " - " in folder_name and (not book_title or not book_author):
         parts = folder_name.split(" - ")
         if not book_title:
@@ -243,7 +286,20 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
         if public_audio_url:
             audio_file_rel = public_audio_url
         else:
-            audio_file_rel = f"./audio/{os.path.basename(audio_file)}" if audio_file else f"./audio/chapter_{ch_num:02d}.mp3"
+            std_audio_path = os.path.join(book_dir, "audio", f"chapter_{ch_num:02d}.mp3")
+            named_audio_path = os.path.join(book_dir, "audio", os.path.basename(audio_file)) if audio_file else None
+            if os.path.exists(std_audio_path):
+                audio_file_rel = f"./audio/chapter_{ch_num:02d}.mp3"
+            elif named_audio_path and os.path.exists(named_audio_path):
+                audio_file_rel = f"./audio/{os.path.basename(audio_file)}"
+            elif audio_file and os.path.exists(audio_file):
+                try:
+                    rel = os.path.relpath(audio_file, book_dir)
+                    audio_file_rel = rel if rel.startswith("./") else f"./{rel}"
+                except ValueError:
+                    audio_file_rel = f"./audio/chapter_{ch_num:02d}.mp3"
+            else:
+                audio_file_rel = f"./audio/chapter_{ch_num:02d}.mp3"
                 
         has_analysis = os.path.exists(analysis_path) and _analysis_ready(analysis_path, c_path)
         has_acoustic = os.path.exists(acoustic_path) and os.path.getsize(acoustic_path) > 1000
@@ -326,7 +382,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
             title = metadata["title"]
         elif ch_num == 0:
             title = "Preface"
-        elif len(h_texts) >= 2:
+        elif len(h_texts) >= 2 and re.match(r"^Chapter\s+\d+", h_texts[0], re.I):
             title = h_texts[1]
         elif len(h_texts) >= 1:
             title = h_texts[0]

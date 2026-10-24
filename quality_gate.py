@@ -252,7 +252,7 @@ def smoke_check_html(html_path: Path, expected_chapters=None, audio_path=None):
     # Guard against dangling inline onclick event handlers without declaration
     onclick_calls = re.findall(r'\bonclick=["\']\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', content)
     for fn_name in set(onclick_calls):
-        if fn_name in {"closeDropdowns", "event"}:
+        if fn_name in {"closeDropdowns", "event", "if", "return"}:
             continue
         if not re.search(rf"\b(?:function\s+{re.escape(fn_name)}\s*\(|(?:const|let|var)\s+{re.escape(fn_name)}\s*=\s*(?:function|\([^)]*\)\s*=>)|window\.{re.escape(fn_name)}\s*=)", content):
             errors.append(f"inline onclick references undefined function: {fn_name}()")

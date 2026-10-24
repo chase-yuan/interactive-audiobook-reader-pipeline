@@ -492,6 +492,44 @@ class HTMLBuilderTests(unittest.TestCase):
             # 6. Scrubber NaN / non-finite duration guards
             self.assertIn('Number.isFinite(audio.duration)', rendered)
 
+    def test_dock_idle_auto_hide_and_english_mode_double_click(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Dock & Mode Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # 1. Dock auto-hide engine
+            self.assertIn("function scheduleMainDockHide()", rendered)
+            self.assertIn("function showMainDock()", rendered)
+            self.assertIn("function onUserDockActivity()", rendered)
+            self.assertIn(".dock-idle-hidden", rendered)
+            self.assertIn("scheduleMainDockHide();", rendered)
+            self.assertIn("showMainDock();", rendered)
+            # 2. English mode double-click translation peek
+            self.assertIn("isDoubleTap", rendered)
+            self.assertIn("showMarginaliaForSentence(el, true)", rendered)
+            # 3. Speed presets & extension priority
+            self.assertIn("SPEED_PRESETS = [1.0, 1.25, 1.5, 2.0]", rendered)
+            self.assertIn("audio.addEventListener('ratechange'", rendered)
+            # 4. Repeat loop levels
+            self.assertIn("MAIN_REP_LEVELS = [1, 2, 3]", rendered)
+            # 5. Zero title attributes (no browser hover tooltips)
+            self.assertNotIn('title="Sepia"', rendered)
+            self.assertNotIn('title="Light"', rendered)
+            self.assertNotIn('title="Dark"', rendered)
+            self.assertNotIn('title="Night"', rendered)
+            self.assertNotIn('audioSpeedBtn.setAttribute(\'title\'', rendered)
+            self.assertNotIn('repBtn.setAttribute(\'title\'', rendered)
+            # 6. Zero toast callers
+            self.assertIn('#reader-toast {\n  display: none !important;\n}', rendered)
+
+
 
 
 

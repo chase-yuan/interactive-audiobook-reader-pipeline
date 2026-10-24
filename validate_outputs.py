@@ -367,6 +367,10 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             # canonical sentence filename, not from a legacy book prefix.
             prefix = canonical.name.removesuffix("_canonical_sentences.json")
             acoustic = book_dir / "audio" / f"{prefix}_acoustic_words.json"
+            if not acoustic.exists():
+                generic_acoustic = book_dir / "audio" / f"chapter_{number:02d}_acoustic_words.json"
+                if generic_acoustic.exists():
+                    acoustic = generic_acoustic
             expected = {
                 "canonical_sha256": _sha256(canonical),
                 "analysis_sha256": _sha256(analysis) if analysis.exists() else None,

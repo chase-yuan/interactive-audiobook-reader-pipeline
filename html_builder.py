@@ -90,9 +90,17 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     audio_track_attr = "" if has_audio else ' style="display: none;"'
     repeat_group_attr = "" if has_audio else ' style="display: none;"'
     
-    clean_short_title = re.sub(r'[\(\[]\s*unabridged\s*[\)\]]', '', book_title, flags=re.I).strip()
-    if len(clean_short_title) > 28 and ':' in clean_short_title:
-        clean_short_title = clean_short_title.split(':')[0].strip()
+    clean_short_title = re.sub(r'[\(\[]\s*(?:unabridged|audiobook|edition|anniversary|deluxe)\s*[\)\]]', '', book_title, flags=re.I).strip()
+    for sep in [':', ' - ', ' — ', ' – ']:
+        if sep in clean_short_title:
+            cand = clean_short_title.split(sep)[0].strip()
+            if len(cand) >= 3:
+                clean_short_title = cand
+                break
+    if len(clean_short_title) > 28 and ' ' in clean_short_title:
+        words = clean_short_title.split()
+        if len(words) > 3:
+            clean_short_title = " ".join(words[:3])
 
     html_head = f"""<!DOCTYPE html>
 <html lang="en" data-theme="sepia">
@@ -147,69 +155,6 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
     html_head += f"""      </div>
     </div>
-    
-    <div class="nav-actions">
-      <button class="icon-btn primary" id="globalPlayBtn" onclick="toggleGlobalPlay()"{play_btn_attr}>▶ Play</button>
-      <button class="icon-btn" id="drawerToggleBtn" onclick="toggleDrawer()">Menu</button>
-    </div>
-  </div>
-  
-  <div class="control-drawer" id="controlDrawer">
-    <div class="drawer-inner">
-      <div class="audio-player-bar" id="audioPlayerBar"{audio_track_attr}>
-        <button class="player-speed-btn" id="audioSpeedBtn" onclick="cyclePlaybackRate()" aria-label="Playback speed">1.0×</button>
-        <span class="player-time" id="playerCurTime">00:00</span>
-        <div class="player-slider-wrap">
-          <input type="range" class="player-slider" id="playerScrubber" min="0" max="100" value="0" step="0.1" aria-label="Playback scrubber">
-        </div>
-        <span class="player-time" id="playerTotalTime">00:00</span>
-        <audio id="audioTrack" playsinline webkit-playsinline preload="auto" src="{html.escape(audio_src)}" class="hidden-audio"{audio_track_attr}></audio>
-      </div>
-      <div class="drawer-row">
-        <div class="drawer-group">
-          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (Shortcut: T)">Dual</button>
-          <button class="pill-btn" onclick="toggleTheme()" aria-label="Switch theme">Theme</button>
-        </div>
-        <div class="drawer-group"{repeat_group_attr}>
-          <button class="pill-btn" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (Shortcut: R)">Repeat</button>
-          <button class="pill-btn" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>
-        </div>
-        <div class="drawer-group">
-          <label class="toggle-pill" aria-label="Auto-scroll to active sentence">
-            <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
-            <span class="toggle-badge">Auto-scroll</span>
-          </label>
-          <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" aria-label="Keyboard & Gesture shortcuts">Shortcuts</button>
-        </div>
-      </div>
-      <div class="drawer-tips" id="drawerTips">
-        <div class="tips-columns">
-          <div class="tips-section">
-            <div class="tips-section-title">Reading & Playback</div>
-            <div class="tips-row"><span class="kbd-key">Tap Sentence</span><span>{'Play audio & show breakdown' if has_audio else 'Show translation & vocabulary breakdown'}</span></div>
-            <div class="tips-row"><span class="kbd-key">{'Double Tap' if has_audio else 'Tap Active'}</span><span>{'Repeat sentence loop' if has_audio else 'Collapse translation card'}</span></div>
-            {f'<div class="tips-row"><span class="kbd-key">Tap Card</span><span>Collapse card</span></div>' if has_audio else ''}
-            <div class="tips-row"><span class="kbd-key">Space</span><span>Toggle translation card (peek / hide)</span></div>
-            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence (audio only)</span></div>
-            <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
-            {f'<div class="tips-row"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>' if has_audio else ''}
-            {f'<div class="tips-row"><span class="kbd-key">P</span><span>Toggle Focus mode</span></div>' if has_audio else ''}
-          </div>
-          <div class="tips-section">
-            <div class="tips-section-title">Focus Mode (Immersion)</div>
-            <div class="tips-row"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
-            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
-            <div class="tips-row"><span class="kbd-key">↑</span><span>Replay current sentence</span></div>
-            <div class="tips-row"><span class="kbd-key">Swipe L/R</span><span>Previous / Next sentence</span></div>
-            <div class="tips-row"><span class="kbd-key">R</span><span>Cycle repeats (1× / 2× / 3× / 5×)</span></div>
-            <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Dual / English-only</span></div>
-            <div class="tips-row"><span class="kbd-key">H / B</span><span>Audio mode (hide text for listening)</span></div>
-            <div class="tips-row"><span class="kbd-key">A / +/-</span><span>Scale English font size</span></div>
-            <div class="tips-row"><span class="kbd-key">Double Tap / Esc</span><span>Exit Focus mode</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </header>
 
@@ -254,15 +199,19 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 return any(w.get("timing_source") == "estimated" for w in sent.get("word_spans", []))
 
             valid_flags = []
-            # Resolve canonical metadata if available to preserve EPUB paragraph structure
+            # Resolve canonical metadata if available to preserve EPUB paragraph structure and heading hierarchy
         canonical_path = c.get('aligned_json', '').replace('_aligned_sentences.json', '_canonical_sentences.json')
         canonical_map = {}
+        canonical_headings = set()
         if os.path.exists(canonical_path):
             try:
                 with open(canonical_path, 'r', encoding='utf-8') as cf:
                     for item in json.load(cf):
-                        if 'id' in item and 'elem_idx' in item:
-                            canonical_map[item['id']] = item['elem_idx']
+                        if 'id' in item:
+                            if 'elem_idx' in item:
+                                canonical_map[item['id']] = item['elem_idx']
+                            if item.get('is_heading'):
+                                canonical_headings.add(item['id'])
             except Exception:
                 pass
 
@@ -282,7 +231,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
             raw_sid = s["id"]
             sid = f"c{cnum}-{raw_sid}"
-            is_h = s.get("is_heading", False)
+            is_h = bool(s.get("is_heading")) or (raw_sid in canonical_headings)
             start = s.get("audio_start", s.get("start"))
             end = s.get("audio_end", s.get("end"))
             word_spans = s.get("word_spans", [])
@@ -419,21 +368,79 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
     book_id_json = json.dumps(book_id)
     html_tail = f"""
-  <div class="sentence-hud" id="sentenceHud" role="dialog" aria-label="Sentence translation and notes">
-    <div class="hud-header">
-      <span class="hud-sent-id" id="hudSentId"></span>
-      <button class="hud-close-btn" onclick="closeSentenceHud(event)" aria-label="Close notes">✕</button>
-    </div>
-    <div class="hud-trans" id="hudTrans"></div>
-    <div class="hud-vocab-list" id="hudVocabList"></div>
-  </div>
+  <aside class="marginalia-note" id="marginaliaNote" aria-live="polite">
+    <div class="marginalia-trans" id="marginaliaTrans"></div>
+    <div class="marginalia-vocab" id="marginaliaVocab"></div>
+  </aside>
 </main>
 
-<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ondblclick="handleFocusDblClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
+<nav class="bottom-control-dock" id="bottomControlDock" aria-label="Audiobook player dock"{audio_track_attr}>
+  <div class="dock-primary-row">
+    <button class="dock-play-btn" id="globalPlayBtn" onclick="toggleGlobalPlay()"{play_btn_attr}>▶ Play</button>
+    <button class="dock-chip" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (Shortcut: R)"{repeat_group_attr}><svg class="dock-rep-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></button>
+    <button class="dock-chip" id="audioSpeedBtn" onclick="cyclePlaybackRate()" aria-label="Playback speed"{audio_track_attr}>1.0×</button>
+    <div class="dock-scrubber-wrap"{audio_track_attr}>
+      <span class="dock-time" id="playerCurTime">00:00</span>
+      <input type="range" class="player-slider" id="playerScrubber" min="0" max="100" value="0" step="0.1" aria-label="Playback scrubber">
+      <span class="dock-time" id="playerTotalTime">00:00</span>
+    </div>
+    <button class="dock-chip" id="drawerToggleBtn" onclick="toggleDrawer(event)" aria-label="Preferences">Menu</button>
+  </div>
+
+  <div class="dock-expanded-content control-drawer" id="controlDrawer" onclick="event.stopPropagation()">
+    <div class="dock-hairline"></div>
+    <div class="dock-expanded-grid">
+      <div class="dock-sub-row dock-row-modes">
+        <div class="dock-chip-group">
+          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (Shortcut: T)">Dual</button>
+          <button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)"{repeat_group_attr}>Focus</button>
+        </div>
+        <label class="toggle-pill" aria-label="Auto-scroll to active sentence">
+          <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
+          <span class="toggle-badge">Auto</span>
+        </label>
+      </div>
+      <div class="dock-sub-hairline"></div>
+      <div class="dock-sub-row dock-row-theme">
+        <div class="dock-theme-group">
+          <div class="theme-swatches">
+            <button class="theme-dot theme-dot-sepia active" onclick="setTheme('sepia')" aria-label="Sepia"></button>
+            <button class="theme-dot theme-dot-light" onclick="setTheme('light')" aria-label="Light"></button>
+            <button class="theme-dot theme-dot-dark" onclick="setTheme('dark')" aria-label="Dark"></button>
+            <button class="theme-dot theme-dot-night" onclick="setTheme('night')" aria-label="Night"></button>
+          </div>
+          <button class="dock-text-link" id="tipsToggleBtn" onclick="toggleTips()" aria-label="Keyboard & Gesture shortcuts">Shortcuts</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <audio id="audioTrack" playsinline webkit-playsinline preload="auto" src="{html.escape(audio_src)}" class="hidden-audio"{audio_track_attr}></audio>
+</nav>
+
+<!-- Shortcuts Centered Raycast Modal -->
+<div class="shortcuts-modal-overlay" id="drawerTips" onclick="toggleTips()">
+  <div class="shortcuts-modal" onclick="event.stopPropagation()">
+    <div class="shortcuts-modal-header">
+      <span class="shortcuts-modal-title">Shortcuts</span>
+      <button class="shortcuts-modal-close" onclick="toggleTips()" aria-label="Close shortcuts">✕</button>
+    </div>
+    <div class="shortcuts-table">
+      <div class="shortcut-item"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
+      <div class="shortcut-item"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
+      <div class="shortcut-item"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
+      <div class="shortcut-item"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>
+      <div class="shortcut-item"><span class="kbd-key">P</span><span>Focus Mode (Immersion)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">H / B</span><span>Audio mode (hide text for listening)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Dismiss popover / modal</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
   <div class="focus-top-bar pocket-header">
     <button class="focus-close-icon pocket-close-icon" id="focusExitBtn" onclick="toggleFocusMode(false)">✕</button>
   </div>
-  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)" ondblclick="handleFocusDblClick(event)">
+  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)">
     <div class="focus-sentence-box pocket-sentence-box" id="focusSentenceBox">
       <div class="focus-sentence-text pocket-sentence-text" id="focusSentenceText"></div>
       <div class="focus-sentence-trans pocket-sentence-trans" id="focusSentenceTrans"></div>
@@ -505,20 +512,24 @@ function safePlay(audioEl) {
   }
 }
 
-const SPEED_PRESETS = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 0.75];
-const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 1.75: '1.75×', 2.0: '2.0×', 2.25: '2.25×', 2.5: '2.5×', 2.75: '2.75×', 3.0: '3.0×', 0.75: '0.75×' };
+const SPEED_PRESETS = [1.0, 1.25, 1.5, 2.0];
+const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 2.0: '2.0×' };
 let currentPlaybackSpeed = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'playback_speed') || '1.0');
-if (!SPEED_PRESETS.includes(currentPlaybackSpeed)) currentPlaybackSpeed = 1.0;
+if (!Number.isFinite(currentPlaybackSpeed) || currentPlaybackSpeed <= 0) currentPlaybackSpeed = 1.0;
 
 function applyPlaybackRate(rate) {
-  currentPlaybackSpeed = rate;
-  localStorage.setItem(STORAGE_PREFIX + 'playback_speed', String(rate));
-  if (audio) {
-    audio.playbackRate = rate;
+  const cleanRate = Math.round(rate * 100) / 100;
+  currentPlaybackSpeed = cleanRate;
+  try {
+    localStorage.setItem(STORAGE_PREFIX + 'playback_speed', String(cleanRate));
+  } catch(e) {}
+  if (audio && Math.abs(audio.playbackRate - cleanRate) >= 0.01) {
+    audio.playbackRate = cleanRate;
   }
   if (audioSpeedBtn) {
-    audioSpeedBtn.textContent = SPEED_LABELS[rate] || (rate + '×');
-    if (rate !== 1.0) {
+    const label = SPEED_LABELS[cleanRate] || ((cleanRate % 1 === 0 ? cleanRate.toFixed(1) : String(cleanRate)) + '×');
+    audioSpeedBtn.textContent = label;
+    if (Math.abs(cleanRate - 1.0) >= 0.01) {
       audioSpeedBtn.classList.add('custom-speed');
     } else {
       audioSpeedBtn.classList.remove('custom-speed');
@@ -526,10 +537,22 @@ function applyPlaybackRate(rate) {
   }
 }
 
+// Synchronize UI and audio rate with stored preference immediately on startup
+applyPlaybackRate(currentPlaybackSpeed);
+
 function cyclePlaybackRate() {
-  const curIdx = SPEED_PRESETS.indexOf(currentPlaybackSpeed);
-  const nextRate = SPEED_PRESETS[(curIdx >= 0 ? curIdx + 1 : 0) % SPEED_PRESETS.length];
+  const curIdx = SPEED_PRESETS.findIndex(r => Math.abs(r - currentPlaybackSpeed) < 0.01);
+  let nextRate;
+  if (curIdx >= 0) {
+    nextRate = SPEED_PRESETS[(curIdx + 1) % SPEED_PRESETS.length];
+  } else {
+    // If extension set custom speed (e.g. 2.5x, 3.0x, 0.75x):
+    // Stepping moves to next preset above it, or loops to 1.0 if >= 2.0
+    const nextHigherIdx = SPEED_PRESETS.findIndex(r => r > currentPlaybackSpeed + 0.05);
+    nextRate = nextHigherIdx >= 0 ? SPEED_PRESETS[nextHigherIdx] : SPEED_PRESETS[0];
+  }
   applyPlaybackRate(nextRate);
+  scheduleMainDockHide();
 }
 
 function formatAudioTime(sec) {
@@ -544,9 +567,6 @@ let lastScrubberRenderPct = -1;
 
 function updateAudioPlayerUI() {
   if (!audio) return;
-  if (audio.playbackRate !== currentPlaybackSpeed) {
-    audio.playbackRate = currentPlaybackSpeed;
-  }
   const cur = audio.currentTime || 0;
   const dur = audio.duration || 0;
   const pct = dur > 0 ? (cur / dur) * 100 : 0;
@@ -581,6 +601,10 @@ function updateAudioPlayerUI() {
 if (playerScrubber) {
   playerScrubber.addEventListener('input', () => {
     isUserScrubbing = true;
+    if (dockIdleTimer) {
+      clearTimeout(dockIdleTimer);
+      dockIdleTimer = null;
+    }
     const pct = parseFloat(playerScrubber.value) || 0;
     playerScrubber.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
     if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -595,7 +619,65 @@ if (playerScrubber) {
       } catch(e) {}
     }
     isUserScrubbing = false;
+    scheduleMainDockHide();
   });
+}
+
+let isProgrammaticAutoScroll = false;
+let programmaticScrollTimer = null;
+
+function performAutoScroll(element) {
+  if (!element || typeof element.scrollIntoView !== 'function') return;
+  isProgrammaticAutoScroll = true;
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+  programmaticScrollTimer = setTimeout(() => {
+    isProgrammaticAutoScroll = false;
+  }, 1200);
+  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+let dockIdleTimer = null;
+const DOCK_IDLE_DELAY = 3500;
+
+function scheduleMainDockHide() {
+  if (dockIdleTimer) {
+    clearTimeout(dockIdleTimer);
+    dockIdleTimer = null;
+  }
+  if (!audio || (audio.paused && !shadowState.isInternalPause)) return;
+  const dock = document.getElementById('bottomControlDock');
+  if (!dock || dock.classList.contains('expanded')) return;
+  if (isUserScrubbing) return;
+  if (dock._isMouseOver) return;
+
+  dockIdleTimer = setTimeout(() => {
+    if (!audio || (audio.paused && !shadowState.isInternalPause)) return;
+    if (!dock || dock.classList.contains('expanded') || isUserScrubbing || dock._isMouseOver) return;
+    dock.classList.add('dock-idle-hidden');
+  }, DOCK_IDLE_DELAY);
+}
+
+function showMainDock() {
+  const dock = document.getElementById('bottomControlDock');
+  if (!dock) return;
+  dock.classList.remove('dock-idle-hidden');
+  scheduleMainDockHide();
+}
+
+function onUserDockActivity() {
+  const e = arguments[0];
+  if (isProgrammaticAutoScroll && e && (e.type === 'scroll' || e.type === 'pointermove')) {
+    return;
+  }
+  if (e && e.type === 'pointerdown') {
+    isProgrammaticAutoScroll = false;
+  }
+  const dock = document.getElementById('bottomControlDock');
+  if (!dock) return;
+  if (dock.classList.contains('dock-idle-hidden')) {
+    dock.classList.remove('dock-idle-hidden');
+  }
+  scheduleMainDockHide();
 }
 
 let activeChapterNum = parseInt(localStorage.getItem(STORAGE_PREFIX + 'active_ch') || String(window.__INITIAL_CHAPTER__), 10);
@@ -604,6 +686,45 @@ let currentPlayingId = null;
 let currentActiveWordEl = null;
 let currentActiveWordStart = -1;
 let currentActiveWordEnd = -1;
+
+function clearActiveWord() {
+  if (currentActiveWordEl) {
+    currentActiveWordEl.classList.remove('active-word');
+    currentActiveWordEl = null;
+  }
+  const orphans = document.querySelectorAll('.w.active-word');
+  for (let i = 0; i < orphans.length; i++) {
+    orphans[i].classList.remove('active-word');
+  }
+  currentActiveWordStart = -1;
+  currentActiveWordEnd = -1;
+}
+
+function setActiveWord(wordEl, start, end, wordIndex) {
+  if (currentActiveWordEl === wordEl && wordEl && wordEl.classList.contains('active-word')) {
+    return;
+  }
+  clearActiveWord();
+  if (wordEl) {
+    wordEl.classList.add('active-word');
+    currentActiveWordEl = wordEl;
+    currentActiveWordStart = Number.isFinite(start) ? start : (parseFloat(wordEl.dataset.s) || -1);
+    currentActiveWordEnd = Number.isFinite(end) ? end : (parseFloat(wordEl.dataset.e) || -1);
+    
+    if (focusModeActive || pocketModeActive) {
+      const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
+      if (pText) {
+        if (!pText._cachedFocusWords) {
+          pText._cachedFocusWords = Array.from(pText.querySelectorAll('.w'));
+        }
+        const idx = Number.isFinite(wordIndex) && wordIndex >= 0 ? wordIndex : (wordEl.parentElement ? Array.from(wordEl.parentElement.querySelectorAll('.w')).indexOf(wordEl) : -1);
+        if (idx >= 0 && idx < pText._cachedFocusWords.length) {
+          pText._cachedFocusWords[idx].classList.add('active-word');
+        }
+      }
+    }
+  }
+}
 let currentActiveSection = null;
 let sentenceTimeIndex = [];
 let syncFrameId = null;
@@ -639,23 +760,49 @@ function toggleAutoScroll(enabled) {
   if (btn) btn.classList.toggle('active', enabled);
   const chk = document.getElementById('autoScrollCheck');
   if (chk) chk.checked = enabled;
+  scheduleMainDockHide();
 }
 
 function toggleAutoScrollPill(btn) {
   toggleAutoScroll(!autoScrollEnabled);
-  showToast(autoScrollEnabled ? 'Auto-scroll enabled' : 'Auto-scroll paused');
 }
 window.toggleAutoScrollPill = toggleAutoScrollPill;
 
 // Chapter Switching
 function toggleChapterDropdown(event) {
-  if (event) event.stopPropagation();
+  if (event && event.stopPropagation) event.stopPropagation();
+  if (controlDrawer) controlDrawer.classList.remove('open');
+  const dock = document.getElementById('bottomControlDock');
+  if (dock) dock.classList.remove('expanded');
+  if (drawerToggleBtn) {
+    drawerToggleBtn.innerHTML = 'Menu';
+    drawerToggleBtn.classList.remove('active');
+  }
   chapterDropdown.classList.toggle('open');
 }
 
 function closeDropdowns(event) {
-  if (chapterDropdown.classList.contains('open')) {
+  if (chapterDropdown && chapterDropdown.classList.contains('open')) {
     chapterDropdown.classList.remove('open');
+  }
+  if (controlDrawer && controlDrawer.classList.contains('open')) {
+    const dock = document.getElementById('bottomControlDock');
+    if (dock && !dock.contains(event.target)) {
+      controlDrawer.classList.remove('open');
+      dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
+      }
+    }
+  }
+  const tips = document.getElementById('drawerTips');
+  if (tips && tips.classList.contains('open')) {
+    if (event.target === tips) {
+      tips.classList.remove('open');
+      const btn = document.getElementById('tipsToggleBtn');
+      if (btn) btn.classList.remove('active');
+    }
   }
 }
 
@@ -769,13 +916,15 @@ function playSentenceAtTime(start) {
       targetSentence._cachedWords = Array.from(targetSentence.querySelectorAll('.w'));
     }
     const firstWord = targetSentence._cachedWords[0];
-    if (currentActiveWordEl && currentActiveWordEl !== firstWord) {
-      currentActiveWordEl.classList.remove('active-word');
-    }
     if (firstWord) {
-      firstWord.classList.add('active-word');
-      currentActiveWordEl = firstWord;
+      const ws = parseFloat(firstWord.dataset.s) || start;
+      const we = (targetSentence._cachedWords[1] ? parseFloat(targetSentence._cachedWords[1].dataset.s) : parseFloat(firstWord.dataset.e)) || (start + 0.3);
+      setActiveWord(firstWord, ws, we, 0);
+    } else {
+      clearActiveWord();
     }
+  } else {
+    clearActiveWord();
   }
 
   const isDifferentTrack = targetUrl && (!audio.src || !isSameAudioSource(audio.src, targetUrl));
@@ -801,6 +950,7 @@ function playSentenceAtTime(start) {
           performPlay();
         }
       }, { once: true });
+      audio.load();
     }
   }
 }
@@ -883,10 +1033,7 @@ function switchChapter(chNum, autoPlay) {
         audio.src = audioSrc;
         try { audio.currentTime = 0; } catch(e) {}
         currentPlayingId = null;
-        if (currentActiveWordEl) {
-          currentActiveWordEl.classList.remove('active-word');
-          currentActiveWordEl = null;
-        }
+        clearActiveWord();
         if (wasPlaying) {
           try { audio.currentTime = 0; } catch(e) {}
           safePlay(audio);
@@ -940,24 +1087,44 @@ function switchChapter(chNum, autoPlay) {
 switchChapter(activeChapterNum);
 preloadNextChapterAudio(activeChapterNum + 1);
 
-function toggleDrawer() {
+function toggleDrawer(event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  const dock = document.getElementById('bottomControlDock');
   const isOpen = controlDrawer.classList.contains('open');
   if (isOpen) {
     controlDrawer.classList.remove('open');
-    drawerToggleBtn.innerHTML = 'Menu';
+    if (dock) dock.classList.remove('expanded');
+    if (drawerToggleBtn) {
+      drawerToggleBtn.innerHTML = 'Menu';
+      drawerToggleBtn.classList.remove('active');
+    }
     localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'false');
+    scheduleMainDockHide();
   } else {
+    hideMarginalia();
+    if (chapterDropdown) chapterDropdown.classList.remove('open');
+    const tips = document.getElementById('drawerTips');
+    if (tips) tips.classList.remove('open');
     controlDrawer.classList.add('open');
-    drawerToggleBtn.innerHTML = 'Close';
+    if (dock) {
+      dock.classList.remove('dock-idle-hidden');
+      dock.classList.add('expanded');
+    }
+    if (dockIdleTimer) {
+      clearTimeout(dockIdleTimer);
+      dockIdleTimer = null;
+    }
+    if (drawerToggleBtn) {
+      drawerToggleBtn.innerHTML = 'Close';
+      drawerToggleBtn.classList.add('active');
+    }
     localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'true');
   }
 }
 
 const savedDrawerState = localStorage.getItem(STORAGE_PREFIX + 'drawer_open');
-if (savedDrawerState === 'true') {
-  controlDrawer.classList.add('open');
-  drawerToggleBtn.innerHTML = 'Close';
-}
+// Clean reading canvas invariant: drawers always start closed on load
+localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'false');
 
 const themes = ['sepia', 'light', 'dark', 'night'];
 
@@ -976,6 +1143,10 @@ function setTheme(theme) {
   localStorage.setItem('audible_theme', theme);
   const themePreset = document.getElementById('themePreset');
   if (themePreset) themePreset.value = theme;
+  document.querySelectorAll('.theme-dot').forEach(dot => {
+    dot.classList.toggle('active', dot.classList.contains('theme-dot-' + theme));
+  });
+  scheduleMainDockHide();
 }
 
 window.toggleTheme = toggleTheme;
@@ -999,13 +1170,14 @@ function setLanguageMode(mode) {
   if (isEnglish) {
     document.documentElement.setAttribute('data-hide-chinese', 'true');
     document.querySelectorAll('.sentence-unit.active').forEach(u => u.classList.add('card-collapsed'));
-    if (typeof closeSentenceHud === 'function') closeSentenceHud();
+    if (typeof hideMarginalia === 'function') hideMarginalia();
   } else {
     document.documentElement.removeAttribute('data-hide-chinese');
   }
   localStorage.setItem(STORAGE_PREFIX + 'hide_chinese', String(isEnglish));
   localStorage.setItem('audible_hide_chinese', String(isEnglish));
   updateLanguageModeUI(mode);
+  scheduleMainDockHide();
 }
 
 function updateLanguageModeUI(mode) {
@@ -1051,6 +1223,7 @@ function setFontSizePreset(value) {
 function adjustFontSize(delta) {
   const next = Math.max(0.95, Math.min(1.8, (currentFontSizeRem || 1.2) + delta * 0.1));
   setFontSizePreset(next);
+  scheduleMainDockHide();
 }
 
 window.setFontSizePreset = setFontSizePreset;
@@ -1064,25 +1237,22 @@ function toggleTips() {
   const tipsEl = document.getElementById('drawerTips');
   const btn = document.getElementById('tipsToggleBtn');
   if (tipsEl) {
+    const willOpen = !tipsEl.classList.contains('open');
     tipsEl.classList.toggle('open');
-    if (btn) btn.classList.toggle('active');
+    if (btn) btn.classList.toggle('active', willOpen);
+    if (willOpen && controlDrawer && controlDrawer.classList.contains('open')) {
+      controlDrawer.classList.remove('open');
+      const dock = document.getElementById('bottomControlDock');
+      if (dock) dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
+      }
+    }
   }
 }
 
-function showToast(msg) {
-  let toast = document.getElementById('reader-toast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'reader-toast';
-    document.body.appendChild(toast);
-  }
-  toast.textContent = msg;
-  toast.classList.add('show');
-  clearTimeout(toast.__timer);
-  toast.__timer = setTimeout(() => {
-    toast.classList.remove('show');
-  }, 2200);
-}
+function showToast() {}
 
 let lastSentenceClickTime = 0;
 let lastSentenceClickId = null;
@@ -1090,7 +1260,6 @@ let lastSentenceClickId = null;
 function startSentenceShadowing(sentenceEl) {
   if (!sentenceEl) return;
   if (sentenceEl.dataset.matched !== '1') {
-    showToast('No audio available for this sentence');
     return;
   }
   if (shadowState.timer) clearTimeout(shadowState.timer);
@@ -1098,10 +1267,8 @@ function startSentenceShadowing(sentenceEl) {
   shadowState.completed = 0;
   shadowState.pauseStartTime = 0;
   shadowState.sentence = sentenceEl;
-  const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-  if (btn) btn.textContent = 'Stop Repeat';
+  renderRepeatBtn(shadowState.repetitions || 1);
   requestShadowWakeLock();
-  showToast('Shadowing loop active');
   updatePocketStatus();
   updatePocketSentenceDisplay();
   
@@ -1123,50 +1290,34 @@ function startSentenceShadowing(sentenceEl) {
 }
 
 
-let currentHudSentenceId = null;
+let lastClickedSentenceId = null;
 
-function closeSentenceHud(event) {
+function hideMarginalia(event) {
   if (event && event.stopPropagation) event.stopPropagation();
-  const hud = document.getElementById('sentenceHud');
-  if (hud) {
-    hud.classList.remove('visible');
+  const note = document.getElementById('marginaliaNote');
+  if (note) {
+    note.classList.remove('visible');
   }
-  currentHudSentenceId = null;
+  lastClickedSentenceId = null;
 }
 
-function positionHud(targetEl, hudEl) {
-  if (!targetEl || !hudEl) return;
-  const rect = targetEl.getBoundingClientRect();
-  const hudWidth = Math.min(580, window.innerWidth - 32);
-  hudEl.style.width = hudWidth + 'px';
-
-  const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
-  const scrollY = window.pageYOffset || document.documentElement.scrollTop;
-
-  let left = rect.left + scrollX + (rect.width / 2) - (hudWidth / 2);
-  const minLeft = scrollX + 16;
-  const maxLeft = scrollX + window.innerWidth - hudWidth - 16;
-  left = Math.max(minLeft, Math.min(maxLeft, left));
-
-  const spaceBelow = window.innerHeight - rect.bottom;
-  let top;
-  if (spaceBelow < 200 && rect.top > 200) {
-    top = rect.top + scrollY - hudEl.offsetHeight - 8;
-  } else {
-    top = rect.bottom + scrollY + 8;
-  }
-
-  hudEl.style.left = Math.round(left) + 'px';
-  hudEl.style.top = Math.round(top) + 'px';
+function positionMarginalia(targetEl, noteEl) {
+  if (!targetEl || !noteEl) return;
+  const mainEl = document.querySelector('.reader-main');
+  if (!mainEl) return;
+  const mRect = mainEl.getBoundingClientRect();
+  const tRect = targetEl.getBoundingClientRect();
+  const relTop = Math.max(0, tRect.top - mRect.top);
+  noteEl.style.top = Math.round(relTop) + 'px';
 }
 
-function showSentenceHud(sentenceEl) {
+function showMarginaliaForSentence(sentenceEl, forceShow = false) {
   if (!sentenceEl) return;
   const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
-  if (isChineseLocked) return;
+  if (isChineseLocked && !forceShow) return;
 
-  const hud = document.getElementById('sentenceHud');
-  if (!hud) return;
+  const note = document.getElementById('marginaliaNote');
+  if (!note) return;
 
   let transHtml = '';
   let vocabHtml = '';
@@ -1195,31 +1346,22 @@ function showSentenceHud(sentenceEl) {
   }
 
   if (!transHtml && !vocabHtml) {
-    closeSentenceHud();
+    hideMarginalia();
     return;
   }
 
-  const transTarget = document.getElementById('hudTrans');
-  const vocabTarget = document.getElementById('hudVocabList');
-  const sentIdTarget = document.getElementById('hudSentId');
+  const transTarget = document.getElementById('marginaliaTrans');
+  const vocabTarget = document.getElementById('marginaliaVocab');
 
   if (transTarget) transTarget.innerHTML = transHtml;
-  if (vocabTarget) vocabTarget.innerHTML = vocabHtml;
-  if (sentIdTarget) sentIdTarget.textContent = sentenceEl.id ? ('§ ' + sentenceEl.id.split('-').pop()) : '';
-
-  hud.style.display = 'block';
-  positionHud(sentenceEl, hud);
-  hud.classList.add('visible');
-  currentHudSentenceId = sentenceEl.id;
-}
-
-function toggleSentenceHud(sentenceEl) {
-  if (!sentenceEl) return;
-  if (currentHudSentenceId === sentenceEl.id) {
-    closeSentenceHud();
-  } else {
-    showSentenceHud(sentenceEl);
+  if (vocabTarget) {
+    vocabTarget.innerHTML = vocabHtml;
+    vocabTarget.style.display = vocabHtml ? 'flex' : 'none';
   }
+
+  positionMarginalia(sentenceEl, note);
+  note.classList.add('visible');
+  lastClickedSentenceId = sentenceEl.id;
 }
 
 function escapeHtml(s) {
@@ -1227,42 +1369,69 @@ function escapeHtml(s) {
 }
 
 function updateSentenceInspectors(sentenceEl) {
-  // Pure focus playback: do not auto-open or flash HUD during continuous audio reading
+  // Pure focus playback: quietly fade out marginalia when audio advances to a new sentence
+  if (lastClickedSentenceId && sentenceEl && sentenceEl.id !== lastClickedSentenceId) {
+    hideMarginalia();
+  }
 }
 
 document.addEventListener('click', function(e) {
-  const hud = document.getElementById('sentenceHud');
-  if (!hud || !hud.classList.contains('visible')) return;
-  if (hud.contains(e.target) || e.target.closest('.sentence-text') || e.target.closest('.sentence-unit')) {
+  if (controlDrawer && controlDrawer.classList.contains('open')) {
+    const dock = document.getElementById('bottomControlDock');
+    if (dock && !dock.contains(e.target)) {
+      controlDrawer.classList.remove('open');
+      dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
+      }
+      scheduleMainDockHide();
+    }
+  }
+  const note = document.getElementById('marginaliaNote');
+  if (!note || !note.classList.contains('visible')) return;
+  if (note.contains(e.target) || e.target.closest('.sentence-text') || e.target.closest('.sentence-unit')) {
     return;
   }
-  closeSentenceHud();
+  hideMarginalia();
 });
 
 window.addEventListener('resize', function() {
-  if (currentHudSentenceId) {
-    const el = document.getElementById(currentHudSentenceId);
-    const hud = document.getElementById('sentenceHud');
-    if (el && hud && hud.classList.contains('visible')) {
-      positionHud(el, hud);
+  if (lastClickedSentenceId) {
+    const el = document.getElementById(lastClickedSentenceId);
+    const note = document.getElementById('marginaliaNote');
+    if (el && note && note.classList.contains('visible')) {
+      positionMarginalia(el, note);
     }
   }
 });
 
 function handleSentenceClick(event, id, start, end, hasMatch) {
   if (event && event.stopPropagation) event.stopPropagation();
+  if (controlDrawer && controlDrawer.classList.contains('open')) {
+    controlDrawer.classList.remove('open');
+    const dock = document.getElementById('bottomControlDock');
+    if (dock) dock.classList.remove('expanded');
+    if (drawerToggleBtn) {
+      drawerToggleBtn.innerHTML = 'Menu';
+      drawerToggleBtn.classList.remove('active');
+    }
+  }
+  if (chapterDropdown && chapterDropdown.classList.contains('open')) {
+    chapterDropdown.classList.remove('open');
+  }
+  showMainDock();
   const el = document.getElementById(id);
   if (!el) return;
   
   const now = Date.now();
-  const isDoubleTap = (lastSentenceClickId === id && (now - lastSentenceClickTime) < 350);
-  lastSentenceClickTime = now;
-  lastSentenceClickId = id;
-  
-  if (isDoubleTap && window.__HAS_AUDIO__) {
-    startSentenceShadowing(el);
-    return;
+  const isDoubleTap = (lastSentenceClickId === id && (now - lastSentenceClickTime) < 400);
+  if (isDoubleTap) {
+    lastSentenceClickTime = 0;
+  } else {
+    lastSentenceClickTime = now;
   }
+  lastSentenceClickId = id;
 
   // Cancel any pending shadow repeat timer
   if (shadowState.timer) {
@@ -1284,11 +1453,37 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
   const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
   el.classList.add('active');
   if (isChineseLocked) {
-    el.classList.add('card-collapsed');
-    closeSentenceHud();
+    if (isDoubleTap) {
+      const note = document.getElementById('marginaliaNote');
+      const isAlreadyVisible = note && note.classList.contains('visible') && lastClickedSentenceId === id;
+      if (isAlreadyVisible) {
+        el.classList.add('card-collapsed');
+        hideMarginalia();
+      } else {
+        el.classList.remove('card-collapsed');
+        showMarginaliaForSentence(el, true);
+      }
+      try { window.getSelection().removeAllRanges(); } catch(e) {}
+    } else {
+      el.classList.add('card-collapsed');
+      hideMarginalia();
+    }
   } else {
-    el.classList.remove('card-collapsed');
-    toggleSentenceHud(el);
+    if (isDoubleTap) {
+      const note = document.getElementById('marginaliaNote');
+      const isAlreadyVisible = note && note.classList.contains('visible') && lastClickedSentenceId === id;
+      if (isAlreadyVisible) {
+        el.classList.add('card-collapsed');
+        hideMarginalia();
+      } else {
+        el.classList.remove('card-collapsed');
+        showMarginaliaForSentence(el);
+      }
+      try { window.getSelection().removeAllRanges(); } catch(e) {}
+    } else {
+      el.classList.remove('card-collapsed');
+      showMarginaliaForSentence(el);
+    }
   }
 
   currentPlayingId = id;
@@ -1298,14 +1493,12 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
     el._cachedWords = Array.from(el.querySelectorAll('.w'));
   }
   const firstWord = el._cachedWords[0];
-  if (currentActiveWordEl && currentActiveWordEl !== firstWord) {
-    currentActiveWordEl.classList.remove('active-word');
-  }
   if (firstWord) {
-    firstWord.classList.add('active-word');
-    currentActiveWordEl = firstWord;
-    currentActiveWordStart = parseFloat(firstWord.dataset.s) || start;
-    currentActiveWordEnd = (el._cachedWords[1] ? parseFloat(el._cachedWords[1].dataset.s) : parseFloat(firstWord.dataset.e)) || (start + 0.3);
+    const ws = parseFloat(firstWord.dataset.s) || start;
+    const we = (el._cachedWords[1] ? parseFloat(el._cachedWords[1].dataset.s) : parseFloat(firstWord.dataset.e)) || (start + 0.3);
+    setActiveWord(firstWord, ws, we, 0);
+  } else {
+    clearActiveWord();
   }
 
   if (focusModeActive || pocketModeActive) {
@@ -1360,7 +1553,6 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
           playSentenceAtTime(prevTime);
           interpolated = true;
         } else {
-          showToast('Audio narration concluded; expanded bilingual study breakdown.');
           interpolated = true;
         }
       } else if (nextTime !== null) {
@@ -1397,7 +1589,20 @@ audio.preservesPitch = true;
 audio.mozPreservesPitch = true;
 audio.webkitPreservesPitch = true;
 
-const MAIN_REP_LEVELS = [1, 2, 3, 5];
+const MAIN_REP_LEVELS = [1, 2, 3];
+const REPEAT_ICON_SVG = '<svg class="dock-rep-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>';
+
+function renderRepeatBtn(rep) {
+  const repBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
+  if (!repBtn) return;
+  if (rep > 1) {
+    repBtn.innerHTML = `${REPEAT_ICON_SVG}<span class="rep-badge">${rep}</span>`;
+    repBtn.classList.add('active');
+  } else {
+    repBtn.innerHTML = REPEAT_ICON_SVG;
+    repBtn.classList.remove('active');
+  }
+}
 
 function setMainRepetitions(n) {
   const nextRep = Math.max(1, parseInt(n, 10) || 1);
@@ -1406,16 +1611,7 @@ function setMainRepetitions(n) {
     localStorage.setItem(STORAGE_PREFIX + 'repetitions', String(nextRep));
     localStorage.setItem('reader_focus_repetitions', String(nextRep));
   } catch(e) {}
-  const repBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-  if (repBtn) {
-    if (nextRep === 1) {
-      repBtn.textContent = 'Repeat';
-      repBtn.classList.remove('active');
-    } else {
-      repBtn.textContent = `${nextRep}×`;
-      repBtn.classList.add('active');
-    }
-  }
+  renderRepeatBtn(nextRep);
   const focusRepBtn = document.getElementById('focusRepBtn');
   if (focusRepBtn) {
     focusRepBtn.textContent = `${nextRep}×`;
@@ -1424,9 +1620,7 @@ function setMainRepetitions(n) {
     if (shadowState.phase !== 'idle') {
       stopShadowing();
     }
-    showToast('Continuous reading mode active');
   } else {
-    showToast(`Sentence repeat set to ${nextRep}×`);
     if (shadowState.phase === 'idle' && audio && !audio.paused) {
       const activeSection = document.querySelector('.chapter-section.active');
       const sentence = findSentenceAt(audio.currentTime) || 
@@ -1437,6 +1631,7 @@ function setMainRepetitions(n) {
       }
     }
   }
+  scheduleMainDockHide();
 }
 
 function cycleMainRepeat(e) {
@@ -1445,6 +1640,7 @@ function cycleMainRepeat(e) {
   const idx = MAIN_REP_LEVELS.indexOf(cur);
   const nextRep = idx !== -1 ? MAIN_REP_LEVELS[(idx + 1) % MAIN_REP_LEVELS.length] : 1;
   setMainRepetitions(nextRep);
+  scheduleMainDockHide();
 }
 
 function setShadowRepetitions(value) {
@@ -1464,17 +1660,8 @@ function stopShadowing() {
   }
   shadowState.sentence = null;
   releaseShadowWakeLock();
-  const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-  if (btn) {
-    const cur = shadowState.repetitions || 1;
-    if (cur === 1) {
-      btn.textContent = 'Repeat';
-      btn.classList.remove('active');
-    } else {
-      btn.textContent = `${cur}×`;
-      btn.classList.add('active');
-    }
-  }
+  clearActiveWord();
+  renderRepeatBtn(shadowState.repetitions || 1);
   updatePocketStatus();
 }
 
@@ -1545,9 +1732,7 @@ function advanceShadowing() {
       if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
-      currentActiveWordEl = null;
-      currentActiveWordStart = -1;
-      currentActiveWordEnd = -1;
+      clearActiveWord();
       nextSentence.classList.add('active', 'card-collapsed');
       updateFocusStatus();
       updateFocusSentenceDisplay();
@@ -1555,7 +1740,7 @@ function advanceShadowing() {
         const rect = nextSentence.getBoundingClientRect();
         const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
         if (!inView) {
-          nextSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          performAutoScroll(nextSentence);
         }
       }
       return;
@@ -1585,9 +1770,7 @@ function advanceShadowing() {
       if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
-      currentActiveWordEl = null;
-      currentActiveWordStart = -1;
-      currentActiveWordEnd = -1;
+      clearActiveWord();
       updateFocusStatus();
       updateFocusSentenceDisplay();
       shadowState.phase = 'pause_buffer';
@@ -1598,7 +1781,7 @@ function advanceShadowing() {
         const rect = nextSentence.getBoundingClientRect();
         const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
         if (!inView) {
-          nextSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          performAutoScroll(nextSentence);
         }
       }
       if (shadowState.timer) clearTimeout(shadowState.timer);
@@ -1631,6 +1814,7 @@ function advanceShadowing() {
   
   shadowState.phase = 'pause_buffer';
   shadowState.pauseStartTime = Date.now();
+  clearActiveWord();
   armShadowPauseWatchdog();
   if (shadowState.timer) clearTimeout(shadowState.timer);
   shadowState.timer = setTimeout(() => {
@@ -1649,7 +1833,7 @@ let focusSingleTapTimer = null;
 let focusBlindMode = false;
 let pocketBlindMode = false;
 let focusShowTrans = true;
-const FOCUS_REP_LEVELS = [1, 3, 5];
+const FOCUS_REP_LEVELS = [1, 2, 3];
 const FOCUS_FONT_SCALES = [1.0, 1.25, 1.55];
 let focusFontScaleIndex = 0;
 let focusTouchStartY = 0;
@@ -1714,16 +1898,7 @@ function initFocusPreferences() {
     } else {
       shadowState.repetitions = 1;
     }
-    const initialRepBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-    if (initialRepBtn) {
-      if (shadowState.repetitions > 1) {
-        initialRepBtn.textContent = `${shadowState.repetitions}×`;
-        initialRepBtn.classList.add('active');
-      } else {
-        initialRepBtn.textContent = 'Repeat';
-        initialRepBtn.classList.remove('active');
-      }
-    }
+    renderRepeatBtn(shadowState.repetitions);
     const savedScale = parseFloat(localStorage.getItem('reader_focus_font_scale'));
     if (Number.isFinite(savedScale)) {
       const idx = FOCUS_FONT_SCALES.findIndex(s => Math.abs(s - savedScale) < 0.05);
@@ -1758,7 +1933,6 @@ function toggleFocusTransMode(e) {
     localStorage.setItem('reader_focus_show_trans', focusShowTrans ? '1' : '0');
   } catch (err) {}
   applyFocusTransVisibility();
-  showToast(focusShowTrans ? 'Dual mode' : 'English only');
 }
 
 function cycleFocusRepetitions(e) {
@@ -1773,7 +1947,6 @@ function cycleFocusRepetitions(e) {
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) repBtn.textContent = `${nextRep}×`;
   updateFocusStatus();
-  showToast(`Sentence repeat set to ${nextRep}×`);
 }
 
 function updateFocusStatus() {
@@ -1847,9 +2020,7 @@ function updateFocusSentenceDisplay() {
   }
   
   const el = shadowState.sentence;
-  currentActiveWordEl = null;
-  currentActiveWordStart = -1;
-  currentActiveWordEnd = -1;
+  clearActiveWord();
   const contentEl = el.querySelector('.s-content') || el.querySelector('.sentence-text');
   if (contentEl) {
     textEl.innerHTML = contentEl.innerHTML;
@@ -1954,6 +2125,7 @@ function replayCurrentShadowSentence() {
         safePlay(audio);
       }
     }
+    updateFocusPlayBtn(true);
     updateFocusStatus();
     updateFocusSentenceDisplay();
   }
@@ -1972,23 +2144,14 @@ function toggleFocusBlindMode(e) {
     btn.textContent = 'Audio';
     btn.classList.toggle('active', focusBlindMode);
   }
-  showToast(focusBlindMode ? 'Audio mode ON (tap text to peek)' : 'Audio mode OFF');
 }
 const togglePocketBlindMode = toggleFocusBlindMode;
 
 
 function handleFocusDblClick(e) {
-  if (e && e.target && (
-    e.target.closest('#focusDock') ||
-    e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
-  )) {
-    return;
-  }
-  if (focusSingleTapTimer) {
-    clearTimeout(focusSingleTapTimer);
-    focusSingleTapTimer = null;
-  }
-  toggleFocusMode(false);
+  if (e && e.stopPropagation) e.stopPropagation();
+  // Double-clicking inside focus mode never accidentally exits focus mode
+  showFocusDock();
 }
 
 function handleFocusSentenceBoxClick(e) {
@@ -1999,29 +2162,11 @@ function handleFocusSentenceBoxClick(e) {
     return;
   }
   showFocusDock();
-  const now = Date.now();
-  if (now - lastFocusTapTime < 450) {
-    if (focusSingleTapTimer) {
-      clearTimeout(focusSingleTapTimer);
-      focusSingleTapTimer = null;
-    }
-    lastFocusTapTime = 0;
-    toggleFocusMode(false);
-    return;
+  const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
+  if (focusBlindMode && box && !box.classList.contains('revealed')) {
+    box.classList.add('revealed');
   }
-  lastFocusTapTime = now;
-
-  if (focusSingleTapTimer) clearTimeout(focusSingleTapTimer);
-  focusSingleTapTimer = setTimeout(() => {
-    focusSingleTapTimer = null;
-    if (!focusModeActive && !pocketModeActive) return;
-    const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
-    if (focusBlindMode && box) {
-      box.classList.toggle('revealed');
-    } else {
-      replayCurrentShadowSentence();
-    }
-  }, 220);
+  replayCurrentShadowSentence();
 }
 const handlePocketSentenceBoxClick = handleFocusSentenceBoxClick;
 
@@ -2084,9 +2229,7 @@ function toggleFocusMode(force) {
   const target = typeof force === 'boolean' ? force : !focusModeActive;
   focusModeActive = target;
   pocketModeActive = target;
-  currentActiveWordEl = null;
-  currentActiveWordStart = -1;
-  currentActiveWordEnd = -1;
+  clearActiveWord();
   if (focusSingleTapTimer) {
     clearTimeout(focusSingleTapTimer);
     focusSingleTapTimer = null;
@@ -2157,17 +2300,6 @@ function handleFocusOverlayClick(e) {
     return;
   }
   showFocusDock();
-  const now = Date.now();
-  if (now - lastFocusTapTime < 450) {
-    if (focusSingleTapTimer) {
-      clearTimeout(focusSingleTapTimer);
-      focusSingleTapTimer = null;
-    }
-    lastFocusTapTime = 0;
-    toggleFocusMode(false);
-    return;
-  }
-  lastFocusTapTime = now;
 }
 const handlePocketOverlayClick = handleFocusOverlayClick;
 
@@ -2271,20 +2403,23 @@ function initMediaSession() {
 
 audio.addEventListener('play', () => {
   globalPlayBtn.textContent = '⏸ Pause';
-  if (audio && audio.playbackRate !== currentPlaybackSpeed) {
-    audio.playbackRate = currentPlaybackSpeed;
-  }
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   updateMediaSessionMetadata();
   startSyncLoop();
+  scheduleMainDockHide();
   if (focusModeActive) {
     scheduleFocusDockHide();
   }
 });
 audio.addEventListener('pause', () => {
+  if (shadowState.isInternalPause) {
+    // Internal shadow iteration pause: audio will resume in ~250ms, do NOT disrupt user immersion!
+    return;
+  }
   globalPlayBtn.textContent = '▶ Play';
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   stopSyncLoop();
+  showMainDock();
   if (focusModeActive) {
     showFocusDock();
   }
@@ -2319,8 +2454,16 @@ audio.addEventListener('timeupdate', () => {
   }
 });
 audio.addEventListener('loadedmetadata', () => {
-  if (audio) audio.playbackRate = currentPlaybackSpeed;
+  if (audio && currentPlaybackSpeed) audio.playbackRate = currentPlaybackSpeed;
   updateAudioPlayerUI();
+});
+audio.addEventListener('ratechange', () => {
+  if (!audio) return;
+  const newRate = Math.round(audio.playbackRate * 100) / 100;
+  if (!Number.isFinite(newRate) || newRate <= 0) return;
+  if (Math.abs(currentPlaybackSpeed - newRate) >= 0.01) {
+    applyPlaybackRate(newRate);
+  }
 });
 audio.addEventListener('durationchange', updateAudioPlayerUI);
 audio.addEventListener('seeked', () => {
@@ -2403,7 +2546,7 @@ document.addEventListener('visibilitychange', () => {
         shadowState.phase = 'playing';
         curSentence.classList.add('active', 'card-collapsed');
         if (autoScrollEnabled) {
-          curSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          performAutoScroll(curSentence);
         }
       }
     }
@@ -2423,7 +2566,7 @@ function syncPlayback() {
       return;
     }
     const now = performance.now();
-    if (now - lastSyncTimestamp >= 25) {
+    if (now - lastSyncTimestamp >= 12) {
       lastSyncTimestamp = now;
       const curTime = audio.currentTime;
       if (!currentActiveSection || !currentActiveSection.classList.contains('active')) {
@@ -2436,8 +2579,7 @@ function syncPlayback() {
         if (activeUnit) {
           if (activeUnit.id !== currentPlayingId) {
             currentPlayingId = activeUnit.id;
-            currentActiveWordStart = -1;
-            currentActiveWordEnd = -1;
+            clearActiveWord();
             try { localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id); } catch(e) {}
             
             currentActiveSection.querySelectorAll('.sentence-unit.active').forEach(u => {
@@ -2457,8 +2599,8 @@ function syncPlayback() {
                 if (pocketModeActive || focusModeActive || !autoScrollEnabled) return;
                 const rect = activeUnit.getBoundingClientRect();
                 const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
-                if (!inView && typeof activeUnit.scrollIntoView === 'function') {
-                  activeUnit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (!inView) {
+                  performAutoScroll(activeUnit);
                 }
               });
             }
@@ -2478,7 +2620,9 @@ function syncPlayback() {
             for (let i = 0; i < wordEls.length; i++) {
               const w = wordEls[i];
               const ws = parseFloat(w.dataset.s);
-              const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
+              const wEnd = parseFloat(w.dataset.e);
+              const nextStart = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : wEnd;
+              const we = (nextStart > wEnd && nextStart - wEnd <= 0.10) ? nextStart : (wEnd + 0.06);
               if (curTime >= ws && curTime < we) {
                 foundWord = w;
                 foundIndex = i;
@@ -2489,43 +2633,15 @@ function syncPlayback() {
             }
             
             if (foundWord !== currentActiveWordEl) {
-              if (currentActiveWordEl) currentActiveWordEl.classList.remove('active-word');
-              if (foundWord) foundWord.classList.add('active-word');
-              currentActiveWordEl = foundWord;
-              if (focusModeActive || pocketModeActive) {
-                const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
-                if (pText) {
-                  const prevW = pText.querySelector('.w.active-word');
-                  if (prevW) prevW.classList.remove('active-word');
-                  if (foundIndex >= 0) {
-                    if (!pText._cachedFocusWords) {
-                      pText._cachedFocusWords = Array.from(pText.querySelectorAll('.w'));
-                    }
-                    const focusWord = pText._cachedFocusWords[foundIndex];
-                    if (focusWord && !focusWord.classList.contains('active-word')) {
-                      focusWord.classList.add('active-word');
-                    }
-                  }
-                }
+              if (foundWord) {
+                setActiveWord(foundWord, foundStart, foundEnd, foundIndex);
+              } else {
+                clearActiveWord();
               }
             }
-            currentActiveWordStart = foundStart;
-            currentActiveWordEnd = foundEnd;
           }
         } else {
-          if (currentActiveWordEl) {
-            currentActiveWordEl.classList.remove('active-word');
-            currentActiveWordEl = null;
-          }
-          currentActiveWordStart = -1;
-          currentActiveWordEnd = -1;
-          if (focusModeActive || pocketModeActive) {
-            const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
-            if (pText) {
-              const prevW = pText.querySelector('.w.active-word');
-              if (prevW) prevW.classList.remove('active-word');
-            }
-          }
+          clearActiveWord();
         }
       }
       advanceShadowing();
@@ -2695,31 +2811,35 @@ window.addEventListener('keydown', (e) => {
       }
       targetUnit.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  } else if (e.code === 'Space') {
-    e.preventDefault();
-    const currentUnit = units[currentIndex];
-    if (currentUnit) {
-      const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
-      if (!isChineseLocked) {
-        if (currentUnit.classList.contains('card-collapsed')) {
-          currentUnit.classList.remove('card-collapsed');
-        } else if (currentUnit.classList.contains('active')) {
-          currentUnit.classList.add('card-collapsed');
-        } else {
-          currentUnit.classList.add('active');
-          currentUnit.classList.remove('card-collapsed');
-        }
-      } else {
-        toggleGlobalPlay();
+  } else if (e.key === 'Escape') {
+    hideMarginalia();
+    const tips = document.getElementById('drawerTips');
+    if (tips && tips.classList.contains('open')) {
+      tips.classList.remove('open');
+      const btn = document.getElementById('tipsToggleBtn');
+      if (btn) btn.classList.remove('active');
+    }
+    if (controlDrawer && controlDrawer.classList.contains('open')) {
+      controlDrawer.classList.remove('open');
+      const dock = document.getElementById('bottomControlDock');
+      if (dock) dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
       }
     }
+    if (chapterDropdown && chapterDropdown.classList.contains('open')) {
+      chapterDropdown.classList.remove('open');
+    }
+  } else if (e.code === 'Space') {
+    e.preventDefault();
+    toggleGlobalPlay();
   }
 });
 initMediaSession();
 updateMediaSessionMetadata();
 const focusOverlayEl = document.getElementById('focus-overlay');
 if (focusOverlayEl) {
-  focusOverlayEl.addEventListener('dblclick', handleFocusDblClick);
   focusOverlayEl.addEventListener('pointermove', () => {
     if (focusModeActive) scheduleFocusDockHide();
   });
@@ -2731,6 +2851,19 @@ const focusDockEl = document.getElementById('focusDock');
 if (focusDockEl) {
   focusDockEl.addEventListener('pointerdown', () => {
     showFocusDock();
+  });
+}
+document.addEventListener('pointermove', onUserDockActivity);
+document.addEventListener('pointerdown', onUserDockActivity);
+const bottomControlDock = document.getElementById('bottomControlDock');
+if (bottomControlDock) {
+  bottomControlDock.addEventListener('mouseenter', () => {
+    bottomControlDock._isMouseOver = true;
+    if (dockIdleTimer) { clearTimeout(dockIdleTimer); dockIdleTimer = null; }
+  });
+  bottomControlDock.addEventListener('mouseleave', () => {
+    bottomControlDock._isMouseOver = false;
+    scheduleMainDockHide();
   });
 }
 </script>
