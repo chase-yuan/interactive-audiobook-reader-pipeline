@@ -580,7 +580,17 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 total_ac_words = len(ac_data.get("words", []))
                 if total_ac_words > 100:
                     total_aligned_words = sum(len(item.get("word_spans", [])) for item in aligned_data if item.get("has_audio_match"))
-                    bilateral_ratio = total_aligned_words / total_ac_words
+                    matched_spans = [span for item in aligned_data if item.get("has_audio_match") for span in item.get("word_spans", [])]
+                    last_end = max((s["end"] for s in matched_spans), default=0.0)
+                    effective_ac_words = total_ac_words
+                    if last_end > 0.0:
+                        trailing_words = [w for w in ac_data.get("words", []) if w.get("start", 0.0) > last_end + 1.5]
+                        if len(trailing_words) >= 15:
+                            trailing_text = " ".join(w.get("word", "") for w in trailing_words).lower()
+                            outro_keywords = ("audible", "copyright", "production", "unabridged", "random house", "directed by", "producer")
+                            if any(k in trailing_text for k in outro_keywords):
+                                effective_ac_words = max(1, total_ac_words - len(trailing_words))
+                    bilateral_ratio = total_aligned_words / effective_ac_words
                     record["bilateral_acoustic_word_ratio"] = round(bilateral_ratio, 4)
                     record["total_acoustic_words"] = total_ac_words
                     record["total_aligned_words"] = total_aligned_words

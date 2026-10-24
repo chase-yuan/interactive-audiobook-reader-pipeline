@@ -556,6 +556,12 @@ def build_and_verify_reader(
     audio_dir: Optional[Path] = None,
 ) -> Path:
     print(f"\n=== [Stage 4: Quality Gate & Release Validation] ===", flush=True)
+    stale_manifest = book_dir / "reader_run_manifest.json"
+    if stale_manifest.is_file():
+        try:
+            stale_manifest.unlink()
+        except OSError:
+            pass
     rep_path = book_dir / "reader_validation_report.json"
     allowed_ch = {item["num"] for item in chapters_meta}
     code = validate(book_dir, rep_path, allowed_chapters=allowed_ch)
