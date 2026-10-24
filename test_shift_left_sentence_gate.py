@@ -66,6 +66,41 @@ class ShiftLeftSentenceGateTests(unittest.TestCase):
         issues = validate_canonical_sentences(items)
         self.assertTrue(any("unclosed quote" in iss.lower() for iss in issues))
 
+    def test_zero_none_invariant_fails_gate(self):
+        items = [
+            {"id": "s-0", "text": "This has a valid paragraph index.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": "This has a null paragraph index.", "elem_idx": None, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("elem_idx is none" in iss.lower() for iss in issues))
+
+    def test_dirty_repeated_quotes_fails_gate(self):
+        items = [
+            {"id": "s-0", "text": '““The opening quote is repeated.', "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": 'The closing quote is repeated.""', "elem_idx": 1, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("dirty consecutive leading quotes" in iss.lower() for iss in issues))
+        self.assertTrue(any("dirty repeated quotes" in iss.lower() for iss in issues))
+
+    def test_consecutive_single_sentence_anomaly_fails_gate(self):
+        items = [
+            {"id": f"s-{i}", "text": f"This is an isolated single-sentence prose paragraph number {i}.", "elem_idx": i, "is_heading": False}
+            for i in range(5)
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("consecutive single-sentence paragraph explosion" in iss.lower() for iss in issues))
+
+    def test_cohesive_paragraphs_pass_gate(self):
+        items = [
+            {"id": "s-0", "text": "This is the first sentence of a well-formed paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": "This is the second sentence of the same paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-2", "text": "This is the first sentence of the second paragraph.", "elem_idx": 2, "is_heading": False},
+            {"id": "s-3", "text": "This is the second sentence of the second paragraph.", "elem_idx": 2, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertEqual(issues, [])
+
 
 class AcousticCleanserTests(unittest.TestCase):
     # 2. Acoustic Cleanser (Kokoro Symbol Neutralization)

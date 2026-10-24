@@ -151,6 +151,76 @@ def auto_heal_canonical_quotes(items: list[dict]) -> list[dict]:
     return items
 
 
+def check_typography_integrity(items: list[dict], chapter_num: int = None) -> list[str]:
+    """Check canonical sentences for structural typography, paragraph grouping, and quote defects.
+    
+    Enforces:
+    1. Zero-None Invariant: If dataset uses elem_idx, no sentence may have elem_idx=None.
+    2. Dirty Quote Sanitizer: Disallow repeated/corrupted quote marks (e.g. ““ or ”””” or "").
+    3. Consecutive Single-Sentence Anomaly Gate: Flag unnatural paragraph shredding (>=4
+       consecutive isolated single-sentence prose paragraphs).
+    """
+    issues = []
+    if not items:
+        return issues
+
+    has_elem_idx = any("elem_idx" in it for it in items)
+    if has_elem_idx:
+        for it in items:
+            if it.get("elem_idx") is None:
+                item_id = it.get("id", "?")
+                issues.append(f"{item_id}: elem_idx is None (causes single-sentence paragraph fragmentation)")
+
+    for it in items:
+        text = it.get("text", "")
+        item_id = it.get("id", "?")
+        if re.search(r"^[“\"”]{2,}", text):
+            issues.append(f"{item_id}: dirty consecutive leading quotes: {text[:20]!r}")
+        elif re.search(r"[“\"”]{2,}", text):
+            issues.append(f"{item_id}: dirty repeated quotes: {text[:20]!r}")
+
+    if has_elem_idx:
+        groups = []
+        curr_elem = object()
+        curr_group = []
+        for it in items:
+            elem = it.get("elem_idx")
+            if elem != curr_elem or elem is None:
+                if curr_group:
+                    groups.append(curr_group)
+                curr_group = [it]
+                curr_elem = elem
+            else:
+                curr_group.append(it)
+        if curr_group:
+            groups.append(curr_group)
+
+        consecutive_single_prose = []
+        for g in groups:
+            if len(g) == 1:
+                it = g[0]
+                text = it.get("text", "").strip()
+                is_h = it.get("is_heading", False)
+                is_dialogue = text.startswith(("“", "\"", "‘", "'")) or text.endswith(("”", "\"", "’"))
+                is_list = bool(re.match(r"^(\d+[\.\)]|[a-zA-Z][\.\)]|[-•*])\s+", text))
+                is_short = len(text.split()) < 6
+                if not is_h and not is_dialogue and not is_list and not is_short:
+                    consecutive_single_prose.append(it.get("id", "?"))
+                else:
+                    if len(consecutive_single_prose) >= 4:
+                        issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
+                    consecutive_single_prose = []
+            else:
+                if len(consecutive_single_prose) >= 4:
+                    issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
+                consecutive_single_prose = []
+
+        if len(consecutive_single_prose) >= 4:
+            issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
+
+    return issues
+
+
 def validate_canonical_sentences(items: list[dict]) -> list[str]:
     """Validate a list of canonical sentence items against the Shift-Left gate with discourse quote tracking."""
     errors = []
@@ -178,6 +248,9 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
     if open_curly > 0 or open_straight > 0:
         origin = open_quote_origin or (items[-1].get("id") if items else "end")
         errors.append(f"{origin}: Unclosed quote (unmatched quotation marks at chapter end)")
+
+    typo_errors = check_typography_integrity(items)
+    errors.extend(typo_errors)
 
     return errors
 
