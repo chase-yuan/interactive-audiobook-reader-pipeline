@@ -203,6 +203,26 @@ class AcousticCleanserTests(unittest.TestCase):
         dupes = _duplicate_source_fragment_indices(sentences)
         self.assertIn(1, dupes)
 
+    def test_extreme_sentence_payload_detection(self):
+        # Validate that extreme sentence payloads (>=70 words or >=180 chars or >=35s) are flagged
+        aligned_items = [
+            {"id": "s-0", "text": "Short sentence.", "trans": "短句子。", "start": 0.0, "end": 2.5},
+            {"id": "s-1", "text": " ".join(["word"] * 75), "trans": "超长句子" * 50, "start": 10.0, "end": 50.0},
+        ]
+        extreme_payloads = []
+        for s_item in aligned_items:
+            s_text = s_item.get("text") or ""
+            s_trans = s_item.get("trans") or ""
+            s_words = len(s_text.split())
+            s_chars = len(s_trans)
+            s_start = s_item.get("raw_start", s_item.get("start", 0)) or 0
+            s_end = s_item.get("raw_end", s_item.get("end", 0)) or 0
+            s_dur = max(0.0, float(s_end) - float(s_start)) if (s_start is not None and s_end is not None) else 0.0
+            if s_words >= 70 or s_chars >= 180 or s_dur >= 35.0:
+                extreme_payloads.append(f"{s_item.get('id', '')} ({s_words}w, {s_chars}c, {round(s_dur, 1)}s)")
+        self.assertEqual(len(extreme_payloads), 1)
+        self.assertIn("s-1 (75w, 200c, 40.0s)", extreme_payloads[0])
+
 
 class ElementMergeDehyphenationTests(unittest.TestCase):
     # 3. Element-Level Stitching (extract_epub.py)
