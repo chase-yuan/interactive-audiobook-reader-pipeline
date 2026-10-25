@@ -444,6 +444,16 @@ body {
   box-shadow: var(--shadow-floating);
 }
 
+.bottom-control-dock.text-only-dock:not(.expanded) {
+  width: auto;
+  min-width: 80px;
+  padding: 0 var(--space-xs);
+}
+
+.bottom-control-dock.text-only-dock:not(.expanded) .dock-primary-row {
+  justify-content: center;
+}
+
 .dock-primary-row {
   height: 48px;
   width: 100%;

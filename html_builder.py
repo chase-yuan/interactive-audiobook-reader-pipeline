@@ -259,11 +259,14 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             if word_spans:
                 for w in word_spans:
                     rw = html.escape(w["word"])
-                    ws = w["start"]
-                    we = w["end"]
+                    ws = w.get("start")
+                    we = w.get("end")
                     timing_source = html.escape(w.get("timing_source", "observed"))
                     ts_attr = f' data-timing-source="{timing_source}"' if timing_source and timing_source != "observed" else ""
-                    word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}"{ts_attr}>{rw}</span>')
+                    if isinstance(ws, (int, float)) and isinstance(we, (int, float)):
+                        word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}"{ts_attr}>{rw}</span>')
+                    else:
+                        word_html_list.append(f'<span class="w"{ts_attr}>{rw}</span>')
             else:
                 c_cnt = max(1, len(s["text"].split()))
                 prev_w_s = -1.0
@@ -278,7 +281,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                         prev_w_s = ws
                         word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}">{html.escape(rw)}</span>')
                     else:
-                        word_html_list.append(f'<span class="w" data-s="{start_arg}" data-e="{end_arg}">{html.escape(rw)}</span>')
+                        word_html_list.append(f'<span class="w">{html.escape(rw)}</span>')
             
             sentence_text_html = " ".join(word_html_list)
             
@@ -404,7 +407,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   </aside>
 </main>
 
-<nav class="bottom-control-dock" id="bottomControlDock" aria-label="Audiobook player dock"{audio_track_attr}>
+<nav class="bottom-control-dock{' text-only-dock' if not has_audio else ''}" id="bottomControlDock" aria-label="Reader dock">
   <div class="dock-primary-row">
     <button class="dock-play-btn" id="globalPlayBtn" onclick="toggleGlobalPlay()"{play_btn_attr}>▶ Play</button>
     <button class="dock-chip" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (Shortcut: R)"{repeat_group_attr}><svg class="dock-rep-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></button>
