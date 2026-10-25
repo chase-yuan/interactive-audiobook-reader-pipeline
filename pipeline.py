@@ -68,6 +68,14 @@ def _file_sha256(path):
     return digest.hexdigest()
 
 
+
+def canonicalize_book_slug(name_or_path: str) -> str:
+    raw_name = Path(name_or_path).name
+    clean_name = re.sub(r"\s*\([^)]*\)", "", raw_name)
+    clean_name = re.sub(r"\s*\[[^\]]*\]", "", clean_name)
+    return re.sub(r"[^a-zA-Z0-9]+", "-", clean_name.strip()).strip("-").lower()
+
+
 def _existing_manifest(book_dir):
     path = Path(book_dir) / "reader_run_manifest.json"
     try:
@@ -102,6 +110,7 @@ def _load_audio_manifest(book_dir):
 
 
 def _write_audio_manifest(book_dir, audio_by_chapter, public_audio_base_url=None, public_book_id=None):
+    slug_id = public_book_id or canonicalize_book_slug(book_dir)
     entries = []
     for chapter in sorted(audio_by_chapter):
         source = Path(audio_by_chapter[chapter]).resolve()
@@ -110,13 +119,13 @@ def _write_audio_manifest(book_dir, audio_by_chapter, public_audio_base_url=None
             "source_path": str(source),
             "source_sha256": _file_sha256(str(source)),
             "bytes": source.stat().st_size,
-            "object_key": f"{public_book_id or Path(book_dir).name}/chapter_{chapter:02d}.mp3",
+            "object_key": f"{slug_id}/chapter_{chapter:02d}.mp3",
         }
         if public_audio_base_url:
             entry["public_url"] = f"{public_audio_base_url.rstrip('/')}/{entry['object_key']}"
         entries.append(entry)
     path = Path(book_dir) / "audio_manifest.json"
-    atomic_write_json(path, {"schema_version": 1, "book_id": public_book_id or Path(book_dir).name, "entries": entries})
+    atomic_write_json(path, {"schema_version": 1, "book_id": slug_id, "entries": entries})
     return _load_audio_manifest(book_dir)
 
 
@@ -160,6 +169,8 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
     runs global alignment on ready pairs, and compiles the Master Interactive Reader.
     """
     book_dir = os.path.abspath(book_dir)
+    if not public_book_id:
+        public_book_id = canonicalize_book_slug(book_dir)
     audio_dir = os.path.join(book_dir, "audio")
     
     # Auto-infer book metadata if omitted
@@ -413,12 +424,6 @@ def auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual 
             book_dir, book_title, book_subtitle, book_author,
             force_realign, public_audio_base_url, public_book_id, chapter_metadata_path,
         )
-
-def canonicalize_book_slug(name_or_path: str) -> str:
-    raw_name = Path(name_or_path).name
-    clean_name = re.sub(r"\s*\([^)]*\)", "", raw_name)
-    clean_name = re.sub(r"\s*\[[^\]]*\]", "", clean_name)
-    return re.sub(r"[^a-zA-Z0-9]+", "-", clean_name.strip()).strip("-").lower()
 
 
 def main():
