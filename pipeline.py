@@ -146,10 +146,9 @@ def _public_audio_url(public_audio_base_url, public_book_id, chapter_number):
     """Return the canonical public name without depending on local filenames."""
     if not public_audio_base_url or not public_book_id:
         return None
-    canonical_chapter = chapter_number + 1 if chapter_number == 0 else chapter_number
     return (
         f"{public_audio_base_url.rstrip('/')}/{public_book_id}/"
-        f"chapter_{canonical_chapter:02d}.mp3"
+        f"chapter_{chapter_number:02d}.mp3"
     )
 
 def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual Synchronized Reader", book_author=None,
@@ -235,8 +234,11 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
         audio_entry = audio_manifest.get(ch_num)
         audio_file = audio_entry.get("source_path") if audio_entry else None
         public_audio_url = audio_entry.get("public_url") if audio_entry else None
-        if not public_audio_url:
-            public_audio_url = _public_audio_url(public_audio_base_url, public_book_id, ch_num)
+        if not public_audio_url and public_audio_base_url:
+            if audio_entry and audio_entry.get("object_key"):
+                public_audio_url = f"{public_audio_base_url.rstrip('/')}/{audio_entry['object_key']}"
+            else:
+                public_audio_url = _public_audio_url(public_audio_base_url, public_book_id, ch_num)
         if public_audio_url:
             audio_file_rel = public_audio_url
         else:
