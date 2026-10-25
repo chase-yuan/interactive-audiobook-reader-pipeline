@@ -615,9 +615,9 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn("max-height: clamp(140px, 38vh, 320px);", rendered)
             self.assertIn("class=\"marginalia-content\"", rendered)
             self.assertIn("class=\"marginalia-header\"", rendered)
-            # 2. Escape hatch controls: Backdrop, Drag pill, Close button
+            # 2. Escape hatch controls: Backdrop scrim, Drag pill, Zero redundant close button (AP1/AP3)
             self.assertIn("id=\"marginaliaBackdrop\"", rendered)
-            self.assertIn("id=\"marginaliaCloseBtn\"", rendered)
+            self.assertNotIn("id=\"marginaliaCloseBtn\"", rendered)
             self.assertIn("class=\"marginalia-drag-pill\"", rendered)
             # 3. Touch pull-down dismiss gesture
             self.assertIn("initMarginaliaGestures()", rendered)

@@ -1501,11 +1501,11 @@ body {
 .marginalia-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   width: 100%;
   position: relative;
   flex-shrink: 0;
-  min-height: 14px;
+  min-height: 8px;
   margin-bottom: var(--space-xs);
 }
 
@@ -1524,38 +1524,10 @@ body {
 }
 
 @media (min-width: 1200px) {
+  .marginalia-header,
   .marginalia-drag-pill {
     display: none !important;
   }
-}
-
-.marginalia-close-btn {
-  position: absolute;
-  top: -2px;
-  right: -4px;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-sub);
-  cursor: pointer;
-  padding: 0;
-  transition: color var(--transition-fast), background var(--transition-fast);
-  z-index: 2;
-}
-
-.marginalia-close-btn:hover {
-  color: var(--text-main);
-  background: var(--bg-hover);
-}
-
-.marginalia-close-btn svg {
-  display: block;
-  stroke: currentColor;
 }
 
 .marginalia-content {

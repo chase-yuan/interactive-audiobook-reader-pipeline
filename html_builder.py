@@ -382,9 +382,6 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
   <aside class="marginalia-note" id="marginaliaNote" aria-live="polite">
     <div class="marginalia-header">
       <div class="marginalia-drag-pill" onclick="hideMarginalia(event)" aria-label="Dismiss"></div>
-      <button class="marginalia-close-btn" id="marginaliaCloseBtn" onclick="hideMarginalia(event)" aria-label="Close" title="Close">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>
-      </button>
     </div>
     <div class="marginalia-content" id="marginaliaContent">
       <div class="marginalia-trans" id="marginaliaTrans"></div>
