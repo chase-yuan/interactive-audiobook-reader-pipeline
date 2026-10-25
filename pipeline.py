@@ -234,12 +234,12 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
         # Audio file matching
         audio_entry = audio_manifest.get(ch_num)
         audio_file = audio_entry.get("source_path") if audio_entry else None
-        public_audio_url = audio_entry.get("public_url") if audio_entry else None
+        if public_audio_base_url and audio_entry and audio_entry.get("object_key"):
+            public_audio_url = f"{public_audio_base_url.rstrip('/')}/{audio_entry['object_key']}"
+        else:
+            public_audio_url = audio_entry.get("public_url") if audio_entry else None
         if not public_audio_url and public_audio_base_url:
-            if audio_entry and audio_entry.get("object_key"):
-                public_audio_url = f"{public_audio_base_url.rstrip('/')}/{audio_entry['object_key']}"
-            else:
-                public_audio_url = _public_audio_url(public_audio_base_url, public_book_id, ch_num)
+            public_audio_url = _public_audio_url(public_audio_base_url, public_book_id, ch_num)
         if public_audio_url:
             audio_file_rel = public_audio_url
         else:

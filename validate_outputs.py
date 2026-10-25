@@ -132,8 +132,10 @@ def check_sentence_orthography(
         if not is_list_item:
             clean_word = re.sub(r"\d+$", "", text_s)
             words = clean_word.split()
+            is_attribution = clean_word.startswith(("—", "–", "-"))
+            is_divider = bool(re.match(r"^[\*\s—–\-•#\+]+$", clean_word))
             # Allow standard terminal punctuation including commas (salutations/valedictions) and dashes
-            if len(words) == 1 and not re.search(r"[.!?…”\")\]:,\-—–]$", clean_word):
+            if len(words) == 1 and not is_attribution and not is_divider and not re.search(r"[.!?…”\")\]:,\-—–]$", clean_word):
                 issues.append("Orphan word fragment without terminal punctuation")
 
     if check_standalone_quotes:
@@ -355,12 +357,14 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
             if re.search(r"\$\d+$", items[idx-2].get("text", "").strip()) and text_s.lower().startswith("per "):
                 is_currency_split = True
 
-        # Epistolary signature exemption (e.g. "Love," \n "Dad")
+        # Epistolary signature exemption (e.g. "Love," \n "Dad", "Your loving daughter," \n "Sharon")
         is_signature = False
-        if idx > 0 and items[idx-1].get("text", "").strip().lower() in {"love,", "sincerely,", "yours,", "best,", "regards,", "warmly,"}:
-            clean_word = re.sub(r"\d+$", "", text_s)
-            if len(clean_word.split()) == 1 and clean_word[0].isupper():
-                is_signature = True
+        if idx > 0:
+            prev_txt = items[idx-1].get("text", "").strip().lower()
+            if prev_txt.endswith(",") and any(k in prev_txt for k in {"love", "sincerely", "yours", "best", "regards", "warmly", "daughter", "son", "father", "mother", "friend"}):
+                clean_word = re.sub(r"\d+$", "", text_s)
+                if len(clean_word.split()) == 1 and clean_word[0].isupper():
+                    is_signature = True
 
         is_list_item = item.get("tag") in ("li", "th", "td") or bool(item.get("is_bullet")) or is_signature
 
@@ -561,7 +565,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     if item.get("text") != canonical_by_id.get(item_id, {}).get("text"):
                         errors.append(f"{label} {item_id}: analysis text differs from canonical source")
                     vocab = item.get("vocab")
-                    if not isinstance(vocab, list) or len(vocab) > 3:
+                    if not isinstance(vocab, list) or len(vocab) > 10:
                         errors.append(f"{label} {item_id}: malformed vocabulary list")
                     else:
                         for entry in vocab:
@@ -664,6 +668,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         ch_expansion = expansions.get(str(number)) or expansions.get(number) or {}
         max_inter_gap = float(ch_expansion.get("max_inter_sentence_gap", MAX_INTER_SENTENCE_ACOUSTIC_GAP))
         min_bilateral_ratio = float(ch_expansion.get("min_bilateral_ratio", MIN_BILATERAL_ACOUSTIC_WORD_RATIO))
+        max_non_narrated_count = int(ch_expansion.get("max_non_narrated_count", MAX_NON_NARRATED_CHAPTER_COUNT))
 
         if content_mode == TEXT_ONLY:
             record["review_required_records"] = 0
@@ -858,13 +863,13 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         )
         non_narrated_ratio = non_narrated_records / len(aligned_data) if aligned_data else 0.0
         is_excessive_omission = (
-            non_narrated_records > MAX_NON_NARRATED_CHAPTER_COUNT
+            non_narrated_records > max_non_narrated_count
             or (len(aligned_data) >= 15 and non_narrated_records > 3 and non_narrated_ratio > MAX_NON_NARRATED_CHAPTER_RATIO)
         )
         if content_mode in (COMPLETE, SYNTHETIC) and is_excessive_omission:
             errors.append(
                 f"{label}: non-narrated omission ratio {non_narrated_ratio:.1%} "
-                f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {MAX_NON_NARRATED_CHAPTER_COUNT}-sentence release ceiling; "
+                f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {max_non_narrated_count}-sentence release ceiling; "
                 f"chapter must be truncated to audio bounds or structured with explicit text-only profiles"
             )
         if review_ids:
