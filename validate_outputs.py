@@ -132,7 +132,8 @@ def check_sentence_orthography(
         if not is_list_item:
             clean_word = re.sub(r"\d+$", "", text_s)
             words = clean_word.split()
-            if len(words) == 1 and not re.search(r"[.!?…”\")\]:]$", clean_word):
+            # Allow standard terminal punctuation including commas (salutations/valedictions) and dashes
+            if len(words) == 1 and not re.search(r"[.!?…”\")\]:,\-—–]$", clean_word):
                 issues.append("Orphan word fragment without terminal punctuation")
 
     if check_standalone_quotes:
@@ -354,7 +355,14 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
             if re.search(r"\$\d+$", items[idx-2].get("text", "").strip()) and text_s.lower().startswith("per "):
                 is_currency_split = True
 
-        is_list_item = item.get("tag") in ("li", "th", "td") or bool(item.get("is_bullet"))
+        # Epistolary signature exemption (e.g. "Love," \n "Dad")
+        is_signature = False
+        if idx > 0 and items[idx-1].get("text", "").strip().lower() in {"love,", "sincerely,", "yours,", "best,", "regards,", "warmly,"}:
+            clean_word = re.sub(r"\d+$", "", text_s)
+            if len(clean_word.split()) == 1 and clean_word[0].isupper():
+                is_signature = True
+
+        is_list_item = item.get("tag") in ("li", "th", "td") or bool(item.get("is_bullet")) or is_signature
 
         if is_currency_split:
             item_issues = []
