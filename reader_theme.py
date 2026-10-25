@@ -1361,6 +1361,8 @@ body {
 .prose-column {
   width: 100%;
   margin: 0 auto;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .prose-p {
@@ -1370,6 +1372,8 @@ body {
   font-family: var(--font-serif);
   color: var(--text-main);
   text-align: left;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .prose-heading-block {
