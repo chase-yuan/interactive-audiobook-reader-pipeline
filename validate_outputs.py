@@ -98,7 +98,12 @@ def _suspicious_sentence_boundaries(text: str) -> list[str]:
     return suspicious
 
 
-def check_sentence_orthography(text: str, is_heading: bool = False, check_standalone_quotes: bool = False) -> list[str]:
+def check_sentence_orthography(
+    text: str,
+    is_heading: bool = False,
+    check_standalone_quotes: bool = False,
+    is_list_item: bool = False,
+) -> list[str]:
     """Check a single sentence for physical orthographic defects."""
     issues = []
     text_s = text.strip()
@@ -115,7 +120,7 @@ def check_sentence_orthography(text: str, is_heading: bool = False, check_standa
 
     if not is_heading:
         # 2. Lowercase start (unmerged sentence fragment, ignoring parenthesized enumeration bullets like (a), (b), (1), (ii) and bylines like "by Author")
-        is_bullet = bool(re.match(r"^\s*\((?:[a-zA-Z]{1,2}|\d{1,3}|[ivxLCDM]+)\)", text_s))
+        is_bullet = is_list_item or bool(re.match(r"^\s*\((?:[a-zA-Z]{1,2}|\d{1,3}|[ivxLCDM]+)\)", text_s))
         is_byline = bool(re.match(r"^\s*by\s+[A-Z]", text_s))
         is_math = bool(re.match(r"^\s*[a-zA-Z]\s*=\s*", text_s))
         if not is_bullet and not is_byline and not is_math:
@@ -123,10 +128,12 @@ def check_sentence_orthography(text: str, is_heading: bool = False, check_standa
                 issues.append("Sentence starts with lowercase continuation letter")
 
         # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers)
-        clean_word = re.sub(r"\d+$", "", text_s)
-        words = clean_word.split()
-        if len(words) == 1 and not re.search(r"[.!?…”\")\]:]$", clean_word):
-            issues.append("Orphan word fragment without terminal punctuation")
+        # Exclude list items / table cells which often legitimately contain single nouns / terms
+        if not is_list_item:
+            clean_word = re.sub(r"\d+$", "", text_s)
+            words = clean_word.split()
+            if len(words) == 1 and not re.search(r"[.!?…”\")\]:]$", clean_word):
+                issues.append("Orphan word fragment without terminal punctuation")
 
     if check_standalone_quotes:
         open_curly = text_s.count("“") - text_s.count("”")
@@ -347,10 +354,17 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
             if re.search(r"\$\d+$", items[idx-2].get("text", "").strip()) and text_s.lower().startswith("per "):
                 is_currency_split = True
 
+        is_list_item = item.get("tag") in ("li", "th", "td") or bool(item.get("is_bullet"))
+
         if is_currency_split:
             item_issues = []
         else:
-            item_issues = check_sentence_orthography(text, is_heading=is_heading, check_standalone_quotes=False)
+            item_issues = check_sentence_orthography(
+                text,
+                is_heading=is_heading,
+                check_standalone_quotes=False,
+                is_list_item=is_list_item,
+            )
         for iss in item_issues:
             errors.append(f"{item_id}: {iss}")
 
