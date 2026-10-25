@@ -237,6 +237,14 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 )
 
         # 3b. Local consecutive single-sentence expository explosion gate
+        def _check_consecutive(seq):
+            if len(seq) >= 8:
+                # Tabular antithesis exemption: parallel comparative items (e.g. Table 4 items with semicolons)
+                semicolon_count = sum(1 for it in seq if ";" in it.get("text", ""))
+                if semicolon_count / len(seq) >= 0.7:
+                    return
+                issues.append(f"Consecutive single-sentence paragraph explosion ({len(seq)} sentences): {', '.join(it.get('id', '?') for it in seq[:4])}...")
+
         consecutive_single_prose = []
         for g in groups:
             if len(g) == 1:
@@ -248,18 +256,15 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 is_numeric_fact = bool(re.match(r"^[\d,.]+\s+", text))
                 is_short = len(text.split()) < 6
                 if not is_h and not is_dialogue and not is_list and not is_numeric_fact and not is_short:
-                    consecutive_single_prose.append(it.get("id", "?"))
+                    consecutive_single_prose.append(it)
                 else:
-                    if len(consecutive_single_prose) >= 8:
-                        issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
+                    _check_consecutive(consecutive_single_prose)
                     consecutive_single_prose = []
             else:
-                if len(consecutive_single_prose) >= 8:
-                    issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
+                _check_consecutive(consecutive_single_prose)
                 consecutive_single_prose = []
 
-        if len(consecutive_single_prose) >= 8:
-            issues.append(f"Consecutive single-sentence paragraph explosion ({len(consecutive_single_prose)} sentences): {', '.join(consecutive_single_prose[:4])}...")
+        _check_consecutive(consecutive_single_prose)
 
     return issues
 
