@@ -546,6 +546,21 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         if [item.get("id") for item in aligned_data] != ids:
             errors.append(f"{label}: aligned IDs/order differ from canonical source")
 
+        # Shift-Left Extreme Sentence Payload Diagnostics
+        extreme_payloads = []
+        for s_item in aligned_data:
+            s_text = s_item.get("text") or ""
+            s_trans = s_item.get("trans") or ""
+            s_words = len(s_text.split())
+            s_chars = len(s_trans)
+            s_start = s_item.get("raw_start", s_item.get("start", 0)) or 0
+            s_end = s_item.get("raw_end", s_item.get("end", 0)) or 0
+            s_dur = max(0.0, float(s_end) - float(s_start)) if (s_start is not None and s_end is not None) else 0.0
+            if s_words >= 70 or s_chars >= 180 or s_dur >= 35.0:
+                extreme_payloads.append(f"{s_item.get('id', '')} ({s_words}w, {s_chars}c, {round(s_dur, 1)}s)")
+        if extreme_payloads:
+            diagnostics.append(f"{label}: {len(extreme_payloads)} extreme sentence payloads [{', '.join(extreme_payloads[:4])}]")
+
         if content_mode == TEXT_ONLY:
             record["review_required_records"] = 0
             record["acoustic_coverage"] = 1.0
