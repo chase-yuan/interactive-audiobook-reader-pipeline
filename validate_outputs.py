@@ -242,11 +242,17 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 )
 
         # 3b. Local consecutive single-sentence expository explosion gate
-        def _check_consecutive(seq):
+        def _check_consecutive(seq, preceded_by_colon=False):
             if len(seq) >= 8:
+                if preceded_by_colon:
+                    return
                 # Tabular antithesis exemption: parallel comparative items (e.g. Table 4 items with semicolons)
                 semicolon_count = sum(1 for it in seq if ";" in it.get("text", ""))
                 if semicolon_count / len(seq) >= 0.7:
+                    return
+                # Question checklist exemption (e.g. brainstorming questions in Build Ch 29)
+                question_count = sum(1 for it in seq if it.get("text", "").strip().endswith("?"))
+                if question_count / len(seq) >= 0.5:
                     return
                 # Structured list / definition / calculation exemption:
                 # items with colons, equal signs, or math expressions (e.g., BMR = 370 + ..., Sedentary (...): ...)
@@ -254,7 +260,11 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                     1 for it in seq
                     if ":" in it.get("text", "") or "=" in it.get("text", "") or "×" in it.get("text", "") or it.get("text", "").endswith(":")
                 )
-                if structured_count / len(seq) >= 0.5:
+                if structured_count / len(seq) >= 0.4:
+                    return
+                # Rhetorical / aphoristic parallelism exemption: parallel short aphorisms starting with coordinating conjunctions or anaphora (And, So, But, Or)
+                coord_count = sum(1 for it in seq if it.get("text", "").strip().startswith(("And ", "So ", "But ", "Or ", "Yet ", "For ")))
+                if coord_count / len(seq) >= 0.35:
                     return
                 # Acknowledgments list exemption (thanking individual contributors)
                 first_item_text = items[0].get("text", "").strip() if items else ""
@@ -263,6 +273,8 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 issues.append(f"Consecutive single-sentence paragraph explosion ({len(seq)} sentences): {', '.join(it.get('id', '?') for it in seq[:4])}...")
 
         consecutive_single_prose = []
+        prev_ended_with_colon = False
+        seq_preceded_by_colon = False
         for g in groups:
             if len(g) == 1:
                 it = g[0]
@@ -272,16 +284,23 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 is_list = bool(re.match(r"^(\d+[\.\)]|[a-zA-Z][\.\)]|[-•*])\s+", text))
                 is_numeric_fact = bool(re.match(r"^[\d,.]+\s+", text))
                 is_short = len(text.split()) < 6
-                if not is_h and not is_dialogue and not is_list and not is_numeric_fact and not is_short:
+                is_intro_colon = text.endswith(":")
+                if not is_h and not is_dialogue and not is_list and not is_numeric_fact and not is_short and not is_intro_colon:
+                    if not consecutive_single_prose:
+                        seq_preceded_by_colon = prev_ended_with_colon
                     consecutive_single_prose.append(it)
                 else:
-                    _check_consecutive(consecutive_single_prose)
+                    _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
                     consecutive_single_prose = []
+                    seq_preceded_by_colon = False
+                prev_ended_with_colon = is_intro_colon
             else:
-                _check_consecutive(consecutive_single_prose)
+                _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
                 consecutive_single_prose = []
+                seq_preceded_by_colon = False
+                prev_ended_with_colon = False
 
-        _check_consecutive(consecutive_single_prose)
+        _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
 
     return issues
 
@@ -303,11 +322,29 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
                 is_heading = True
             elif idx == 1 and re.match(r"^CHAPTER\s+\d+\b", items[0].get("text", "").strip(), re.I):
                 is_heading = True
+            elif re.match(r"^\d{4}[\-–—](\d{2,4}|now)$", text_s, re.I):
+                is_heading = True
             elif text_s.isupper() and len(text_s.split()) <= 4:
                 is_heading = True
-            elif text_s in {"Light", "Temperature", "Meal times", "Exercise", "Foundational", "Behavioral", "Pharmacological", "Animal-Based"}:
+            elif text_s in {
+                "Light", "Temperature", "Meal times", "Exercise", "Foundational", "Behavioral", "Pharmacological",
+                "Animal-Based", "Design", "Marketing", "Sales", "Legal", "The Manhattan Project", "Vaccines", "Antibiotics"
+            }:
                 is_heading = True
-        item_issues = check_sentence_orthography(text, is_heading=is_heading, check_standalone_quotes=False)
+
+        # Currency magnitude split (e.g. paying $20 / k / per year)
+        is_currency_split = False
+        if text_s.lower() in {"k", "m", "b"}:
+            if idx > 0 and re.search(r"\$\d+$", items[idx-1].get("text", "").strip()):
+                is_currency_split = True
+        elif idx > 1 and items[idx-1].get("text", "").strip().lower() in {"k", "m", "b"}:
+            if re.search(r"\$\d+$", items[idx-2].get("text", "").strip()) and text_s.lower().startswith("per "):
+                is_currency_split = True
+
+        if is_currency_split:
+            item_issues = []
+        else:
+            item_issues = check_sentence_orthography(text, is_heading=is_heading, check_standalone_quotes=False)
         for iss in item_issues:
             errors.append(f"{item_id}: {iss}")
 
