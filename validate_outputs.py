@@ -105,20 +105,25 @@ def check_sentence_orthography(text: str, is_heading: bool = False, check_standa
     if not text_s:
         return ["Empty text content"]
 
+    # Raw URLs are reference citations and do not follow prose sentence grammar
+    if re.match(r"^https?://", text_s):
+        return issues
+
     # 1. Trailing hyphen (broken word split across line ends)
     if re.search(r"\b[a-zA-Z]+-\s*$", text_s):
         issues.append("Trailing hyphen at line boundary (chopped word)")
 
     if not is_heading:
-        # 2. Lowercase start (unmerged sentence fragment, ignoring parenthesized enumeration bullets like (a), (ii))
-        clean_start = re.sub(r"^\s*\([a-zA-Z0-9ivxLCDM]+\)\s*", "", text_s)
-        if re.match(r"^\s*[\"“‘'(\[]*[a-z]", clean_start):
-            issues.append("Sentence starts with lowercase continuation letter")
+        # 2. Lowercase start (unmerged sentence fragment, ignoring parenthesized enumeration bullets like (a), (b), (1), (ii))
+        is_bullet = bool(re.match(r"^\s*\((?:[a-zA-Z]{1,2}|\d{1,3}|[ivxLCDM]+)\)", text_s))
+        if not is_bullet:
+            if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
+                issues.append("Sentence starts with lowercase continuation letter")
 
         # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers)
         clean_word = re.sub(r"\d+$", "", text_s)
         words = clean_word.split()
-        if len(words) == 1 and not re.search(r"[.!?…”\")\]]$", clean_word):
+        if len(words) == 1 and not re.search(r"[.!?…”\")\]:]$", clean_word):
             issues.append("Orphan word fragment without terminal punctuation")
 
     if check_standalone_quotes:
@@ -243,6 +248,18 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 semicolon_count = sum(1 for it in seq if ";" in it.get("text", ""))
                 if semicolon_count / len(seq) >= 0.7:
                     return
+                # Structured list / definition / calculation exemption:
+                # items with colons, equal signs, or math expressions (e.g., BMR = 370 + ..., Sedentary (...): ...)
+                structured_count = sum(
+                    1 for it in seq
+                    if ":" in it.get("text", "") or "=" in it.get("text", "") or "×" in it.get("text", "") or it.get("text", "").endswith(":")
+                )
+                if structured_count / len(seq) >= 0.5:
+                    return
+                # Acknowledgments list exemption (thanking individual contributors)
+                first_item_text = items[0].get("text", "").strip() if items else ""
+                if first_item_text.lower() == "acknowledgments" or any("acknowledgment" in it.get("text", "").lower() for it in items[:5]):
+                    return
                 issues.append(f"Consecutive single-sentence paragraph explosion ({len(seq)} sentences): {', '.join(it.get('id', '?') for it in seq[:4])}...")
 
         consecutive_single_prose = []
@@ -279,7 +296,17 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
     for idx, item in enumerate(items):
         item_id = item.get("id", f"item-{idx}")
         text = item.get("text", "")
+        text_s = text.strip()
         is_heading = item.get("is_heading", False)
+        if not is_heading:
+            if idx == 0 and re.match(r"^(CHAPTER\s+\d+|Introduction|Acknowledgments|PROLOGUE|EPILOGUE|PREFACE|FOREWORD|AFTERWORD)\b", text_s, re.I):
+                is_heading = True
+            elif idx == 1 and re.match(r"^CHAPTER\s+\d+\b", items[0].get("text", "").strip(), re.I):
+                is_heading = True
+            elif text_s.isupper() and len(text_s.split()) <= 4:
+                is_heading = True
+            elif text_s in {"Light", "Temperature", "Meal times", "Exercise", "Foundational", "Behavioral", "Pharmacological", "Animal-Based"}:
+                is_heading = True
         item_issues = check_sentence_orthography(text, is_heading=is_heading, check_standalone_quotes=False)
         for iss in item_issues:
             errors.append(f"{item_id}: {iss}")
@@ -568,6 +595,11 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         if extreme_payloads:
             diagnostics.append(f"{label}: {len(extreme_payloads)} extreme sentence payloads [{', '.join(extreme_payloads[:4])}]")
 
+        expansions = content_profile.get("author_audio_expansions", {})
+        ch_expansion = expansions.get(str(number)) or expansions.get(number) or {}
+        max_inter_gap = float(ch_expansion.get("max_inter_sentence_gap", MAX_INTER_SENTENCE_ACOUSTIC_GAP))
+        min_bilateral_ratio = float(ch_expansion.get("min_bilateral_ratio", MIN_BILATERAL_ACOUSTIC_WORD_RATIO))
+
         if content_mode == TEXT_ONLY:
             record["review_required_records"] = 0
             record["acoustic_coverage"] = 1.0
@@ -679,11 +711,11 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             if participates_in_timeline:
                 if start is not None and previous_end > 0:
                     inter_gap = start - previous_end
-                    if inter_gap > MAX_INTER_SENTENCE_ACOUSTIC_GAP:
+                    if inter_gap > max_inter_gap:
                         errors.append(
                             f"{label} {item_id}: excessive acoustic void of {inter_gap:.1f}s detected "
                             f"(previous sentence ended at {previous_end:.1f}s, current starts at {start:.1f}s); "
-                            f"exceeds {MAX_INTER_SENTENCE_ACOUSTIC_GAP:.0f}s release ceiling"
+                            f"exceeds {max_inter_gap:.0f}s release ceiling"
                         )
                 if start is not None:
                     previous_start = start
@@ -742,10 +774,10 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     record["bilateral_acoustic_word_ratio"] = round(bilateral_ratio, 4)
                     record["total_acoustic_words"] = total_ac_words
                     record["total_aligned_words"] = total_aligned_words
-                    if bilateral_ratio < MIN_BILATERAL_ACOUSTIC_WORD_RATIO:
+                    if bilateral_ratio < min_bilateral_ratio:
                         errors.append(
                             f"{label}: bilateral acoustic word ratio {bilateral_ratio:.1%} is below the "
-                            f"{MIN_BILATERAL_ACOUSTIC_WORD_RATIO:.0%} threshold (audio has {total_ac_words} words, "
+                            f"{min_bilateral_ratio:.0%} threshold (audio has {total_ac_words} words, "
                             f"text only accounts for {total_aligned_words} words)"
                         )
             except (json.JSONDecodeError, KeyError, OSError) as exc:

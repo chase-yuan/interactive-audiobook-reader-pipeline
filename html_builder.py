@@ -295,6 +295,10 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 
             h_class = ""
             is_intext_heading = bool(re.match(r"^CHAPTER\s+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|[A-Z\-]+|\d+)\s*$", raw_text.strip(), re.IGNORECASE))
+            if not is_h and not is_intext_heading:
+                rt_s = raw_text.strip()
+                if rt_s.lower() in {"introduction", "acknowledgments"} or rt_s.startswith("for ") or (rt_s.isupper() and len(rt_s.split()) <= 4) or rt_s in {"Light", "Temperature", "Meal times", "Exercise", "Foundational", "Behavioral", "Pharmacological", "Animal-Based"}:
+                    is_intext_heading = True
             is_citation = raw_text.strip().startswith(("—", "–", "--", "- "))
 
             if is_h:

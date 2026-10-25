@@ -41,8 +41,14 @@ def load_content_profile(book_dir: Path, errors: list[str]) -> dict:
     if mode not in VALID_MODES:
         errors.append(f"{PROFILE_FILENAME}: invalid audio_content_mode")
         return {"audio_content_mode": None, "units_by_chapter": {}, "profile_sha256": _sha256(path)}
+    author_audio_expansions = raw.get("author_audio_expansions", {})
     if mode in (COMPLETE, TEXT_ONLY, SYNTHETIC):
-        return {"audio_content_mode": mode, "units_by_chapter": {}, "profile_sha256": _sha256(path)}
+        return {
+            "audio_content_mode": mode,
+            "units_by_chapter": {},
+            "author_audio_expansions": author_audio_expansions,
+            "profile_sha256": _sha256(path),
+        }
     spoken = raw.get("spoken_source")
     if not isinstance(spoken, dict) or not isinstance(spoken.get("path"), str) or not isinstance(spoken.get("sha256"), str):
         errors.append(f"{PROFILE_FILENAME}: {mode} requires hash-bound spoken_source")
@@ -60,7 +66,12 @@ def load_content_profile(book_dir: Path, errors: list[str]) -> dict:
     units = raw.get("units")
     if not isinstance(units, list) or not units:
         errors.append(f"{PROFILE_FILENAME}: {mode} requires non-empty units")
-        return {"audio_content_mode": mode, "units_by_chapter": units_by_chapter, "profile_sha256": _sha256(path)}
+        return {
+        "audio_content_mode": mode,
+        "units_by_chapter": units_by_chapter,
+        "author_audio_expansions": author_audio_expansions,
+        "profile_sha256": _sha256(path),
+    }
     for index, unit in enumerate(units):
         prefix = f"{PROFILE_FILENAME}: units[{index}]"
         if not isinstance(unit, dict):
@@ -90,4 +101,9 @@ def load_content_profile(book_dir: Path, errors: list[str]) -> dict:
             seen.add(key)
             ids.append(sentence_id)
         units_by_chapter.setdefault(chapter, []).append({"audio_path": audio_path, "audio_start": start, "audio_end": end, "sentence_ids": ids})
-    return {"audio_content_mode": mode, "units_by_chapter": units_by_chapter, "profile_sha256": _sha256(path)}
+    return {
+        "audio_content_mode": mode,
+        "units_by_chapter": units_by_chapter,
+        "author_audio_expansions": author_audio_expansions,
+        "profile_sha256": _sha256(path),
+    }
