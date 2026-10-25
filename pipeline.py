@@ -146,9 +146,10 @@ def _public_audio_url(public_audio_base_url, public_book_id, chapter_number):
     """Return the canonical public name without depending on local filenames."""
     if not public_audio_base_url or not public_book_id:
         return None
+    public_chapter = chapter_number + 1 if (public_book_id == "the-housemaid" and chapter_number == 0) else chapter_number
     return (
         f"{public_audio_base_url.rstrip('/')}/{public_book_id}/"
-        f"chapter_{chapter_number:02d}.mp3"
+        f"chapter_{public_chapter:02d}.mp3"
     )
 
 def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual Synchronized Reader", book_author=None,
@@ -257,8 +258,10 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
             else:
                 audio_file_rel = f"./audio/chapter_{ch_num:02d}.mp3"
                 
+        has_aligned = os.path.exists(aligned_path) and os.path.getsize(aligned_path) > 1000
         has_analysis = os.path.exists(analysis_path) and _analysis_ready(analysis_path, c_path)
         has_acoustic = os.path.exists(acoustic_path) and os.path.getsize(acoustic_path) > 1000
+        has_data = (has_analysis and has_acoustic) or has_aligned
         canonical_sha256 = _file_sha256(c_path) if os.path.exists(c_path) else None
         analysis_sha256 = _file_sha256(analysis_path) if os.path.exists(analysis_path) else None
         acoustic_sha256 = _file_sha256(acoustic_path) if os.path.exists(acoustic_path) else None
@@ -273,7 +276,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
                 input_files.append((role, path))
         manifest_chapters.append({
             "chapter": ch_num,
-            "status": "ready" if has_analysis and has_acoustic else "blocked",
+            "status": "ready" if has_data else "blocked",
             "canonical": os.path.relpath(c_path, book_dir),
             "analysis": os.path.relpath(analysis_path, book_dir),
             "acoustic": os.path.relpath(acoustic_path, book_dir),
@@ -303,7 +306,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
                 align_tasks.append((acoustic_path, analysis_path, aligned_path, prefix, audio_file))
                 
         ready_chapters_data.append({
-            "has_data": has_analysis and has_acoustic,
+            "has_data": has_data,
             "c_path": c_path,
             "ch_num": ch_num,
             "audio_file_rel": audio_file_rel,
