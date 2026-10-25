@@ -598,3 +598,26 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn("if (chapterDropdown && chapterDropdown.classList.contains('open')) return;", rendered)
             # 6. Auto-hide scheduled on initial page load
             self.assertIn("scheduleMainDockHide();\n</script>", rendered)
+
+    def test_marginalia_anti_screen_takeover_and_escape_hatches(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Marginalia Ergonomics Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # 1. Anti-takeover: Height clamping and scroll container
+            self.assertIn("max-height: clamp(140px, 38vh, 320px);", rendered)
+            self.assertIn("class=\"marginalia-content\"", rendered)
+            self.assertIn("class=\"marginalia-header\"", rendered)
+            # 2. Escape hatch controls: Backdrop, Drag pill, Close button
+            self.assertIn("id=\"marginaliaBackdrop\"", rendered)
+            self.assertIn("id=\"marginaliaCloseBtn\"", rendered)
+            self.assertIn("class=\"marginalia-drag-pill\"", rendered)
+            # 3. Touch pull-down dismiss gesture
+            self.assertIn("initMarginaliaGestures()", rendered)

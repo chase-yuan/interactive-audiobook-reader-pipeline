@@ -378,9 +378,18 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
     book_id_json = json.dumps(book_id)
     html_tail = f"""
+  <div class="marginalia-backdrop" id="marginaliaBackdrop" onclick="hideMarginalia(event)" aria-hidden="true"></div>
   <aside class="marginalia-note" id="marginaliaNote" aria-live="polite">
-    <div class="marginalia-trans" id="marginaliaTrans"></div>
-    <div class="marginalia-vocab" id="marginaliaVocab"></div>
+    <div class="marginalia-header">
+      <div class="marginalia-drag-pill" onclick="hideMarginalia(event)" aria-label="Dismiss"></div>
+      <button class="marginalia-close-btn" id="marginaliaCloseBtn" onclick="hideMarginalia(event)" aria-label="Close" title="Close">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>
+      </button>
+    </div>
+    <div class="marginalia-content" id="marginaliaContent">
+      <div class="marginalia-trans" id="marginaliaTrans"></div>
+      <div class="marginalia-vocab" id="marginaliaVocab"></div>
+    </div>
   </aside>
 </main>
 
@@ -494,6 +503,9 @@ let targetSeekTime = -1;
 let seekWatchdogTimer = null;
 let audioRecoveryRetries = 0;
 const MAX_AUDIO_RETRIES = 3;
+let lastClickedSentenceId = null;
+let lastSentenceClickId = null;
+let lastSentenceClickTime = 0;
 
 function setUserSeeking(active, targetTime) {
   isUserSeeking = active;
@@ -1086,6 +1098,7 @@ function switchChapter(chNum, autoPlay) {
   document.querySelectorAll('.chapter-item').forEach(el => el.classList.remove('active'));
   if (menuEl) menuEl.classList.add('active');
   chapterDropdown.classList.remove('open');
+  hideMarginalia();
   
   document.querySelectorAll('.chapter-section').forEach(sec => {
     sec.classList.remove('active');
@@ -1321,9 +1334,6 @@ function toggleTips() {
 
 function showToast() {}
 
-let lastSentenceClickTime = 0;
-let lastSentenceClickId = null;
-
 function startSentenceShadowing(sentenceEl) {
   if (!sentenceEl) return;
   if (sentenceEl.dataset.matched !== '1') {
@@ -1356,14 +1366,16 @@ function startSentenceShadowing(sentenceEl) {
   sentenceEl.classList.add('active', 'card-collapsed');
 }
 
-
-let lastClickedSentenceId = null;
-
 function hideMarginalia(event) {
   if (event && event.stopPropagation) event.stopPropagation();
   const note = document.getElementById('marginaliaNote');
   if (note) {
     note.classList.remove('visible');
+    note.style.transform = '';
+  }
+  const backdrop = document.getElementById('marginaliaBackdrop');
+  if (backdrop) {
+    backdrop.classList.remove('visible');
   }
   lastClickedSentenceId = null;
 }
@@ -1427,8 +1439,15 @@ function showMarginaliaForSentence(sentenceEl, forceShow = false) {
     vocabTarget.style.display = vocabHtml ? 'flex' : 'none';
   }
 
+  const contentEl = document.getElementById('marginaliaContent');
+  if (contentEl) contentEl.scrollTop = 0;
+
   positionMarginalia(sentenceEl, note);
   note.classList.add('visible');
+  const backdrop = document.getElementById('marginaliaBackdrop');
+  if (backdrop) {
+    backdrop.classList.add('visible');
+  }
   lastClickedSentenceId = sentenceEl.id;
 }
 
@@ -1473,6 +1492,42 @@ window.addEventListener('resize', function() {
     }
   }
 });
+
+(function initMarginaliaGestures() {
+  const note = document.getElementById('marginaliaNote');
+  if (!note) return;
+  let startY = 0;
+  let currentY = 0;
+  let isDragging = false;
+
+  note.addEventListener('touchstart', function(e) {
+    if (e.touches.length !== 1) return;
+    const content = document.getElementById('marginaliaContent');
+    if (content && content.scrollTop > 4) return;
+    startY = e.touches[0].clientY;
+    currentY = startY;
+    isDragging = true;
+  }, { passive: true });
+
+  note.addEventListener('touchmove', function(e) {
+    if (!isDragging) return;
+    currentY = e.touches[0].clientY;
+    const dy = currentY - startY;
+    if (dy > 0) {
+      note.style.transform = 'translateY(' + dy + 'px)';
+    }
+  }, { passive: true });
+
+  note.addEventListener('touchend', function(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    const dy = currentY - startY;
+    note.style.transform = '';
+    if (dy > 48) {
+      hideMarginalia();
+    }
+  }, { passive: true });
+})();
 
 function handleSentenceClick(event, id, start, end, hasMatch) {
   if (event && event.stopPropagation) event.stopPropagation();
@@ -2319,6 +2374,7 @@ function toggleFocusMode(force) {
   focusModeActive = target;
   pocketModeActive = target;
   clearActiveWord();
+  hideMarginalia();
   if (focusSingleTapTimer) {
     clearTimeout(focusSingleTapTimer);
     focusSingleTapTimer = null;
