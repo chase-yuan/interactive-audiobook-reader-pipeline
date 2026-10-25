@@ -18,6 +18,8 @@ REQUIRED_IDS = (
     "chineseLockBtn",
     "repeatBtn",
     "focusModeBtn",
+    "marginaliaNote",
+    "bottomControlDock",
 )
 REQUIRED_FUNCTIONS = (
     "switchChapter",

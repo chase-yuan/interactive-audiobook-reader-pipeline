@@ -251,7 +251,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             inspect_unmatched_notice = ""
             start_arg = "null" if start is None else str(start)
             end_arg = "null" if end is None else str(end)
-            trans = html.escape(s.get("trans", ""))
+            raw_trans = s.get("trans", "") or ""
             vocab = s.get("vocab", [])
             raw_text = s.get("text", "")
             
@@ -311,7 +311,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 "dialogue_attribution_reorder",
             } else 0
             reorder_attr = ' data-reorder="1"' if is_reorder else ''
-            trans_attr = f' data-trans="{html.escape(trans)}"' if trans else ''
+            trans_attr = f' data-trans="{html.escape(raw_trans, quote=True)}"' if raw_trans else ''
             vocab_attr = f' data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}"' if vocab else ''
 
             s_audio_order = s.get("audio_order", "")

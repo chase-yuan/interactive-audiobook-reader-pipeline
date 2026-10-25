@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -357,11 +358,15 @@ def run_parallel_linguistic_analysis(
             ): item
             for item in chapters_meta
         }
-        for f in as_completed(futures):
-            item = futures[f]
-            ok = f.result()
-            if not ok:
-                raise RuntimeError(f"Linguistic analysis failed on track {item['num']:02d} ({item['label']})")
+        try:
+            for f in as_completed(futures):
+                item = futures[f]
+                ok = f.result()
+                if not ok:
+                    raise RuntimeError(f"Linguistic analysis failed on track {item['num']:02d} ({item['label']})")
+        except Exception:
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
     print("[Stage 2] High-throughput linguistic analysis completed.")
 
 
@@ -709,7 +714,8 @@ def build_reader_pipeline(
 
     # Set up book directory
     if book_dir is None:
-        target_dir = Path.home() / "Vault" / "audiobook" / title
+        safe_title = re.sub(r"[/\\:*?\"<>|]", "-", title).strip()
+        target_dir = Path.home() / "Vault" / "audiobook" / safe_title
     else:
         target_dir = book_dir.expanduser().resolve()
 

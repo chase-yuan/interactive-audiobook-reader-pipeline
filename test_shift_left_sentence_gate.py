@@ -215,13 +215,32 @@ class AcousticCleanserTests(unittest.TestCase):
             s_trans = s_item.get("trans") or ""
             s_words = len(s_text.split())
             s_chars = len(s_trans)
-            s_start = s_item.get("raw_start", s_item.get("start", 0)) or 0
-            s_end = s_item.get("raw_end", s_item.get("end", 0)) or 0
+            raw_s = s_item.get("raw_start")
+            s_start = raw_s if raw_s is not None else s_item.get("start")
+            raw_e = s_item.get("raw_end")
+            s_end = raw_e if raw_e is not None else s_item.get("end")
             s_dur = max(0.0, float(s_end) - float(s_start)) if (s_start is not None and s_end is not None) else 0.0
             if s_words >= 70 or s_chars >= 180 or s_dur >= 35.0:
                 extreme_payloads.append(f"{s_item.get('id', '')} ({s_words}w, {s_chars}c, {round(s_dur, 1)}s)")
         self.assertEqual(len(extreme_payloads), 1)
         self.assertIn("s-1 (75w, 200c, 40.0s)", extreme_payloads[0])
+
+    def test_raw_start_none_fallback_duration(self):
+        # When raw_start is explicitly None, it must fall back to start (not 0.0)
+        from sentence_metrics import compute_sentence_metric
+        item = {
+            "id": "s-1",
+            "text": "Regular length sentence.",
+            "trans": "普通长度句子。",
+            "raw_start": None,
+            "start": 10.0,
+            "raw_end": None,
+            "end": 15.0,
+        }
+        metric = compute_sentence_metric(item, "ch01")
+        # Duration should be 15.0 - 10.0 = 5.0s, NOT 15.0 - 0.0 = 15.0s
+        self.assertEqual(metric["duration"], 5.0)
+        self.assertEqual(metric["level"], "NORMAL")
 
 
 class ElementMergeDehyphenationTests(unittest.TestCase):

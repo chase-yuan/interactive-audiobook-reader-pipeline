@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -429,7 +430,10 @@ def synthesize_chapter(
     full_audio = np.concatenate(pcm_segments) if pcm_segments else np.zeros(sr, dtype=np.float32)
 
     # Encode to single 44.1kHz MP3 via ffmpeg in a single pass with Xing gapless delay header
-    ffmpeg_bin = "/opt/homebrew/bin/ffmpeg" if os.path.exists("/opt/homebrew/bin/ffmpeg") else "ffmpeg"
+    which_ffmpeg = shutil.which("ffmpeg")
+    ffmpeg_bin = which_ffmpeg if which_ffmpeg and os.path.isfile(which_ffmpeg) else (
+        next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg") if os.path.isfile(p)), "ffmpeg")
+    )
     cmd = [
         ffmpeg_bin,
         "-y",

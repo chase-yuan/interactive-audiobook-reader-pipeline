@@ -621,3 +621,35 @@ class HTMLBuilderTests(unittest.TestCase):
             self.assertIn("class=\"marginalia-drag-pill\"", rendered)
             # 3. Touch pull-down dismiss gesture
             self.assertIn("initMarginaliaGestures()", rendered)
+
+    def test_translation_zero_double_escaping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            aligned_file = tmp_path / "book_ch01_aligned_sentences.json"
+            aligned_data = [{
+                "id": "s-0",
+                "text": "He said: 'Hello & Welcome'.",
+                "trans": '他说：“你好 & 欢迎”。',
+                "start": 0.0,
+                "end": 2.0,
+                "has_audio_match": True,
+                "word_spans": [
+                    {"word": "He", "start": 0.0, "end": 0.5, "timing_source": "observed"},
+                    {"word": "said", "start": 0.5, "end": 1.0, "timing_source": "observed"},
+                ]
+            }]
+            aligned_file.write_text(json.dumps(aligned_data), encoding="utf-8")
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Escaping Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(aligned_file),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # Must NOT contain double-escaped &amp;quot; or &amp;amp;
+            self.assertNotIn("&amp;amp;", rendered)
+            self.assertNotIn("&amp;quot;", rendered)
+            # Must properly escape into data-trans attribute
+            self.assertIn('data-trans="他说：“你好 &amp; 欢迎”。"', rendered)

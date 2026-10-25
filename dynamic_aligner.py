@@ -8,6 +8,7 @@ are narrated at section/chapter endings, achieving >99% true acoustic audio alig
 import json
 import re
 import os
+import shutil
 import subprocess
 import difflib
 import sys
@@ -398,7 +399,17 @@ def are_tokens_plausible(source_words, audio_tokens):
     return ratio_num >= 0.45
 
 
-FFMPEG_BIN = "/opt/homebrew/bin/ffmpeg" if os.path.exists("/opt/homebrew/bin/ffmpeg") else "ffmpeg"
+def _resolve_ffmpeg_bin() -> str:
+    which_bin = shutil.which("ffmpeg")
+    if which_bin and os.path.isfile(which_bin):
+        return which_bin
+    for cand in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg"):
+        if os.path.isfile(cand):
+            return cand
+    return "ffmpeg"
+
+
+FFMPEG_BIN = _resolve_ffmpeg_bin()
 
 
 def decode_audio_to_pcm(audio_path, sr=16000):

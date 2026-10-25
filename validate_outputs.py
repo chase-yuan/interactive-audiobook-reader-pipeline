@@ -553,8 +553,10 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             s_trans = s_item.get("trans") or ""
             s_words = len(s_text.split())
             s_chars = len(s_trans)
-            s_start = s_item.get("raw_start", s_item.get("start", 0)) or 0
-            s_end = s_item.get("raw_end", s_item.get("end", 0)) or 0
+            raw_s = s_item.get("raw_start")
+            s_start = raw_s if raw_s is not None else s_item.get("start")
+            raw_e = s_item.get("raw_end")
+            s_end = raw_e if raw_e is not None else s_item.get("end")
             s_dur = max(0.0, float(s_end) - float(s_start)) if (s_start is not None and s_end is not None) else 0.0
             if s_words >= 70 or s_chars >= 180 or s_dur >= 35.0:
                 extreme_payloads.append(f"{s_item.get('id', '')} ({s_words}w, {s_chars}c, {round(s_dur, 1)}s)")

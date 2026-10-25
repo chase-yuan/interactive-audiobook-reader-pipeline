@@ -37,8 +37,10 @@ def compute_sentence_metric(s: Dict[str, Any], chapter: str = "") -> Dict[str, A
     words = len(text.split())
     chars = len(trans)
     
-    start = s.get("raw_start", s.get("start", 0)) or 0
-    end = s.get("raw_end", s.get("end", 0)) or 0
+    raw_s = s.get("raw_start")
+    start = raw_s if raw_s is not None else s.get("start")
+    raw_e = s.get("raw_end")
+    end = raw_e if raw_e is not None else s.get("end")
     dur = round(max(0.0, float(end) - float(start)), 2) if (start is not None and end is not None) else 0.0
     
     vocab = s.get("vocab", [])
@@ -134,12 +136,14 @@ def profile_sentences(records: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def scan_book_dir(book_dir: Path) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Scan all aligned or canonical sentence JSONs in a book directory."""
-    aligned_files = sorted(book_dir.glob("*aligned*.json"))
+    # Filter out intermediate, test, scratch, or backup JSONs
+    is_not_scratch = lambda f: not re.search(r"(?:_test_|_test\.|\btest_|\bscratch_|\bbackup_|\bold_)", f.name, re.IGNORECASE)
+    aligned_files = [f for f in sorted(book_dir.glob("*aligned*.json")) if is_not_scratch(f)]
     if not aligned_files:
         # Fallback to chapters/ch*.json or canonical
-        aligned_files = sorted(book_dir.glob("chapters/ch*.json"))
+        aligned_files = [f for f in sorted(book_dir.glob("chapters/ch*.json")) if is_not_scratch(f)]
     if not aligned_files:
-        aligned_files = sorted(book_dir.glob("*canonical*.json"))
+        aligned_files = [f for f in sorted(book_dir.glob("*canonical*.json")) if is_not_scratch(f)]
 
     all_records = []
     for f in aligned_files:
