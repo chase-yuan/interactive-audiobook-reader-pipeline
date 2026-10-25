@@ -114,9 +114,11 @@ def check_sentence_orthography(text: str, is_heading: bool = False, check_standa
         issues.append("Trailing hyphen at line boundary (chopped word)")
 
     if not is_heading:
-        # 2. Lowercase start (unmerged sentence fragment, ignoring parenthesized enumeration bullets like (a), (b), (1), (ii))
+        # 2. Lowercase start (unmerged sentence fragment, ignoring parenthesized enumeration bullets like (a), (b), (1), (ii) and bylines like "by Author")
         is_bullet = bool(re.match(r"^\s*\((?:[a-zA-Z]{1,2}|\d{1,3}|[ivxLCDM]+)\)", text_s))
-        if not is_bullet:
+        is_byline = bool(re.match(r"^\s*by\s+[A-Z]", text_s))
+        is_math = bool(re.match(r"^\s*[a-zA-Z]\s*=\s*", text_s))
+        if not is_bullet and not is_byline and not is_math:
             if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
                 issues.append("Sentence starts with lowercase continuation letter")
 
@@ -318,9 +320,13 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
         text_s = text.strip()
         is_heading = item.get("is_heading", False)
         if not is_heading:
-            if idx == 0 and re.match(r"^(CHAPTER\s+\d+|Introduction|Acknowledgments|PROLOGUE|EPILOGUE|PREFACE|FOREWORD|AFTERWORD)\b", text_s, re.I):
+            if idx <= 2 and re.match(r"^(CHAPTER\s+\d+|Introduction|Acknowledgments|PROLOGUE|EPILOGUE|PREFACE|FOREWORD|AFTERWORD|Conclusion)\b", text_s, re.I):
+                is_heading = True
+            elif idx <= 2 and re.match(r"^\s*by\s+[A-Z]", text_s):
                 is_heading = True
             elif idx == 1 and re.match(r"^CHAPTER\s+\d+\b", items[0].get("text", "").strip(), re.I):
+                is_heading = True
+            elif idx <= 2 and items[0].get("text", "").strip().isdigit() and len(text_s.split()) <= 4:
                 is_heading = True
             elif re.match(r"^\d{4}[\-–—](\d{2,4}|now)$", text_s, re.I):
                 is_heading = True

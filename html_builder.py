@@ -298,9 +298,10 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             if not is_h and not is_intext_heading:
                 rt_s = raw_text.strip()
                 if (
-                    rt_s.lower() in {"introduction", "acknowledgments"}
+                    rt_s.lower() in {"introduction", "acknowledgments", "conclusion", "foreword", "preface", "epilogue", "prologue", "afterword"}
                     or rt_s.startswith("for ")
                     or bool(re.match(r"^\d{4}[\-–—](\d{2,4}|now)$", rt_s, re.I))
+                    or bool(re.match(r"^\s*by\s+[A-Z]", rt_s))
                     or (rt_s.isupper() and len(rt_s.split()) <= 4)
                     or rt_s in {
                         "Light", "Temperature", "Meal times", "Exercise", "Foundational", "Behavioral", "Pharmacological",
