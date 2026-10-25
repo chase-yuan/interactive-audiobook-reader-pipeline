@@ -119,8 +119,8 @@ def check_sentence_orthography(
         issues.append("Trailing hyphen at line boundary (chopped word)")
 
     if not is_heading:
-        # 2. Lowercase start (unmerged sentence fragment, ignoring parenthesized enumeration bullets like (a), (b), (1), (ii) and bylines like "by Author")
-        is_bullet = is_list_item or bool(re.match(r"^\s*\((?:[a-zA-Z]{1,2}|\d{1,3}|[ivxLCDM]+)\)", text_s))
+        # 2. Lowercase start (unmerged sentence fragment, ignoring enumeration bullets like (a), a., (1), 1., (ii) and bylines like "by Author")
+        is_bullet = is_list_item or bool(re.match(r"^\s*(?:\((?:[a-zA-Z]{1,2}|\d{1,3}|[ivxLCDM]+)\)|[a-zA-Z]{1,2}\.|\d{1,3}\.|[ivxLCDM]+\.)", text_s))
         is_byline = bool(re.match(r"^\s*by\s+[A-Z]", text_s))
         is_math = bool(re.match(r"^\s*[a-zA-Z]\s*=\s*", text_s))
         if not is_bullet and not is_byline and not is_math:
