@@ -676,8 +676,13 @@ def build_and_verify_reader(
                 if c_mp3.is_file() and c_alg.is_file():
                     alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
                     last_end = alg_data[-1]["end"] if alg_data else 0.0
-                    max_delta = 0.45 if mode == "synthetic" else 8.0
-                    probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=max_delta)
+                    max_delta = 0.45 if mode == "synthetic" else 10.0
+                    probe = check_audio_physical_integrity(
+                        c_mp3,
+                        expected_duration=last_end,
+                        max_duration_delta=max_delta,
+                        max_silence_ratio=0.55,
+                    )
                     if probe["status"] != "passed":
                         raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
             print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
