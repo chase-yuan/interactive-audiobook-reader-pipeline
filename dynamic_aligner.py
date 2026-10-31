@@ -1188,7 +1188,16 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 b_score = sum(b.size for b in sub_blocks)
                 min_thresh = 1 if len(clean_s) <= 2 else 2 if len(clean_s) <= 4 else 3
                 ratio_thresh = 0.35 if len(clean_s) >= 4 else 0.5
-                if b_score >= min_thresh and (b_score / len(clean_s)) >= ratio_thresh:
+                # Tightly bounded window: If an isolated sentence is sandwiched between adjacent
+                # sentences with a narrow acoustic gap (<= 6.0s), any matching token confirms narration.
+                tight_bounded_gap = False
+                if previous and following:
+                    prev_end_t = float(acoustic_words[previous[-1]].get("end", 0.0))
+                    foll_start_t = float(acoustic_words[following[0]].get("start", 0.0))
+                    if 0.0 <= (foll_start_t - prev_end_t) <= 6.0:
+                        tight_bounded_gap = True
+
+                if (b_score >= min_thresh and (b_score / len(clean_s)) >= ratio_thresh) or (tight_bounded_gap and b_score >= 1):
                     first_b = sub_blocks[0]
                     last_b = sub_blocks[-1]
                     sub_t_start = t_left + first_b.b
@@ -1313,10 +1322,10 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 and ms.get("alignment_method") not in {"leading_epigraph_attribution", "chapter_heading_numeric_variant"}
             )
             last_word_start = max(last_word_start, ms["word_start"])
-            # A sentence that later receives a real global match is narrated;
-            # only explicit print-only content or a proven duplicate fragment
-            # may remain non-narrated on the matched branch.
-            non_narrated = _is_non_narrated_text(s.get("text", "")) or s_idx in inferred_duplicate
+            # A sentence that matched real acoustic tokens is narrated (even if identical text
+            # repeats elsewhere as a chant, refrain, or dialogue). Only print-only content
+            # without audio can be non-narrated on the matched branch.
+            non_narrated = _is_non_narrated_text(s.get("text", "")) and not ms.get("word_spans")
             ms_spans = ms.get("word_spans", [])
             s_start = ms["start"]
             s_end = ms["end"]
@@ -1341,7 +1350,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "alignment_method": "opening_speaker_attribution" if opening_speaker else "dialogue_attribution_reorder" if dialogue_attribution else ms["alignment_method"],
                 "fallback_used": False,
                 "alignment_status": "not-applicable" if non_narrated else "review-required" if non_monotonic else "validated",
-                "alignment_reason": "duplicate_source_fragment" if s_idx in inferred_duplicate else ms.get("alignment_reason") or ("opening_speaker_attribution" if opening_speaker else "dialogue_attribution_reorder" if dialogue_attribution else "global_match_out_of_order" if non_monotonic else None)
+                "alignment_reason": ms.get("alignment_reason") or ("opening_speaker_attribution" if opening_speaker else "dialogue_attribution_reorder" if dialogue_attribution else "global_match_out_of_order" if non_monotonic else None)
             })
         else:
             # Sentence without a standalone acoustic match (e.g. a heading or

@@ -214,6 +214,81 @@ class AcousticAlignmentRemediationTests(unittest.TestCase):
         self.assertEqual(tokenize_clean("Chapter XXXIV."), ["chapter", "34"])
         self.assertEqual(tokenize_clean("Chapter L."), ["chapter", "50"])
 
+    def test_repeated_vocal_chant_narrated_as_validated(self):
+        """Chants/refrains repeated verbatim in text and audio must all be validated, not marked not-applicable."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ac_path = root / "acoustic.json"
+            an_path = root / "analysis.json"
+            out_path = root / "aligned.json"
+
+            ac_words = [
+                {"word": "He", "start": 1.0, "end": 1.3},
+                {"word": "shouted.", "start": 1.4, "end": 1.8},
+                {"word": "Four", "start": 2.0, "end": 2.4},
+                {"word": "legs", "start": 2.4, "end": 2.7},
+                {"word": "good,", "start": 2.7, "end": 3.0},
+                {"word": "two", "start": 3.2, "end": 3.5},
+                {"word": "legs", "start": 3.5, "end": 3.8},
+                {"word": "better!", "start": 3.8, "end": 4.2},
+                {"word": "Four", "start": 5.0, "end": 5.4},
+                {"word": "legs", "start": 5.4, "end": 5.7},
+                {"word": "good,", "start": 5.7, "end": 6.0},
+                {"word": "two", "start": 6.2, "end": 6.5},
+                {"word": "legs", "start": 6.5, "end": 6.8},
+                {"word": "better!", "start": 6.8, "end": 7.2},
+                {"word": "And", "start": 8.0, "end": 8.2},
+                {"word": "stopped.", "start": 8.3, "end": 8.7},
+            ]
+            ac_path.write_text(json.dumps({"words": ac_words}), encoding="utf-8")
+            an_path.write_text(json.dumps([
+                {"id": "s-0", "text": "He shouted."},
+                {"id": "s-1", "text": "Four legs good, two legs better!"},
+                {"id": "s-2", "text": "Four legs good, two legs better!"},
+                {"id": "s-3", "text": "And stopped."},
+            ]), encoding="utf-8")
+
+            results = align_sentences_with_audio(str(ac_path), str(an_path), str(out_path))
+            self.assertEqual(len(results), 4)
+            self.assertEqual(results[1]["alignment_status"], "validated")
+            self.assertEqual(results[2]["alignment_status"], "validated")
+            self.assertTrue(results[1]["has_audio_match"])
+            self.assertTrue(results[2]["has_audio_match"])
+            self.assertAlmostEqual(results[1]["start"], 2.0, delta=0.1)
+            self.assertAlmostEqual(results[2]["start"], 5.0, delta=0.1)
+
+    def test_tightly_bounded_window_single_word_recovery(self):
+        """Isolated sentence in narrow acoustic gap (<= 6.0s) matching any acoustic token is narrated."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ac_path = root / "acoustic.json"
+            an_path = root / "analysis.json"
+            out_path = root / "aligned.json"
+
+            ac_words = [
+                {"word": "Gentlemen", "start": 10.0, "end": 10.5},
+                {"word": "concluded", "start": 10.5, "end": 11.0},
+                {"word": "Napoleon", "start": 11.0, "end": 11.5},
+                {"word": "toast", "start": 11.5, "end": 12.0},
+                {"word": "brim.", "start": 13.0, "end": 13.5},
+                {"word": "Gentlemen", "start": 14.0, "end": 14.5},
+                {"word": "here", "start": 14.5, "end": 15.0},
+                {"word": "is", "start": 15.0, "end": 15.3},
+                {"word": "toast", "start": 15.3, "end": 15.8},
+            ]
+            ac_path.write_text(json.dumps({"words": ac_words}), encoding="utf-8")
+            an_path.write_text(json.dumps([
+                {"id": "s-0", "text": "Gentlemen concluded Napoleon toast."},
+                {"id": "s-1", "text": "Fill your glasses to the brim."},
+                {"id": "s-2", "text": "Gentlemen here is toast."},
+            ]), encoding="utf-8")
+
+            results = align_sentences_with_audio(str(ac_path), str(an_path), str(out_path))
+            self.assertEqual(len(results), 3)
+            self.assertEqual(results[1]["alignment_status"], "validated")
+            self.assertTrue(results[1]["has_audio_match"])
+            self.assertAlmostEqual(results[1]["start"], 13.0, delta=1.5)
+
 
 if __name__ == "__main__":
     unittest.main()
