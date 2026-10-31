@@ -1,7 +1,8 @@
-"""Transactional local bookshelf publication.
+"""Transactional local bookshelf publication (DEPRECATED).
 
-Every release is immutable.  The active book is a single symlink switched with
-``os.replace`` only after the complete bundle has been copied and verified.
+DEPRECATION NOTICE:
+Direct use of `local_publisher.py` is deprecated. Use `universal_runner.py --publish`
+or `pipeline.py --publish` with `publish_book.py` as the canonical production release runner.
 """
 
 from __future__ import annotations

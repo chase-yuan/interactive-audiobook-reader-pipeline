@@ -59,11 +59,11 @@ class _TextExtractor(HTMLParser):
         self._ignored = 0
 
     def handle_starttag(self, tag, attrs):
-        if tag.casefold() in {"script", "style", "svg"}:
+        if tag.casefold() in {"script", "style", "svg", "sup"}:
             self._ignored += 1
 
     def handle_endtag(self, tag):
-        if tag.casefold() in {"script", "style", "svg"} and self._ignored:
+        if tag.casefold() in {"script", "style", "svg", "sup"} and self._ignored:
             self._ignored -= 1
 
     def handle_data(self, data):
@@ -345,6 +345,137 @@ def verify_gate(path: Path) -> Dict:
         if not source.is_file() or sha256(source) != record.get("sha256"):
             raise RuntimeError(f"intake input missing or changed: {source}")
     return plan
+
+
+def extract_book_metadata(target: Path | str) -> Dict[str, str]:
+    """Extract authoritative title, subtitle, and author from an EPUB file or book directory."""
+    target_path = Path(target).resolve()
+    book_title = ""
+    book_subtitle = ""
+    book_author = ""
+
+    # Case 1: Direct EPUB file
+    if target_path.is_file() and target_path.suffix.lower() == ".epub":
+        try:
+            parsed = parse_epub(target_path)
+            meta = parsed.get("metadata", {})
+            raw_title = (meta.get("title") or "").strip()
+            raw_creator = (meta.get("creator") or "").strip()
+            if ":" in raw_title:
+                parts = raw_title.split(":", 1)
+                book_title = parts[0].strip()
+                book_subtitle = parts[1].strip()
+            else:
+                book_title = raw_title
+            book_author = raw_creator
+        except Exception:
+            pass
+
+    # Case 2: Book directory
+    elif target_path.is_dir():
+        # Look in ebook/ directory first, then root of book dir
+        ebook_dir = target_path / "ebook"
+        candidates = []
+        if ebook_dir.is_dir():
+            candidates.extend(sorted(ebook_dir.glob("*.epub")))
+        candidates.extend(sorted(target_path.glob("*.epub")))
+
+        for epub_path in candidates:
+            try:
+                parsed = parse_epub(epub_path)
+                meta = parsed.get("metadata", {})
+                raw_title = (meta.get("title") or "").strip()
+                raw_creator = (meta.get("creator") or "").strip()
+                if raw_title and not book_title:
+                    if ":" in raw_title:
+                        parts = raw_title.split(":", 1)
+                        book_title = parts[0].strip()
+                        book_subtitle = parts[1].strip()
+                    else:
+                        book_title = raw_title
+                if raw_creator and not book_author:
+                    book_author = raw_creator
+                if book_title and book_author:
+                    break
+            except Exception:
+                continue
+
+    # Fallback to filename or directory name pattern "Author - Title" or "Title - Author"
+    folder_name = target_path.name if target_path.is_dir() else target_path.stem
+    if " - " in folder_name and (not book_title or not book_author):
+        parts = folder_name.split(" - ")
+        if not book_title:
+            book_title = parts[0].strip()
+        if not book_author and len(parts) > 1:
+            book_author = parts[1].strip()
+
+    if not book_title:
+        book_title = folder_name.replace("_", " ").strip()
+    if not book_author:
+        book_author = "Author"
+    if not book_subtitle:
+        book_subtitle = "Bilingual Synchronized Reader"
+
+    return {
+        "title": book_title,
+        "subtitle": book_subtitle,
+        "author": book_author,
+    }
+
+
+def reconstruct_legacy_paragraphs(canonical_items: List[Dict], target_sentences: int = 4) -> List[Dict]:
+    """Reconstruct natural book paragraphs for legacy books where elem_idx was mapped 1-to-1 to sentences.
+    
+    Detects if > 85% of sentences have individual, unique elem_idx values (legacy artificial shredding),
+    and clusters adjacent non-heading prose sentences into cohesive 3-5 sentence book paragraphs.
+    """
+    if not canonical_items:
+        return canonical_items
+
+    unique_elems = set(it.get("elem_idx") for it in canonical_items if it.get("elem_idx") is not None)
+    is_shredded = len(canonical_items) >= 15 and (len(unique_elems) / len(canonical_items)) > 0.85
+    if not is_shredded:
+        return canonical_items
+
+    new_items = []
+    current_elem = 0
+    current_count = 0
+    current_words = 0
+
+    for it in canonical_items:
+        new_it = dict(it)
+        text = str(it.get("text", "")).strip()
+        is_h = bool(it.get("is_heading"))
+        is_quote = text.startswith(("“", "\"", "‘", "'"))
+        is_div = text in ("* * *", "***", "---", "• • •")
+        word_count = len(text.split())
+
+        if is_h or is_div:
+            current_elem += 1
+            new_it["elem_idx"] = current_elem
+            new_items.append(new_it)
+            current_elem += 1
+            current_count = 0
+            current_words = 0
+            continue
+
+        should_break = False
+        if current_count >= target_sentences or current_words >= 80:
+            should_break = True
+        elif is_quote and current_count >= 2:
+            should_break = True
+
+        if should_break and current_count > 0:
+            current_elem += 1
+            current_count = 0
+            current_words = 0
+
+        new_it["elem_idx"] = current_elem
+        new_items.append(new_it)
+        current_count += 1
+        current_words += word_count
+
+    return new_items
 
 
 def _print_table(plan: Dict) -> None:

@@ -114,6 +114,7 @@ class DesignTokensAestheticTests(unittest.TestCase):
             "--word-highlight-text",
             "--border",
             "--border-subtle",
+            "--bg-backdrop",
             "--card-shadow",
             "--audio-filter",
         ]

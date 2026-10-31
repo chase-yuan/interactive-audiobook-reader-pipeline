@@ -8,13 +8,15 @@ Enforces 4-Dimensional Orthogonal Boundary Test Matrix:
 """
 
 import json
+import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from validate_outputs import validate_canonical_sentences, check_sentence_orthography, auto_heal_canonical_quotes
 from kokoro_synthesizer import clean_acoustic_text, is_standalone_divider
-from extract_epub import clean_and_merge_elements
+from extract_epub import clean_and_merge_elements, extract_chapter_from_epub
 from dynamic_aligner import _duplicate_source_fragment_indices
 
 
@@ -63,6 +65,64 @@ class ShiftLeftSentenceGateTests(unittest.TestCase):
         ]
         issues = validate_canonical_sentences(items)
         self.assertTrue(any("unclosed quote" in iss.lower() for iss in issues))
+
+    def test_zero_none_invariant_fails_gate(self):
+        items = [
+            {"id": "s-0", "text": "This has a valid paragraph index.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": "This has a null paragraph index.", "elem_idx": None, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("elem_idx is none" in iss.lower() for iss in issues))
+
+    def test_dirty_repeated_quotes_fails_gate(self):
+        items = [
+            {"id": "s-0", "text": '““The opening quote is repeated.', "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": 'The closing quote is repeated.""', "elem_idx": 1, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("dirty consecutive leading quotes" in iss.lower() for iss in issues))
+        self.assertTrue(any("dirty repeated quotes" in iss.lower() for iss in issues))
+
+    def test_consecutive_single_sentence_anomaly_fails_gate(self):
+        items = [
+            {"id": f"s-{i}", "text": f"This is an isolated single-sentence prose paragraph number {i}.", "elem_idx": i, "is_heading": False}
+            for i in range(10)
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("consecutive single-sentence paragraph explosion" in iss.lower() for iss in issues))
+
+    def test_punchy_author_style_passes_gate(self):
+        # Authors like Morgan Housel intentionally write 3-4 punchy single-sentence paragraphs
+        items = [
+            {"id": "s-0", "text": "This is the first sentence of an opening paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": "This is the second sentence of the opening paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-2", "text": "The lesson here is not to be more like Ronald and less like Richard.", "elem_idx": 2, "is_heading": False},
+            {"id": "s-3", "text": "The fascinating thing about these stories is how unique they are to finance.", "elem_idx": 3, "is_heading": False},
+            {"id": "s-4", "text": "I struggle to think of any other industry with this dynamic.", "elem_idx": 4, "is_heading": False},
+            {"id": "s-5", "text": "This is a closing multi-sentence paragraph.", "elem_idx": 5, "is_heading": False},
+            {"id": "s-6", "text": "It concludes the discussion with strong supporting evidence.", "elem_idx": 5, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertEqual(issues, [])
+
+    def test_abnormal_single_sentence_density_fails_gate(self):
+        # Legacy books where elem_idx was mapped 1-to-1 for every sentence (e.g. Financial Intelligence)
+        items = [
+            {"id": f"s-{i}", "text": f"This is a prose sentence from an old OCR transcription number {i}.", "elem_idx": i, "is_heading": False}
+            for i in range(25)
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertTrue(any("abnormal single-sentence paragraph density" in iss.lower() for iss in issues))
+
+    def test_cohesive_paragraphs_pass_gate(self):
+        items = [
+            {"id": "s-0", "text": "This is the first sentence of a well-formed paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-1", "text": "This is the second sentence of the same paragraph.", "elem_idx": 1, "is_heading": False},
+            {"id": "s-2", "text": "This is the first sentence of the second paragraph.", "elem_idx": 2, "is_heading": False},
+            {"id": "s-3", "text": "This is the second sentence of the second paragraph.", "elem_idx": 2, "is_heading": False},
+        ]
+        issues = validate_canonical_sentences(items)
+        self.assertEqual(issues, [])
 
 
 class AcousticCleanserTests(unittest.TestCase):
@@ -143,6 +203,45 @@ class AcousticCleanserTests(unittest.TestCase):
         dupes = _duplicate_source_fragment_indices(sentences)
         self.assertIn(1, dupes)
 
+    def test_extreme_sentence_payload_detection(self):
+        # Validate that extreme sentence payloads (>=70 words or >=180 chars or >=35s) are flagged
+        aligned_items = [
+            {"id": "s-0", "text": "Short sentence.", "trans": "短句子。", "start": 0.0, "end": 2.5},
+            {"id": "s-1", "text": " ".join(["word"] * 75), "trans": "超长句子" * 50, "start": 10.0, "end": 50.0},
+        ]
+        extreme_payloads = []
+        for s_item in aligned_items:
+            s_text = s_item.get("text") or ""
+            s_trans = s_item.get("trans") or ""
+            s_words = len(s_text.split())
+            s_chars = len(s_trans)
+            raw_s = s_item.get("raw_start")
+            s_start = raw_s if raw_s is not None else s_item.get("start")
+            raw_e = s_item.get("raw_end")
+            s_end = raw_e if raw_e is not None else s_item.get("end")
+            s_dur = max(0.0, float(s_end) - float(s_start)) if (s_start is not None and s_end is not None) else 0.0
+            if s_words >= 70 or s_chars >= 180 or s_dur >= 35.0:
+                extreme_payloads.append(f"{s_item.get('id', '')} ({s_words}w, {s_chars}c, {round(s_dur, 1)}s)")
+        self.assertEqual(len(extreme_payloads), 1)
+        self.assertIn("s-1 (75w, 200c, 40.0s)", extreme_payloads[0])
+
+    def test_raw_start_none_fallback_duration(self):
+        # When raw_start is explicitly None, it must fall back to start (not 0.0)
+        from sentence_metrics import compute_sentence_metric
+        item = {
+            "id": "s-1",
+            "text": "Regular length sentence.",
+            "trans": "普通长度句子。",
+            "raw_start": None,
+            "start": 10.0,
+            "raw_end": None,
+            "end": 15.0,
+        }
+        metric = compute_sentence_metric(item, "ch01")
+        # Duration should be 15.0 - 10.0 = 5.0s, NOT 15.0 - 0.0 = 15.0s
+        self.assertEqual(metric["duration"], 5.0)
+        self.assertEqual(metric["level"], "NORMAL")
+
 
 class ElementMergeDehyphenationTests(unittest.TestCase):
     # 3. Element-Level Stitching (extract_epub.py)
@@ -186,6 +285,35 @@ class ElementMergeDehyphenationTests(unittest.TestCase):
         self.assertGreater(len(merged), 1)
         for el in merged:
             self.assertLessEqual(len(el["text"].split()), 55)
+
+    def test_extract_chapter_with_start_and_stop_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            epub_path = os.path.join(td, "test.epub")
+            out_json = os.path.join(td, "out.json")
+            with zipfile.ZipFile(epub_path, "w") as z:
+                z.writestr("test.html", "<html><body><h1>Part 1</h1><p>First section.</p><h1>Part 2</h1><p>Second section.</p><h1>Part 3</h1><p>Third section.</p></body></html>")
+            
+            res_stop = extract_chapter_from_epub(epub_path, "test.html::stop=Part 2", out_json)
+            self.assertEqual([x["text"] for x in res_stop], ["Part 1", "First section."])
+            
+            res_start = extract_chapter_from_epub(epub_path, "test.html::start=Part 2", out_json)
+            self.assertEqual([x["text"] for x in res_start], ["Part 2", "Second section.", "Part 3", "Third section."])
+
+    def test_extract_chapter_marker_ignores_body_text_collision(self):
+        with tempfile.TemporaryDirectory() as td:
+            epub_path = os.path.join(td, "collision.epub")
+            out_json = os.path.join(td, "collision_out.json")
+            long_body_para = "<p>In this comprehensive introductory treatise we explore how the concepts of Part 2 were originally drafted in an earlier volume before the author revised the complete taxonomy.</p>"
+            with zipfile.ZipFile(epub_path, "w") as z:
+                z.writestr("test.html", f"<html><body><h1>Part 1</h1><p>First section.</p>{long_body_para}<p>Still section 1.</p><h1>Part 2</h1><p>Second section.</p></body></html>")
+
+            # stop=Part 2 must NOT trigger on the long body paragraph, but on <h1>Part 2</h1>
+            res_stop = extract_chapter_from_epub(epub_path, "test.html::stop=Part 2", out_json)
+            self.assertEqual(len(res_stop), 4)
+            self.assertEqual(res_stop[0]["text"], "Part 1")
+            self.assertEqual(res_stop[1]["text"], "First section.")
+            self.assertIn("In this comprehensive introductory treatise", res_stop[2]["text"])
+            self.assertEqual(res_stop[3]["text"], "Still section 1.")
 
 
 if __name__ == "__main__":

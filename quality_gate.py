@@ -18,6 +18,8 @@ REQUIRED_IDS = (
     "chineseLockBtn",
     "repeatBtn",
     "focusModeBtn",
+    "marginaliaNote",
+    "bottomControlDock",
 )
 REQUIRED_FUNCTIONS = (
     "switchChapter",
@@ -37,13 +39,13 @@ def _check_temporal_integrity(content: str) -> list:
     errors = []
     chapter_blocks = re.findall(r'<section\b[^>]*class="chapter-section[^>]*data-ch="(\d+)"[^>]*>(.*?)</section>', content, re.DOTALL)
     word_re = re.compile(r'<span class="w"[^>]*?data-s="([^"]+)"[^>]*?data-e="([^"]+)"[^>]*?(?:data-timing-source="([^"]+)")?[^>]*?>([^<]*)</span>')
-    sent_re = re.compile(r'<div class="sentence-unit"[^>]*?id="([^"]+)"[^>]*?data-start="([^"]+)"[^>]*?data-end="([^"]+)"[^>]*?data-matched="([^"]+)"', re.DOTALL)
+    sent_re = re.compile(r'<(?:div|span) class="sentence-unit"[^>]*?id="([^"]+)"[^>]*?data-start="([^"]+)"[^>]*?data-end="([^"]+)"[^>]*?data-matched="([^"]+)"', re.DOTALL)
 
     for ch_num, ch_content in chapter_blocks:
-        units = ch_content.split('<div class="sentence-unit"')
+        units = re.split(r'<(?:div|span) class="sentence-unit"', ch_content)
         prev_end = None
         for u in units[1:]:
-            m = sent_re.search('<div class="sentence-unit"' + u[:400])
+            m = sent_re.search('<span class="sentence-unit"' + u[:400]) or sent_re.search('<div class="sentence-unit"' + u[:400])
             if not m:
                 continue
             uid, s_str, e_str, matched_str = m.group(1), m.group(2), m.group(3), m.group(4)
@@ -112,9 +114,23 @@ def check_acoustic_lead_silence(units_or_html, audio_path, max_lead=0.10, sample
             
     if not candidates:
         return {"status": "skipped", "reason": "no audio-matched sentence units"}
+
+    # Track Preamble Integrity: Earliest spoken sentence must start within 4.0s of physical audio onset
+    first_st = min(c[0] for c in candidates)
+    if first_st > 4.0:
+        return {
+            "status": "failed",
+            "first_onset": round(first_st, 3),
+            "max_lead_tolerance": 4.0,
+            "error": f"Initial track speech onset ({first_st:.2f}s) exceeds maximum allowed lead (4.0s); untrimmed platform bumper detected"
+        }
         
     step = max(1, len(candidates) // sample_size)
     sampled = candidates[::step][:sample_size]
+    if candidates[0] not in sampled:
+        sampled.insert(0, candidates[0])
+    if candidates[-1] not in sampled:
+        sampled.append(candidates[-1])
     
     leads = []
     for st, et in sampled:
@@ -252,7 +268,7 @@ def smoke_check_html(html_path: Path, expected_chapters=None, audio_path=None):
     # Guard against dangling inline onclick event handlers without declaration
     onclick_calls = re.findall(r'\bonclick=["\']\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', content)
     for fn_name in set(onclick_calls):
-        if fn_name in {"closeDropdowns", "event"}:
+        if fn_name in {"closeDropdowns", "event", "if", "return"}:
             continue
         if not re.search(rf"\b(?:function\s+{re.escape(fn_name)}\s*\(|(?:const|let|var)\s+{re.escape(fn_name)}\s*=\s*(?:function|\([^)]*\)\s*=>)|window\.{re.escape(fn_name)}\s*=)", content):
             errors.append(f"inline onclick references undefined function: {fn_name}()")

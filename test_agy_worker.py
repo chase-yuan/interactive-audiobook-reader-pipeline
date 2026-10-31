@@ -10,6 +10,7 @@ from agy_linguistic_worker import (
     CHUNK_SIZE,
     _json_from_output,
     build_batch_prompt,
+    can_reconcile_text,
     chunk_sentences,
     main,
     process_canonical_sentences,
@@ -64,6 +65,20 @@ class AgyLinguisticWorkerTests(unittest.TestCase):
         # Markdown fenced with commentary
         with_commentary = "Here is the result:\n```json\n" + plain + "\n```\nDone."
         self.assertEqual(_json_from_output(with_commentary), [{"id": "s-1", "text": "Hello", "trans": "你好", "vocab": []}])
+
+    def test_can_reconcile_text(self):
+        canonical = 'Morton Meyers writes: “Over 144,000 plant extracts, not a single drug reached status.'
+        # Typographic quote normalization
+        straight_quotes = 'Morton Meyers writes: "Over 144,000 plant extracts, not a single drug reached status.'
+        self.assertTrue(can_reconcile_text(straight_quotes, canonical))
+
+        # Minor spacing or footnote normalization
+        minor_divergence = 'Morton Meyers writes: "Over 144,000 plant extracts, not a single drug reached status."'
+        self.assertTrue(can_reconcile_text(minor_divergence, canonical))
+
+        # Completely changed text should reject
+        completely_different = 'This is an entirely different sentence.'
+        self.assertFalse(can_reconcile_text(completely_different, canonical))
 
     def test_verify_analysis_contract(self):
         canonical = [
@@ -148,8 +163,11 @@ class AgyLinguisticWorkerTests(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_120_sentence_chunking_and_merging_mock_subprocess(self, mock_run):
-        # 120 canonical sentences
-        canonical = [{"id": f"s-{i:03d}", "text": f"This is sentence {i}."} for i in range(1, 121)]
+        # 120 canonical sentences with paragraph and heading layout metadata
+        canonical = [
+            {"id": f"s-{i:03d}", "text": f"This is sentence {i}.", "elem_idx": i // 3, "is_heading": (i == 1), "tag": "h1" if i == 1 else "p"}
+            for i in range(1, 121)
+        ]
 
         def fake_subprocess_run(cmd, cwd=None, text=None, capture_output=None, timeout=None, **kwargs):
             prompt = cmd[-1]
@@ -213,6 +231,9 @@ class AgyLinguisticWorkerTests(unittest.TestCase):
                 self.assertEqual(record["text"], f"This is sentence {i}.")
                 self.assertEqual(record["trans"], f"这是句子 {expected_id}。")
                 self.assertEqual(record["vocab"], [{"word": "sentence", "pos": "n.", "def": "句子"}])
+                self.assertEqual(record["elem_idx"], i // 3)
+                self.assertEqual(record["is_heading"], (i == 1))
+                self.assertEqual(record["tag"], "h1" if i == 1 else "p")
 
     @patch("subprocess.run")
     def test_subprocess_failure_raises(self, mock_run):

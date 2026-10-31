@@ -65,19 +65,23 @@ def split_into_atomic_sentences(text):
     return sentences
 
 class ChapterParser(HTMLParser):
-    BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "div"}
+    BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "div", "tr", "th", "td"}
 
     def __init__(self):
         super().__init__()
         self.elements = []
         self.stack = []  # list of (tag, attrs_dict, text_chunks)
         self.ignored_tags = []
+        self.table_depth = 0
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
         cls = attrs_dict.get("class", "").lower()
         elem_id = attrs_dict.get("id", "").lower()
         epub_type = attrs_dict.get("epub:type", "").lower()
+
+        if tag in ("table", "thead", "tbody", "tfoot"):
+            self.table_depth += 1
 
         if (
             self.ignored_tags
@@ -104,16 +108,22 @@ class ChapterParser(HTMLParser):
                 text = "".join(self.stack[-1][2]).strip()
                 if text:
                     parent_tag, parent_attrs, _ = self.stack[-1]
+                    p_cls = parent_attrs.get("class", "").lower()
+                    is_tab = self.table_depth > 0 or parent_tag in ("table", "tr", "th", "td") or any(w in p_cls for w in ["table", "tabular"])
                     self.elements.append({
                         "tag": parent_tag,
                         "class": parent_attrs.get("class", ""),
-                        "text": re.sub(r"\s+", " ", text)
+                        "text": re.sub(r"\s+", " ", text),
+                        "is_tabular": is_tab,
                     })
                 self.stack[-1][2].clear()
 
             self.stack.append((tag, attrs_dict, []))
 
     def handle_endtag(self, tag):
+        if tag in ("table", "thead", "tbody", "tfoot"):
+            self.table_depth = max(0, self.table_depth - 1)
+
         if self.ignored_tags:
             if tag == self.ignored_tags[-1]:
                 self.ignored_tags.pop()
@@ -123,15 +133,86 @@ class ChapterParser(HTMLParser):
             popped_tag, popped_attrs, text_chunks = self.stack.pop()
             text = "".join(text_chunks).strip()
             if text:
+                p_cls = popped_attrs.get("class", "").lower()
+                is_tab = self.table_depth > 0 or popped_tag in ("table", "tr", "th", "td") or any(w in p_cls for w in ["table", "tabular"])
                 self.elements.append({
                     "tag": popped_tag,
                     "class": popped_attrs.get("class", ""),
-                    "text": re.sub(r"\s+", " ", text)
+                    "text": re.sub(r"\s+", " ", text),
+                    "is_tabular": is_tab,
                 })
 
     def handle_data(self, data):
         if self.stack and not self.ignored_tags:
             self.stack[-1][2].append(data)
+
+
+def is_publisher_promo_element(el: dict) -> bool:
+    """Detect third-party eBook aggregator promotional headers, footers, and license boilerplate."""
+    txt = el.get("text", "").strip().lower()
+    promo_markers = [
+        "www.globalgreyebooks.com",
+        "global grey ebooks",
+        "produced by global grey",
+        "end of the project gutenberg",
+        "project gutenberg license",
+        "distributed by standard ebooks",
+        "download more free ebooks at",
+    ]
+    return any(marker in txt for marker in promo_markers)
+
+
+def is_title_text(txt: str) -> bool:
+    if not txt:
+        return False
+    words = [w for w in re.findall(r"[a-zA-Z0-9'’]+", txt)]
+    if not words or len(words) > 12:
+        return False
+    if re.search(r"[.!?…]$", txt.strip()):
+        return False
+    if txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction ", "Book ", "Prologue", "Epilogue", "Table ", "Figure ")):
+        return True
+    minor_words = {"a", "an", "the", "and", "but", "or", "for", "nor", "on", "in", "at", "to", "from", "by", "with", "of", "off", "out", "as", "into", "over", "up", "down"}
+    cap_count = 0
+    significant_count = 0
+    for w in words:
+        if w.lower() in minor_words:
+            continue
+        significant_count += 1
+        if w[0].isupper():
+            cap_count += 1
+    if significant_count > 0 and cap_count == significant_count:
+        return True
+    if txt.isupper():
+        return True
+    return False
+
+
+def is_heading_element(el: dict) -> bool:
+    tag = el.get("tag", "").lower()
+    if tag.startswith("h") and len(tag) <= 2 and tag[1:].isdigit():
+        return True
+    if tag in ("header", "hgroup"):
+        return True
+    role = el.get("role", "").lower()
+    if role in ("heading", "doc-subtitle", "doc-chapter"):
+        return True
+
+    cls = el.get("class", "").lower()
+    classes = set(cls.split())
+    heading_patterns = {"h", "h1", "h2", "h3", "h4", "h5", "h6", "cn", "fm-co1", "title", "chapter-title", "heading", "subheading", "section-title", "part-title", "unit-title", "book-title"}
+    has_heading_class = bool(classes & heading_patterns or any(p in cls for p in ["chapter-head", "chap-title", "section-head", "subhead"]))
+
+    txt = el.get("text", "").strip()
+    is_short = len(txt.split()) <= 18 and not re.search(r"[.!?…].*[.!?…]", txt)
+    if is_short and has_heading_class:
+        return True
+
+    # Detect speech, lecture, or numbered section headings e.g. "Talk 11: ...", "Rule 3: ...", "Principle 5: ..."
+    if re.match(r"^(Talk|Speech|Lecture|Chapter|Part|Section|Rule|Principle)\s+\d+\b", txt, re.IGNORECASE) and len(txt.split()) <= 25:
+        return True
+
+    return is_title_text(txt)
 
 
 def clean_and_merge_elements(elements):
@@ -171,11 +252,17 @@ def clean_and_merge_elements(elements):
         curr_txt = curr.get("text", "").strip()
         next_txt = next_el.get("text", "").strip()
 
-        is_curr_heading = curr_tag.startswith("h")
-        is_next_heading = next_tag.startswith("h")
+        is_curr_heading = is_heading_element(curr)
+        is_next_heading = is_heading_element(next_el)
 
-        # Never merge headings with non-headings
+        # Never merge headings with non-headings, or headings with other headings
         if is_curr_heading or is_next_heading:
+            merged.append(curr)
+            curr = next_el
+            continue
+
+        # Never merge tabular elements with non-tabular prose
+        if bool(curr.get("is_tabular")) != bool(next_el.get("is_tabular")):
             merged.append(curr)
             curr = next_el
             continue
@@ -190,10 +277,7 @@ def clean_and_merge_elements(elements):
         next_starts_lower = bool(re.match(r"^\s*[\"“‘'(\[]*[a-z]", next_txt))
 
         # Case C: Check if curr_txt is a title or header
-        is_title = (
-            curr_txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction "))
-            or (len(curr_txt.split()) <= 8 and (curr_txt.istitle() or curr_txt.isupper()) and not curr_txt.endswith(":"))
-        )
+        is_title = is_title_text(curr_txt)
 
         curr_has_terminal = bool(re.search(r"[.!?…”\"’)]$", curr_txt))
 
@@ -211,50 +295,102 @@ def clean_and_merge_elements(elements):
 
 
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
-    pure = PurePosixPath(chapter_internal_path)
-    if pure.is_absolute() or ".." in pure.parts:
-        raise ValueError(f"Insecure chapter internal path: {chapter_internal_path}")
+    if isinstance(chapter_internal_path, (list, tuple)):
+        href_specs = list(chapter_internal_path)
+    else:
+        href_specs = [chapter_internal_path]
 
-    with zipfile.ZipFile(epub_path, 'r') as z:
-        raw_html = z.read(chapter_internal_path).decode('utf-8')
-        
-    parser = ChapterParser()
-    parser.feed(raw_html)
-    
-    cleaned_elements = clean_and_merge_elements(parser.elements)
-    
+    for spec in href_specs:
+        h = spec["href"] if isinstance(spec, dict) else (spec.split("::")[0] if isinstance(spec, str) and "::" in spec else spec)
+        pure = PurePosixPath(h)
+        if pure.is_absolute() or ".." in pure.parts:
+            raise ValueError(f"Insecure chapter internal path: {h}")
+
     canonical_items = []
     s_idx = 0
-    for elem_idx, el in enumerate(cleaned_elements):
-        tag = el['tag']
-        txt = el['text']
-        cls = el.get('class', '').lower()
-        is_h = (
-            tag.startswith('h')
-            or cls in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title')
-            or any(c in cls.split() for c in ('h', 'h1', 'h2', 'h3', 'cn', 'fm-co1', 'title', 'chapter-title', 'heading'))
-        )
-        
-        if is_h:
-            canonical_items.append({
-                "id": f"s-{s_idx}",
-                "elem_idx": elem_idx,
-                "tag": tag,
-                "text": txt,
-                "is_heading": True
-            })
-            s_idx += 1
-        else:
-            sents = split_into_atomic_sentences(txt)
-            for s in sents:
-                canonical_items.append({
-                    "id": f"s-{s_idx}",
-                    "elem_idx": elem_idx,
-                    "tag": tag,
-                    "text": s,
-                    "is_heading": False
-                })
-                s_idx += 1
+    global_elem_idx = 0
+    with zipfile.ZipFile(epub_path, 'r') as z:
+        for spec in href_specs:
+            if isinstance(spec, dict):
+                h = spec["href"]
+                start_marker = spec.get("start")
+                stop_marker = spec.get("stop")
+            elif isinstance(spec, str) and "::" in spec:
+                parts = spec.split("::")
+                h = parts[0]
+                start_marker = None
+                stop_marker = None
+                for param in parts[1:]:
+                    if param.startswith("start="):
+                        start_marker = param[6:]
+                    elif param.startswith("stop="):
+                        stop_marker = param[5:]
+            else:
+                h = spec
+                start_marker = None
+                stop_marker = None
+
+            raw_html = z.read(h).decode('utf-8')
+            parser = ChapterParser()
+            parser.feed(raw_html)
+            cleaned_elements = clean_and_merge_elements(parser.elements)
+
+            def _matches_marker(marker_str, element):
+                if not marker_str:
+                    return False
+                m_clean = marker_str.strip().lower()
+                el_txt = element.get('text', '').strip().lower()
+                pattern = rf"(?<![a-z0-9]){re.escape(m_clean)}(?![a-z0-9])"
+                if not re.search(pattern, el_txt):
+                    return False
+                # If marker is short (<= 3 words), prevent casual substring collisions in body text
+                if len(m_clean.split()) <= 3:
+                    return is_heading_element(element) or len(el_txt.split()) <= 25
+                return True
+
+            active = (start_marker is None)
+            for el in cleaned_elements:
+                tag = el['tag']
+                txt = el['text']
+                cls = el.get('class', '').lower()
+
+                if not active and start_marker and _matches_marker(start_marker, el):
+                    active = True
+                elif active and stop_marker and _matches_marker(stop_marker, el):
+                    break
+                if not active:
+                    continue
+
+                if is_publisher_promo_element(el):
+                    continue
+
+                is_h = is_heading_element(el)
+                
+                is_tabular = bool(el.get("is_tabular")) or bool(re.search(r"Click (?:here )?for a larger image of this (?:table|chart|figure)", txt, re.IGNORECASE))
+                if is_h:
+                    canonical_items.append({
+                        "id": f"s-{s_idx}",
+                        "elem_idx": global_elem_idx,
+                        "tag": tag,
+                        "text": txt,
+                        "is_heading": True,
+                        "is_tabular": is_tabular
+                    })
+                    s_idx += 1
+                    global_elem_idx += 1
+                else:
+                    sents = split_into_atomic_sentences(txt)
+                    for s in sents:
+                        canonical_items.append({
+                            "id": f"s-{s_idx}",
+                            "elem_idx": global_elem_idx,
+                            "tag": tag,
+                            "text": s,
+                            "is_heading": False,
+                            "is_tabular": is_tabular
+                        })
+                        s_idx += 1
+                    global_elem_idx += 1
                 
     atomic_write_json(out_json_path, canonical_items)
         

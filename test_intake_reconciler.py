@@ -133,5 +133,33 @@ class IntakeReconcilerTests(unittest.TestCase):
             self.assertEqual(mock_run.call_args[1].get("timeout"), 60)
 
 
+    def test_reconstruct_legacy_paragraphs_shredded(self):
+        from intake_reconciler import reconstruct_legacy_paragraphs
+        # 20 legacy sentences where elem_idx = 0..19 (100% shredded)
+        shredded = [
+            {"id": f"s-{i}", "text": f"This is sentence {i} in an old OCR book.", "elem_idx": i, "is_heading": False}
+            for i in range(20)
+        ]
+        reconstructed = reconstruct_legacy_paragraphs(shredded, target_sentences=4)
+        unique_new_elems = set(it["elem_idx"] for it in reconstructed)
+        # Should be grouped into ~5 paragraphs (4 sentences each), not 20!
+        self.assertLessEqual(len(unique_new_elems), 6)
+        self.assertGreaterEqual(len(unique_new_elems), 4)
+        # Check first paragraph has multiple sentences
+        p0_sents = [it["id"] for it in reconstructed if it["elem_idx"] == 0]
+        self.assertGreaterEqual(len(p0_sents), 3)
+
+    def test_reconstruct_legacy_paragraphs_intact_preserved(self):
+        from intake_reconciler import reconstruct_legacy_paragraphs
+        # Intact book where elem_idx is already grouped (e.g. 20 sentences in 4 paragraphs)
+        intact = [
+            {"id": f"s-{i}", "text": f"This is sentence {i}.", "elem_idx": i // 5, "is_heading": False}
+            for i in range(20)
+        ]
+        res = reconstruct_legacy_paragraphs(intact)
+        # Must not mutate already-grouped books
+        self.assertEqual([it["elem_idx"] for it in res], [it["elem_idx"] for it in intact])
+
+
 if __name__ == "__main__":
     unittest.main()

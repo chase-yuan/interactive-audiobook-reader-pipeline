@@ -384,6 +384,55 @@ class ReleaseGateTests(unittest.TestCase):
             report = json.loads(rep_path.read_text(encoding="utf-8"))
             self.assertTrue(any("release ceiling" in err for err in report["errors"]))
 
+    def test_structural_tabular_omission_exempted_from_ceiling(self):
+        """Pillar 3: Structural tables omitted by narrator must NOT trigger excessive omission ceiling."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_fixture(root)
+            aligned_file = root / "book_ch01_aligned_sentences.json"
+            canonical_file = root / "book_ch01_canonical_sentences.json"
+            analysis_file = root / "book_ch01_full_analysis.json"
+
+            # Create 80 sentences: 10 narrated prose, 70 structural tabular omissions (> 60 count ceiling)
+            can_list = []
+            ana_list = []
+            ali_list = []
+            for i in range(80):
+                sid = f"s-{i+1}"
+                is_table = i >= 10
+                text = f"Sentence {i+1}."
+                can_list.append({"id": sid, "text": text, "is_tabular": is_table})
+                ana_list.append({"id": sid, "text": text, "trans": f"句子 {i+1}。", "vocab": []})
+                if is_table:
+                    ali_list.append({
+                        "id": sid, "text": text, "trans": f"句子 {i+1}。", "vocab": [],
+                        "has_audio_match": False, "start": None, "end": None, "word_spans": [],
+                        "alignment_status": "not-applicable", "alignment_reason": "structural_tabular_omitted_by_narrator",
+                        "is_tabular": True,
+                        "source_token_count": 2, "matched_token_count": 0,
+                    })
+                else:
+                    ali_list.append({
+                        "id": sid, "text": text, "trans": f"句子 {i+1}。", "vocab": [],
+                        "has_audio_match": True, "start": float(i * 2), "end": float(i * 2 + 1.5),
+                        "word_spans": [
+                            {"word": "Sentence", "start": float(i * 2), "end": float(i * 2 + 0.8), "timing_source": "observed"},
+                            {"word": f"{i+1}.", "start": float(i * 2 + 0.9), "end": float(i * 2 + 1.5), "timing_source": "observed"},
+                        ],
+                        "alignment_status": "validated",
+                        "source_token_count": 2, "matched_token_count": 2, "match_ratio": 1.0,
+                    })
+
+            canonical_file.write_text(json.dumps(can_list), encoding="utf-8")
+            analysis_file.write_text(json.dumps(ana_list), encoding="utf-8")
+            aligned_file.write_text(json.dumps(ali_list), encoding="utf-8")
+
+            rep_path = root / "reader_validation_report.json"
+            self.assertEqual(validate(root, rep_path), 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+            self.assertEqual(len(rep["errors"]), 0)
+
     def test_overlapping_sentences_block_release(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -448,6 +497,216 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertTrue(rep["release_ready"])
             self.assertEqual(len(rep["chapters"]), 1)
             self.assertEqual(rep["chapters"][0]["chapter"], 1)
+
+    def test_punchy_style_book_passes_release_gate(self):
+        # Enforce that modern punchy authors (like Morgan Housel) pass the release gate cleanly
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+
+            c1 = [
+                {"id": "s-1", "text": "This is an opening sentence.", "elem_idx": 1, "is_heading": False},
+                {"id": "s-2", "text": "This is a supporting sentence.", "elem_idx": 1, "is_heading": False},
+                {"id": "s-3", "text": "The lesson here is not to be like Ronald.", "elem_idx": 2, "is_heading": False},
+                {"id": "s-4", "text": "The fascinating thing about finance is its uniqueness.", "elem_idx": 3, "is_heading": False},
+                {"id": "s-5", "text": "I struggle to think of any other field.", "elem_idx": 4, "is_heading": False},
+                {"id": "s-6", "text": "This is a concluding sentence in a multi-sentence paragraph.", "elem_idx": 5, "is_heading": False},
+                {"id": "s-7", "text": "It proves the central argument of the chapter.", "elem_idx": 5, "is_heading": False},
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = []
+            for idx, item in enumerate(a1):
+                alg1.append({
+                    **item,
+                    "word_spans": [{"word": item["text"].split()[0], "start": float(idx), "end": float(idx) + 0.8, "timing_source": "observed"}],
+                    "raw_start": float(idx), "raw_end": float(idx) + 0.8,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": len(item["text"].split()),
+                    "source_token_count": len(item["text"].split()), "match_ratio": 1.0,
+                })
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            self.assertEqual(validate(root, rep_path), 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+
+    def test_legacy_1to1_shredding_blocks_release_gate(self):
+        # Enforce that legacy 1-to-1 shredded books (where every sentence is its own paragraph) are caught
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+
+            c1 = [
+                {"id": f"s-{i}", "text": f"This is an isolated single-sentence prose paragraph number {i}.", "elem_idx": i, "is_heading": False}
+                for i in range(20)
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = []
+            for idx, item in enumerate(a1):
+                alg1.append({
+                    **item,
+                    "word_spans": [{"word": "This", "start": float(idx), "end": float(idx) + 0.8, "timing_source": "observed"}],
+                    "raw_start": float(idx), "raw_end": float(idx) + 0.8,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 9,
+                    "source_token_count": 9, "match_ratio": 1.0,
+                })
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            self.assertNotEqual(validate(root, rep_path), 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertFalse(rep["release_ready"])
+            self.assertTrue(any("abnormal single-sentence paragraph density" in err.lower() for err in rep["errors"]))
+
+    def test_zero_interior_void_invariant_rejects_unmatched_body_paragraph(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+
+            c1 = [
+                {"id": "s-0", "text": "Chapter One", "tag": "h1", "elem_idx": 0, "is_heading": True},
+                {"id": "s-1", "text": "First narrative sentence.", "tag": "p", "elem_idx": 1, "is_heading": False},
+                {"id": "s-2", "text": "Second dropped sentence.", "tag": "p", "elem_idx": 2, "is_heading": False},
+                {"id": "s-3", "text": "Third narrative sentence.", "tag": "p", "elem_idx": 3, "is_heading": False},
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = [
+                {
+                    **a1[0],
+                    "word_spans": [{"word": "Chapter", "start": 0.0, "end": 0.5, "timing_source": "observed"}, {"word": "One", "start": 0.5, "end": 1.0, "timing_source": "observed"}],
+                    "raw_start": 0.0, "raw_end": 1.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                },
+                {
+                    **a1[1],
+                    "word_spans": [{"word": "First", "start": 1.0, "end": 1.5, "timing_source": "observed"}, {"word": "narrative", "start": 1.5, "end": 2.0, "timing_source": "observed"}, {"word": "sentence.", "start": 2.0, "end": 2.5, "timing_source": "observed"}],
+                    "raw_start": 1.0, "raw_end": 2.5,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 3, "source_token_count": 3, "match_ratio": 1.0,
+                },
+                {
+                    **a1[2],
+                    "word_spans": [],
+                    "raw_start": None, "raw_end": None,
+                    "has_audio_match": False, "fallback_used": False,
+                    "alignment_status": "not-applicable", "alignment_reason": "non_narrated_text",
+                    "matched_token_count": 0, "source_token_count": 3, "match_ratio": 0.0,
+                },
+                {
+                    **a1[3],
+                    "word_spans": [{"word": "Third", "start": 2.6, "end": 3.0, "timing_source": "observed"}, {"word": "narrative", "start": 3.0, "end": 3.5, "timing_source": "observed"}, {"word": "sentence.", "start": 3.5, "end": 4.0, "timing_source": "observed"}],
+                    "raw_start": 2.6, "raw_end": 4.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 3, "source_token_count": 3, "match_ratio": 1.0,
+                },
+            ]
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            code = validate(root, rep_path)
+            self.assertNotEqual(code, 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertFalse(rep["release_ready"])
+            self.assertTrue(any("unapproved interior body omission" in err for err in rep["errors"]))
+
+    def test_dynamic_aligner_em_dash_and_digit_normalization(self):
+        from dynamic_aligner import tokenize_clean
+        tokens = tokenize_clean("It is summed up in a single word—Man.")
+        self.assertIn("word", tokens)
+        self.assertIn("man", tokens)
+
+        num_tokens = tokenize_clean("1.")
+        self.assertEqual(num_tokens, ["one"])
+        num_tokens_seven = tokenize_clean("7.")
+        self.assertEqual(num_tokens_seven, ["seven"])
+
+    def test_untrimmed_bumper_blocks_release(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+            c1 = [{"id": "s-1", "text": "First sentence of novel."}]
+            a1 = [{**item, "trans": "第一句", "vocab": []} for item in c1]
+            # Untrimmed 11.5s bumper offset
+            alg1 = [{
+                **a1[0],
+                "word_spans": [{"word": "First", "start": 11.5, "end": 12.5, "timing_source": "observed"}],
+                "raw_start": 11.5, "raw_end": 12.5, "start": 11.5, "end": 12.5,
+                "has_audio_match": True, "fallback_used": False,
+                "alignment_status": "validated", "matched_token_count": 4, "source_token_count": 4, "match_ratio": 1.0,
+            }]
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            code = validate(root, rep_path)
+            self.assertNotEqual(code, 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertFalse(rep["release_ready"])
+            self.assertTrue(any("initial speech onset lead" in err for err in rep["errors"]))
+
+    def test_dialogue_attribution_actor_omitted_validates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+            c1 = [
+                {"id": "s-1", "text": "Never at all."},
+                {"id": "s-2", "text": "Said Boxer."},
+                {"id": "s-3", "text": "And his eyes were full of tears."},
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = [
+                {
+                    **a1[0],
+                    "word_spans": [{"word": "Never", "start": 1.0, "end": 2.0, "timing_source": "observed"}],
+                    "raw_start": 1.0, "raw_end": 2.0, "start": 1.0, "end": 2.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 3, "source_token_count": 3, "match_ratio": 1.0,
+                },
+                {
+                    **a1[1],
+                    "word_spans": [
+                        {"word": "Said", "start": 2.0, "end": 2.15, "timing_source": "interpolated"},
+                        {"word": "Boxer.", "start": 2.15, "end": 2.3, "timing_source": "interpolated"},
+                    ],
+                    "raw_start": 2.0, "raw_end": 2.3, "start": 2.0, "end": 2.3,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_method": "dialogue_attribution_actor_omitted",
+                    "alignment_status": "validated", "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                },
+                {
+                    **a1[2],
+                    "word_spans": [{"word": "And", "start": 2.3, "end": 4.0, "timing_source": "observed"}],
+                    "raw_start": 2.3, "raw_end": 4.0, "start": 2.3, "end": 4.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 7, "source_token_count": 7, "match_ratio": 1.0,
+                },
+            ]
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            code = validate(root, rep_path)
+            self.assertEqual(code, 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+
+    def test_extract_epub_promo_element_detector(self):
+        from extract_epub import is_publisher_promo_element
+        self.assertTrue(is_publisher_promo_element({"text": "Visit www.globalgreyebooks.com for thousands of free ebooks"}))
+        self.assertTrue(is_publisher_promo_element({"text": "Produced by Global Grey 2024"}))
+        self.assertTrue(is_publisher_promo_element({"text": "End of the Project Gutenberg EBook of Animal Farm"}))
+        self.assertFalse(is_publisher_promo_element({"text": "Mr. Jones, of the Manor Farm, had locked the hen-houses."}))
 
 
 if __name__ == "__main__":

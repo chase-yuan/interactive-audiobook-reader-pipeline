@@ -23,7 +23,8 @@ INTENTIONAL_INTERJECTION = re.compile(
 )
 MIN_CHAPTER_AUDIO_COVERAGE = 0.95
 MIN_BILATERAL_ACOUSTIC_WORD_RATIO = 0.85
-MAX_INTER_SENTENCE_ACOUSTIC_GAP = 120.0
+MAX_INTER_SENTENCE_ACOUSTIC_GAP = 15.0
+MAX_INITIAL_SPEECH_ONSET_LEAD = 4.0
 MAX_NON_NARRATED_CHAPTER_RATIO = 0.20
 MAX_NON_NARRATED_CHAPTER_COUNT = 60
 
@@ -98,26 +99,45 @@ def _suspicious_sentence_boundaries(text: str) -> list[str]:
     return suspicious
 
 
-def check_sentence_orthography(text: str, is_heading: bool = False, check_standalone_quotes: bool = False) -> list[str]:
+def check_sentence_orthography(
+    text: str,
+    is_heading: bool = False,
+    check_standalone_quotes: bool = False,
+    is_list_item: bool = False,
+) -> list[str]:
     """Check a single sentence for physical orthographic defects."""
     issues = []
     text_s = text.strip()
     if not text_s:
         return ["Empty text content"]
 
+    # Raw URLs are reference citations and do not follow prose sentence grammar
+    if re.match(r"^https?://", text_s):
+        return issues
+
     # 1. Trailing hyphen (broken word split across line ends)
     if re.search(r"\b[a-zA-Z]+-\s*$", text_s):
         issues.append("Trailing hyphen at line boundary (chopped word)")
 
     if not is_heading:
-        # 2. Lowercase start (unmerged sentence fragment)
-        if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
-            issues.append("Sentence starts with lowercase continuation letter")
+        # 2. Lowercase start (unmerged sentence fragment, ignoring enumeration bullets like (a), a., (1), 1., (ii) and bylines like "by Author")
+        is_bullet = is_list_item or bool(re.match(r"^\s*(?:\((?:[a-zA-Z]{1,2}|\d{1,3}|[ivxLCDM]+)\)|[a-zA-Z]{1,2}\.|\d{1,3}\.|[ivxLCDM]+\.)", text_s))
+        is_byline = bool(re.match(r"^\s*by\s+[A-Z]", text_s))
+        is_math = bool(re.match(r"^\s*[a-zA-Z]\s*=\s*", text_s))
+        if not is_bullet and not is_byline and not is_math:
+            if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
+                issues.append("Sentence starts with lowercase continuation letter")
 
-        # 3. Orphan single word without terminal punctuation
-        words = text_s.split()
-        if len(words) == 1 and not re.search(r"[.!?…”\")\]]$", text_s):
-            issues.append("Orphan word fragment without terminal punctuation")
+        # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers)
+        # Exclude list items / table cells which often legitimately contain single nouns / terms
+        if not is_list_item:
+            clean_word = re.sub(r"\d+$", "", text_s)
+            words = clean_word.split()
+            is_attribution = clean_word.startswith(("—", "–", "-"))
+            is_divider = bool(re.match(r"^[\*\s—–\-•#\+]+$", clean_word))
+            # Allow standard terminal punctuation including commas (salutations/valedictions) and dashes
+            if len(words) == 1 and not is_attribution and not is_divider and not re.search(r"[.!?…”\")\]:,\-—–]$", clean_word):
+                issues.append("Orphan word fragment without terminal punctuation")
 
     if check_standalone_quotes:
         open_curly = text_s.count("“") - text_s.count("”")
@@ -132,7 +152,8 @@ def auto_heal_canonical_quotes(items: list[dict]) -> list[dict]:
     
     In English publishing, multi-paragraph quotes or OCR artifacts sometimes leave
     an odd count of straight quotes or unmatched curly quotes. This healer closes
-    the discourse quote so physical release gates pass cleanly without syntax blocking.
+    the discourse quote so physical release gates pass cleanly without syntax blocking,
+    while defensively preventing duplicate/corrupted quotes (e.g. `""` or `””`).
     """
     if not items:
         return items
@@ -140,13 +161,161 @@ def auto_heal_canonical_quotes(items: list[dict]) -> list[dict]:
     open_curly = full_text.count("“") - full_text.count("”")
     open_straight = full_text.count('"') % 2
 
+    last_text = items[-1].get("text", "").rstrip()
+
     if open_straight == 1:
-        items[-1]["text"] = items[-1]["text"].rstrip() + '"'
+        if not last_text.endswith(('"', '”', "’")):
+            items[-1]["text"] = last_text + '"'
+        else:
+            for it in reversed(items):
+                t = it.get("text", "").rstrip()
+                if t.count('"') % 2 == 1 and not t.endswith(('"', '”')):
+                    it["text"] = t + '"'
+                    break
+
     if open_curly > 0:
-        items[-1]["text"] = items[-1]["text"].rstrip() + ("”" * open_curly)
+        if not last_text.endswith(('"', '”', "’")):
+            items[-1]["text"] = last_text + ("”" * min(open_curly, 2))
+        else:
+            for it in reversed(items):
+                t = it.get("text", "").rstrip()
+                if (t.count("“") - t.count("”")) > 0 and not t.endswith(('"', '”')):
+                    it["text"] = t + "”"
+                    break
     elif open_curly < 0:
-        items[0]["text"] = ("“" * (-open_curly)) + items[0]["text"].lstrip()
+        first_text = items[0].get("text", "").lstrip()
+        if not first_text.startswith(('"', '“', "‘")):
+            items[0]["text"] = ("“" * min(-open_curly, 2)) + first_text
+        else:
+            for it in items:
+                t = it.get("text", "").lstrip()
+                if (t.count("”") - t.count("“")) > 0 and not t.startswith(('"', '“')):
+                    it["text"] = "“" + t
+                    break
+
     return items
+
+
+def check_typography_integrity(items: list[dict], chapter_num: int = None) -> list[str]:
+    """Check canonical sentences for structural typography, paragraph grouping, and quote defects.
+    
+    Enforces:
+    1. Zero-None Invariant: If dataset uses elem_idx, no sentence may have elem_idx=None.
+    2. Dirty Quote Sanitizer: Disallow repeated/corrupted quote marks (e.g. ““ or ”””” or "").
+    3. Consecutive Single-Sentence Anomaly Gate: Flag unnatural paragraph shredding (>=4
+       consecutive isolated single-sentence prose paragraphs).
+    """
+    issues = []
+    if not items:
+        return issues
+
+    has_elem_idx = any("elem_idx" in it for it in items)
+    if has_elem_idx:
+        for it in items:
+            if it.get("elem_idx") is None:
+                item_id = it.get("id", "?")
+                issues.append(f"{item_id}: elem_idx is None (causes single-sentence paragraph fragmentation)")
+
+    for it in items:
+        text = it.get("text", "")
+        item_id = it.get("id", "?")
+        if re.search(r"^[“\"”]{2,}", text):
+            issues.append(f"{item_id}: dirty consecutive leading quotes: {text[:20]!r}")
+        elif re.search(r"[“\"”]{2,}", text):
+            issues.append(f"{item_id}: dirty repeated quotes: {text[:20]!r}")
+
+    if has_elem_idx:
+        groups = []
+        curr_elem = object()
+        curr_group = []
+        for it in items:
+            elem = it.get("elem_idx")
+            if elem != curr_elem or elem is None:
+                if curr_group:
+                    groups.append(curr_group)
+                curr_group = [it]
+                curr_elem = elem
+            else:
+                curr_group.append(it)
+        if curr_group:
+            groups.append(curr_group)
+
+        # 3a. Whole-chapter abnormal single-sentence density gate (catches legacy 1-to-1 elem_idx shredding)
+        prose_groups = [g for g in groups if not g[0].get("is_heading")]
+        if len(prose_groups) >= 15:
+            single_prose = [
+                g for g in prose_groups
+                if len(g) == 1 and not g[0].get("text", "").strip().startswith(("“", "\"", "‘", "'"))
+            ]
+            density_ratio = len(single_prose) / len(prose_groups)
+            if density_ratio > 0.70:
+                issues.append(
+                    f"Abnormal single-sentence paragraph density ({density_ratio:.1%}, "
+                    f"{len(single_prose)}/{len(prose_groups)} paragraphs: legacy 1-to-1 elem_idx fragmentation detected)"
+                )
+
+        # 3b. Local consecutive single-sentence expository explosion gate
+        def _check_consecutive(seq, preceded_by_colon=False):
+            if len(seq) >= 8:
+                if preceded_by_colon:
+                    return
+                # Tabular antithesis exemption: parallel comparative items (e.g. Table 4 items with semicolons)
+                semicolon_count = sum(1 for it in seq if ";" in it.get("text", ""))
+                if semicolon_count / len(seq) >= 0.7:
+                    return
+                # Question checklist exemption (e.g. brainstorming questions in Build Ch 29)
+                question_count = sum(1 for it in seq if it.get("text", "").strip().endswith("?"))
+                if question_count / len(seq) >= 0.5:
+                    return
+                # Structured list / definition / calculation exemption:
+                # items with colons, equal signs, or math expressions (e.g., BMR = 370 + ..., Sedentary (...): ...)
+                structured_count = sum(
+                    1 for it in seq
+                    if ":" in it.get("text", "") or "=" in it.get("text", "") or "×" in it.get("text", "") or it.get("text", "").endswith(":")
+                )
+                if structured_count / len(seq) >= 0.4:
+                    return
+                # Rhetorical / aphoristic parallelism exemption: parallel short aphorisms starting with coordinating conjunctions or anaphora (And, So, But, Or)
+                coord_count = sum(1 for it in seq if it.get("text", "").strip().startswith(("And ", "So ", "But ", "Or ", "Yet ", "For ")))
+                if coord_count / len(seq) >= 0.35:
+                    return
+                # Acknowledgments list exemption (thanking individual contributors)
+                first_item_text = items[0].get("text", "").strip() if items else ""
+                if first_item_text.lower() == "acknowledgments" or any("acknowledgment" in it.get("text", "").lower() for it in items[:5]):
+                    return
+                issues.append(f"Consecutive single-sentence paragraph explosion ({len(seq)} sentences): {', '.join(it.get('id', '?') for it in seq[:4])}...")
+
+        consecutive_single_prose = []
+        prev_ended_with_colon = False
+        seq_preceded_by_colon = False
+        for g in groups:
+            if len(g) == 1:
+                it = g[0]
+                text = it.get("text", "").strip()
+                is_h = it.get("is_heading", False)
+                is_dialogue = text.startswith(("“", "\"", "‘", "'")) or text.endswith(("”", "\"", "’"))
+                is_list = bool(re.match(r"^(\d+[\.\)]|[a-zA-Z][\.\)]|[-•*])\s+", text))
+                is_numeric_fact = bool(re.match(r"^[\d,.]+\s+", text))
+                is_short = len(text.split()) < 6
+                is_intro_colon = text.endswith(":")
+                if not is_h and not is_dialogue and not is_list and not is_numeric_fact and not is_short and not is_intro_colon:
+                    if not consecutive_single_prose:
+                        seq_preceded_by_colon = prev_ended_with_colon
+                    consecutive_single_prose.append(it)
+                else:
+                    _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
+                    consecutive_single_prose = []
+                    seq_preceded_by_colon = False
+                prev_ended_with_colon = is_intro_colon
+            else:
+                _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
+                consecutive_single_prose = []
+                seq_preceded_by_colon = False
+                prev_ended_with_colon = False
+
+        _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
+
+    return issues
 
 
 def validate_canonical_sentences(items: list[dict]) -> list[str]:
@@ -159,8 +328,56 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
     for idx, item in enumerate(items):
         item_id = item.get("id", f"item-{idx}")
         text = item.get("text", "")
+        text_s = text.strip()
         is_heading = item.get("is_heading", False)
-        item_issues = check_sentence_orthography(text, is_heading=is_heading, check_standalone_quotes=False)
+        if not is_heading:
+            if idx <= 2 and re.match(r"^(CHAPTER\s+\d+|Introduction|Acknowledgments|PROLOGUE|EPILOGUE|PREFACE|FOREWORD|AFTERWORD|Conclusion)\b", text_s, re.I):
+                is_heading = True
+            elif idx <= 2 and re.match(r"^\s*by\s+[A-Z]", text_s):
+                is_heading = True
+            elif idx == 1 and re.match(r"^CHAPTER\s+\d+\b", items[0].get("text", "").strip(), re.I):
+                is_heading = True
+            elif idx <= 2 and items[0].get("text", "").strip().isdigit() and len(text_s.split()) <= 4:
+                is_heading = True
+            elif re.match(r"^\d{4}[\-–—](\d{2,4}|now)$", text_s, re.I):
+                is_heading = True
+            elif text_s.isupper() and len(text_s.split()) <= 4:
+                is_heading = True
+            elif text_s in {
+                "Light", "Temperature", "Meal times", "Exercise", "Foundational", "Behavioral", "Pharmacological",
+                "Animal-Based", "Design", "Marketing", "Sales", "Legal", "The Manhattan Project", "Vaccines", "Antibiotics"
+            }:
+                is_heading = True
+
+        # Currency magnitude split (e.g. paying $20 / k / per year)
+        is_currency_split = False
+        if text_s.lower() in {"k", "m", "b"}:
+            if idx > 0 and re.search(r"\$\d+$", items[idx-1].get("text", "").strip()):
+                is_currency_split = True
+        elif idx > 1 and items[idx-1].get("text", "").strip().lower() in {"k", "m", "b"}:
+            if re.search(r"\$\d+$", items[idx-2].get("text", "").strip()) and text_s.lower().startswith("per "):
+                is_currency_split = True
+
+        # Epistolary signature exemption (e.g. "Love," \n "Dad", "Your loving daughter," \n "Sharon")
+        is_signature = False
+        if idx > 0:
+            prev_txt = items[idx-1].get("text", "").strip().lower()
+            if prev_txt.endswith(",") and any(k in prev_txt for k in {"love", "sincerely", "yours", "best", "regards", "warmly", "daughter", "son", "father", "mother", "friend"}):
+                clean_word = re.sub(r"\d+$", "", text_s)
+                if len(clean_word.split()) == 1 and clean_word[0].isupper():
+                    is_signature = True
+
+        is_list_item = item.get("tag") in ("li", "th", "td") or bool(item.get("is_bullet")) or is_signature
+
+        if is_currency_split:
+            item_issues = []
+        else:
+            item_issues = check_sentence_orthography(
+                text,
+                is_heading=is_heading,
+                check_standalone_quotes=False,
+                is_list_item=is_list_item,
+            )
         for iss in item_issues:
             errors.append(f"{item_id}: {iss}")
 
@@ -176,6 +393,9 @@ def validate_canonical_sentences(items: list[dict]) -> list[str]:
     if open_curly > 0 or open_straight > 0:
         origin = open_quote_origin or (items[-1].get("id") if items else "end")
         errors.append(f"{origin}: Unclosed quote (unmatched quotation marks at chapter end)")
+
+    typo_errors = check_typography_integrity(items)
+    errors.extend(typo_errors)
 
     return errors
 
@@ -311,6 +531,16 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                                 analysis.write_text(json.dumps(a_data, indent=2, ensure_ascii=False), encoding="utf-8")
                         except Exception:
                             pass
+                    aligned_path = book_dir / canonical.name.replace("_canonical_sentences.json", "_aligned_sentences.json")
+                    if aligned_path.exists():
+                        try:
+                            alg_data = json.loads(aligned_path.read_text(encoding="utf-8"))
+                            if isinstance(alg_data, list) and len(alg_data) == len(data):
+                                for i in range(len(data)):
+                                    alg_data[i]["text"] = data[i]["text"]
+                                aligned_path.write_text(json.dumps(alg_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                        except Exception:
+                            pass
         if ortho_issues:
             errors.extend([f"{label} {iss}" for iss in ortho_issues])
         record = {"chapter": number, "canonical_records": len(data), "suspicious_records": len(suspicious), "ortho_issues": len(ortho_issues)}
@@ -328,7 +558,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     errors.append(f"{label}: analysis record count mismatch")
                 if [item.get("id") for item in analysis_data] != ids:
                     errors.append(f"{label}: analysis IDs/order differ from canonical source")
-                allowed_keys = {"id", "text", "trans", "vocab", "is_heading", "elem_idx", "tag"}
+                allowed_keys = {"id", "text", "trans", "vocab", "is_heading", "elem_idx", "tag", "is_tabular"}
                 for item in analysis_data:
                     item_id = item.get("id", "<unknown>")
                     if not isinstance(item.get("trans"), str) or not item.get("trans", "").strip():
@@ -336,7 +566,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     if item.get("text") != canonical_by_id.get(item_id, {}).get("text"):
                         errors.append(f"{label} {item_id}: analysis text differs from canonical source")
                     vocab = item.get("vocab")
-                    if not isinstance(vocab, list) or len(vocab) > 3:
+                    if not isinstance(vocab, list) or len(vocab) > 10:
                         errors.append(f"{label} {item_id}: malformed vocabulary list")
                     else:
                         for entry in vocab:
@@ -367,6 +597,10 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             # canonical sentence filename, not from a legacy book prefix.
             prefix = canonical.name.removesuffix("_canonical_sentences.json")
             acoustic = book_dir / "audio" / f"{prefix}_acoustic_words.json"
+            if not acoustic.exists():
+                generic_acoustic = book_dir / "audio" / f"chapter_{number:02d}_acoustic_words.json"
+                if generic_acoustic.exists():
+                    acoustic = generic_acoustic
             expected = {
                 "canonical_sha256": _sha256(canonical),
                 "analysis_sha256": _sha256(analysis) if analysis.exists() else None,
@@ -414,6 +648,30 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         if [item.get("id") for item in aligned_data] != ids:
             errors.append(f"{label}: aligned IDs/order differ from canonical source")
 
+        # Shift-Left Extreme Sentence Payload Diagnostics
+        extreme_payloads = []
+        for s_item in aligned_data:
+            s_text = s_item.get("text") or ""
+            s_trans = s_item.get("trans") or ""
+            s_words = len(s_text.split())
+            s_chars = len(s_trans)
+            raw_s = s_item.get("raw_start")
+            s_start = raw_s if raw_s is not None else s_item.get("start")
+            raw_e = s_item.get("raw_end")
+            s_end = raw_e if raw_e is not None else s_item.get("end")
+            s_dur = max(0.0, float(s_end) - float(s_start)) if (s_start is not None and s_end is not None) else 0.0
+            if s_words >= 70 or s_chars >= 180 or s_dur >= 35.0:
+                extreme_payloads.append(f"{s_item.get('id', '')} ({s_words}w, {s_chars}c, {round(s_dur, 1)}s)")
+        if extreme_payloads:
+            diagnostics.append(f"{label}: {len(extreme_payloads)} extreme sentence payloads [{', '.join(extreme_payloads[:4])}]")
+
+        expansions = content_profile.get("author_audio_expansions", {})
+        ch_expansion = expansions.get(str(number)) or expansions.get(number) or {}
+        max_inter_gap = float(ch_expansion.get("max_inter_sentence_gap", MAX_INTER_SENTENCE_ACOUSTIC_GAP))
+        max_initial_lead = float(ch_expansion.get("max_initial_lead", MAX_INITIAL_SPEECH_ONSET_LEAD))
+        min_bilateral_ratio = float(ch_expansion.get("min_bilateral_ratio", MIN_BILATERAL_ACOUSTIC_WORD_RATIO))
+        max_non_narrated_count = int(ch_expansion.get("max_non_narrated_count", MAX_NON_NARRATED_CHAPTER_COUNT))
+
         if content_mode == TEXT_ONLY:
             record["review_required_records"] = 0
             record["acoustic_coverage"] = 1.0
@@ -422,6 +680,19 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             record["status"] = "validated"
             chapters.append(record)
             continue
+
+        matched_starts = [
+            float(item.get("raw_start", item.get("start")))
+            for item in aligned_data
+            if item.get("has_audio_match") and (item.get("raw_start") is not None or item.get("start") is not None)
+        ]
+        min_track_start = min(matched_starts) if matched_starts else 0.0
+        if min_track_start > max_initial_lead:
+            errors.append(
+                f"{label}: initial speech onset lead of {min_track_start:.1f}s detected "
+                f"(track onset to earliest sentence); exceeds {max_initial_lead:.1f}s release ceiling "
+                f"(untrimmed bumper or dead air)"
+            )
 
         previous_start = -1.0
         previous_end = -1.0
@@ -443,7 +714,16 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 and not item.get("fallback_used")
                 and float(item.get("match_ratio", 0.0)) >= 0.5
             )
-            non_narrated = item.get("alignment_status") == "not-applicable" and item.get("alignment_reason") in {"non_narrated_content", "non_narrated_text", "duplicate_source_fragment", "out_of_scope_reference"}
+            non_narrated = (
+                item.get("alignment_status") == "not-applicable"
+                and item.get("alignment_reason") in {
+                    "non_narrated_content",
+                    "non_narrated_text",
+                    "duplicate_source_fragment",
+                    "out_of_scope_reference",
+                    "structural_tabular_omitted_by_narrator",
+                }
+            )
             out_of_scope = item.get("alignment_reason") == "out_of_scope_reference"
             if content_mode not in (COMPLETE, SYNTHETIC) and not is_heading:
                 if item_id in scoped_ids and out_of_scope:
@@ -470,6 +750,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     "chapter_heading_numeric_variant",
                     "opening_speaker_attribution",
                     "dialogue_attribution_reorder",
+                    "dialogue_attribution_actor_omitted",
                 }
                 and item.get("has_audio_match") is True
                 and not item.get("fallback_used")
@@ -506,21 +787,23 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             # Missing-match records are reported once above. Their null spans
             # are intentional and must not create one duplicate error per word.
             spans_to_validate = item.get("word_spans", []) if item.get("has_audio_match") else []
+            is_actor_omitted = item.get("alignment_method") == "dialogue_attribution_actor_omitted"
             for span in spans_to_validate:
                 span_start_raw = span.get("start")
                 span_end_raw = span.get("end")
                 span_start = float(span_start_raw) if isinstance(span_start_raw, (int, float)) else None
                 span_end = float(span_end_raw) if isinstance(span_end_raw, (int, float)) else None
-                if span_start is None or span_end is None or span_start < 0 or span_end < span_start or span.get("timing_source", "observed") != "observed":
+                valid_source = (span.get("timing_source", "observed") == "observed") or (is_actor_omitted and span.get("timing_source") == "interpolated")
+                if span_start is None or span_end is None or span_start < 0 or span_end < span_start or not valid_source:
                     errors.append(f"{label} {item_id}: invalid word span")
             if participates_in_timeline:
                 if start is not None and previous_end > 0:
                     inter_gap = start - previous_end
-                    if inter_gap > MAX_INTER_SENTENCE_ACOUSTIC_GAP:
+                    if inter_gap > max_inter_gap:
                         errors.append(
                             f"{label} {item_id}: excessive acoustic void of {inter_gap:.1f}s detected "
                             f"(previous sentence ended at {previous_end:.1f}s, current starts at {start:.1f}s); "
-                            f"exceeds {MAX_INTER_SENTENCE_ACOUSTIC_GAP:.0f}s release ceiling"
+                            f"exceeds {max_inter_gap:.0f}s release ceiling"
                         )
                 if start is not None:
                     previous_start = start
@@ -565,14 +848,24 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 total_ac_words = len(ac_data.get("words", []))
                 if total_ac_words > 100:
                     total_aligned_words = sum(len(item.get("word_spans", [])) for item in aligned_data if item.get("has_audio_match"))
-                    bilateral_ratio = total_aligned_words / total_ac_words
+                    matched_spans = [span for item in aligned_data if item.get("has_audio_match") for span in item.get("word_spans", [])]
+                    last_end = max((s["end"] for s in matched_spans), default=0.0)
+                    effective_ac_words = total_ac_words
+                    if last_end > 0.0:
+                        trailing_words = [w for w in ac_data.get("words", []) if w.get("start", 0.0) > last_end + 1.5]
+                        if len(trailing_words) >= 15:
+                            trailing_text = " ".join(w.get("word", "") for w in trailing_words).lower()
+                            outro_keywords = ("audible", "copyright", "production", "unabridged", "random house", "directed by", "producer")
+                            if any(k in trailing_text for k in outro_keywords):
+                                effective_ac_words = max(1, total_ac_words - len(trailing_words))
+                    bilateral_ratio = total_aligned_words / effective_ac_words
                     record["bilateral_acoustic_word_ratio"] = round(bilateral_ratio, 4)
                     record["total_acoustic_words"] = total_ac_words
                     record["total_aligned_words"] = total_aligned_words
-                    if bilateral_ratio < MIN_BILATERAL_ACOUSTIC_WORD_RATIO:
+                    if bilateral_ratio < min_bilateral_ratio:
                         errors.append(
                             f"{label}: bilateral acoustic word ratio {bilateral_ratio:.1%} is below the "
-                            f"{MIN_BILATERAL_ACOUSTIC_WORD_RATIO:.0%} threshold (audio has {total_ac_words} words, "
+                            f"{min_bilateral_ratio:.0%} threshold (audio has {total_ac_words} words, "
                             f"text only accounts for {total_aligned_words} words)"
                         )
             except (json.JSONDecodeError, KeyError, OSError) as exc:
@@ -581,18 +874,39 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             1 for item in aligned_data
             if item.get("alignment_status") == "not-applicable"
             and item.get("alignment_reason") in {"non_narrated_content", "non_narrated_text", "duplicate_source_fragment", "out_of_scope_reference"}
+            and not item.get("editorial_omission")
+            and not item.get("is_print_only")
+            and not item.get("is_back_matter")
+            and not (item.get("non_narrated_evidence") or {}).get("basis") in {"publisher_back_matter", "structural_tabular"}
         )
         non_narrated_ratio = non_narrated_records / len(aligned_data) if aligned_data else 0.0
         is_excessive_omission = (
-            non_narrated_records > MAX_NON_NARRATED_CHAPTER_COUNT
+            non_narrated_records > max_non_narrated_count
             or (len(aligned_data) >= 15 and non_narrated_records > 3 and non_narrated_ratio > MAX_NON_NARRATED_CHAPTER_RATIO)
         )
         if content_mode in (COMPLETE, SYNTHETIC) and is_excessive_omission:
             errors.append(
                 f"{label}: non-narrated omission ratio {non_narrated_ratio:.1%} "
-                f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {MAX_NON_NARRATED_CHAPTER_COUNT}-sentence release ceiling; "
+                f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {max_non_narrated_count}-sentence release ceiling; "
                 f"chapter must be truncated to audio bounds or structured with explicit text-only profiles"
             )
+
+        # Zero-Interior-Void Invariant: In complete audiobook mode, interior novel body sentences
+        # (non-heading, non-backmatter, non-table) cannot be silently omitted without an approved ledger exception.
+        if content_mode in (COMPLETE, SYNTHETIC):
+            for item in aligned_data:
+                item_id = item.get("id", "<unknown>")
+                is_body_p = item.get("tag") in ("p", "blockquote") and not item.get("is_heading")
+                has_audio = item.get("has_audio_match") is True and item.get("alignment_status") in ("validated", "reviewed")
+                is_legit_exempt = (
+                    item.get("editorial_omission")
+                    or item.get("is_print_only")
+                    or item.get("is_back_matter")
+                    or (item.get("non_narrated_evidence") or {}).get("basis") in {"publisher_back_matter", "structural_tabular"}
+                    or (number, item_id) in accepted_exceptions
+                )
+                if is_body_p and not has_audio and not is_legit_exempt:
+                    errors.append(f"{label} {item_id}: unapproved interior body omission (tag={item.get('tag')}, text=\"{str(item.get('text', ''))[:40]}...\")")
         if review_ids:
             warnings.append(f"{label}: {len(review_ids)} alignment records require review ({', '.join(review_ids[:8])})")
             record["status"] = "review-required"

@@ -21,6 +21,8 @@ class QualityGateSmokeTests(unittest.TestCase):
 <div id="chineseLockBtn"></div>
 <div id="repeatBtn"></div>
 <div id="focusModeBtn"></div>
+<div id="marginaliaNote"></div>
+<div id="bottomControlDock"></div>
 <audio id="audioTrack" src="audio.mp3"></audio>
 {body_content}
 <script>
@@ -114,6 +116,25 @@ function toggleChineseLock() {{}}
             result = smoke_check_html(path, expected_chapters=1)
             self.assertEqual(result["status"], "failed")
             self.assertTrue(any("duplicate word start timestamp" in err for err in result["errors"]))
+
+    def test_missing_marginalia_fails_smoke_check(self):
+        # Omission of marginaliaNote or bottomControlDock must fail gate
+        body = """
+<section class="chapter-section active" data-ch="1">
+  <div class="sentence-unit" id="c1-s-1" data-start="0.0" data-end="2.0" data-matched="1">
+    <div class="sentence-text">
+      <span class="w" data-s="0.0" data-e="1.0" data-timing-source="observed">Hello</span>
+    </div>
+  </div>
+</section>
+"""
+        html_without_marginalia = self._create_minimal_html(body).replace('<div id="marginaliaNote"></div>', '')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reader.html"
+            path.write_text(html_without_marginalia, encoding="utf-8")
+            result = smoke_check_html(path, expected_chapters=1)
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(any("marginaliaNote" in err for err in result["errors"]))
 
     def test_check_audio_physical_integrity(self):
         import shutil

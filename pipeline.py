@@ -31,6 +31,7 @@ from quality_gate import smoke_check_html
 from artifact_io import atomic_write_json
 from chapter_metadata import load_chapter_metadata
 from content_profile import COMPLETE, load_content_profile
+from intake_reconciler import extract_book_metadata
 
 
 def _run_align_worker(task):
@@ -67,6 +68,14 @@ def _file_sha256(path):
     return digest.hexdigest()
 
 
+
+def canonicalize_book_slug(name_or_path: str) -> str:
+    raw_name = Path(name_or_path).name
+    clean_name = re.sub(r"\s*\([^)]*\)", "", raw_name)
+    clean_name = re.sub(r"\s*\[[^\]]*\]", "", clean_name)
+    return re.sub(r"[^a-zA-Z0-9]+", "-", clean_name.strip()).strip("-").lower()
+
+
 def _existing_manifest(book_dir):
     path = Path(book_dir) / "reader_run_manifest.json"
     try:
@@ -101,6 +110,7 @@ def _load_audio_manifest(book_dir):
 
 
 def _write_audio_manifest(book_dir, audio_by_chapter, public_audio_base_url=None, public_book_id=None):
+    slug_id = public_book_id or canonicalize_book_slug(book_dir)
     entries = []
     for chapter in sorted(audio_by_chapter):
         source = Path(audio_by_chapter[chapter]).resolve()
@@ -109,13 +119,13 @@ def _write_audio_manifest(book_dir, audio_by_chapter, public_audio_base_url=None
             "source_path": str(source),
             "source_sha256": _file_sha256(str(source)),
             "bytes": source.stat().st_size,
-            "object_key": f"{public_book_id or Path(book_dir).name}/chapter_{chapter:02d}.mp3",
+            "object_key": f"{slug_id}/chapter_{chapter:02d}.mp3",
         }
         if public_audio_base_url:
             entry["public_url"] = f"{public_audio_base_url.rstrip('/')}/{entry['object_key']}"
         entries.append(entry)
     path = Path(book_dir) / "audio_manifest.json"
-    atomic_write_json(path, {"schema_version": 1, "book_id": public_book_id or Path(book_dir).name, "entries": entries})
+    atomic_write_json(path, {"schema_version": 1, "book_id": slug_id, "entries": entries})
     return _load_audio_manifest(book_dir)
 
 
@@ -145,10 +155,10 @@ def _public_audio_url(public_audio_base_url, public_book_id, chapter_number):
     """Return the canonical public name without depending on local filenames."""
     if not public_audio_base_url or not public_book_id:
         return None
-    canonical_chapter = chapter_number + 1 if chapter_number == 0 else chapter_number
+    public_chapter = chapter_number + 1 if (public_book_id == "the-housemaid" and chapter_number == 0) else chapter_number
     return (
         f"{public_audio_base_url.rstrip('/')}/{public_book_id}/"
-        f"chapter_{canonical_chapter:02d}.mp3"
+        f"chapter_{public_chapter:02d}.mp3"
     )
 
 def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual Synchronized Reader", book_author=None,
@@ -159,20 +169,18 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
     runs global alignment on ready pairs, and compiles the Master Interactive Reader.
     """
     book_dir = os.path.abspath(book_dir)
+    if not public_book_id:
+        public_book_id = canonicalize_book_slug(book_dir)
     audio_dir = os.path.join(book_dir, "audio")
     
     # Auto-infer book metadata if omitted
-    folder_name = os.path.basename(book_dir)
-    if " - " in folder_name and (not book_title or not book_author):
-        parts = folder_name.split(" - ")
-        if not book_title:
-            book_title = parts[0].strip()
-        if not book_author:
-            book_author = parts[1].strip()
-    elif not book_title:
-        book_title = folder_name
-    if not book_author:
-        book_author = "Author"
+    inferred_meta = extract_book_metadata(book_dir)
+    if not book_title:
+        book_title = inferred_meta["title"]
+    if not book_subtitle:
+        book_subtitle = inferred_meta["subtitle"]
+    if not book_author or book_author == "Author":
+        book_author = inferred_meta["author"]
         
     master_html_name = f"{book_title.replace(' ', '_')}_Interactive_Reader.html"
     master_html_path = os.path.join(book_dir, master_html_name)
@@ -237,16 +245,34 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
         # Audio file matching
         audio_entry = audio_manifest.get(ch_num)
         audio_file = audio_entry.get("source_path") if audio_entry else None
-        public_audio_url = audio_entry.get("public_url") if audio_entry else None
-        if not public_audio_url:
+        if public_audio_base_url and audio_entry and audio_entry.get("object_key"):
+            public_audio_url = f"{public_audio_base_url.rstrip('/')}/{audio_entry['object_key']}"
+        else:
+            public_audio_url = audio_entry.get("public_url") if audio_entry else None
+        if not public_audio_url and public_audio_base_url:
             public_audio_url = _public_audio_url(public_audio_base_url, public_book_id, ch_num)
         if public_audio_url:
             audio_file_rel = public_audio_url
         else:
-            audio_file_rel = f"./audio/{os.path.basename(audio_file)}" if audio_file else f"./audio/chapter_{ch_num:02d}.mp3"
+            std_audio_path = os.path.join(book_dir, "audio", f"chapter_{ch_num:02d}.mp3")
+            named_audio_path = os.path.join(book_dir, "audio", os.path.basename(audio_file)) if audio_file else None
+            if os.path.exists(std_audio_path):
+                audio_file_rel = f"./audio/chapter_{ch_num:02d}.mp3"
+            elif named_audio_path and os.path.exists(named_audio_path):
+                audio_file_rel = f"./audio/{os.path.basename(audio_file)}"
+            elif audio_file and os.path.exists(audio_file):
+                try:
+                    rel = os.path.relpath(audio_file, book_dir)
+                    audio_file_rel = rel if rel.startswith("./") else f"./{rel}"
+                except ValueError:
+                    audio_file_rel = f"./audio/chapter_{ch_num:02d}.mp3"
+            else:
+                audio_file_rel = f"./audio/chapter_{ch_num:02d}.mp3"
                 
+        has_aligned = os.path.exists(aligned_path) and os.path.getsize(aligned_path) > 1000
         has_analysis = os.path.exists(analysis_path) and _analysis_ready(analysis_path, c_path)
         has_acoustic = os.path.exists(acoustic_path) and os.path.getsize(acoustic_path) > 1000
+        has_data = (has_analysis and has_acoustic) or has_aligned
         canonical_sha256 = _file_sha256(c_path) if os.path.exists(c_path) else None
         analysis_sha256 = _file_sha256(analysis_path) if os.path.exists(analysis_path) else None
         acoustic_sha256 = _file_sha256(acoustic_path) if os.path.exists(acoustic_path) else None
@@ -261,7 +287,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
                 input_files.append((role, path))
         manifest_chapters.append({
             "chapter": ch_num,
-            "status": "ready" if has_analysis and has_acoustic else "blocked",
+            "status": "ready" if has_data else "blocked",
             "canonical": os.path.relpath(c_path, book_dir),
             "analysis": os.path.relpath(analysis_path, book_dir),
             "acoustic": os.path.relpath(acoustic_path, book_dir),
@@ -291,7 +317,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
                 align_tasks.append((acoustic_path, analysis_path, aligned_path, prefix, audio_file))
                 
         ready_chapters_data.append({
-            "has_data": has_analysis and has_acoustic,
+            "has_data": has_data,
             "c_path": c_path,
             "ch_num": ch_num,
             "audio_file_rel": audio_file_rel,
@@ -326,7 +352,7 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
             title = metadata["title"]
         elif ch_num == 0:
             title = "Preface"
-        elif len(h_texts) >= 2:
+        elif len(h_texts) >= 2 and re.match(r"^Chapter\s+\d+", h_texts[0], re.I):
             title = h_texts[1]
         elif len(h_texts) >= 1:
             title = h_texts[0]
@@ -399,12 +425,6 @@ def auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual 
             force_realign, public_audio_base_url, public_book_id, chapter_metadata_path,
         )
 
-def canonicalize_book_slug(name_or_path: str) -> str:
-    raw_name = Path(name_or_path).name
-    clean_name = re.sub(r"\s*\([^)]*\)", "", raw_name)
-    clean_name = re.sub(r"\s*\[[^\]]*\]", "", clean_name)
-    return re.sub(r"[^a-zA-Z0-9]+", "-", clean_name.strip()).strip("-").lower()
-
 
 def main():
     parser = argparse.ArgumentParser(description="Universal Interactive Audiobook Reader Industrial Pipeline")
@@ -462,11 +482,6 @@ def main():
             print("[PIPELINE -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
             raise SystemExit(1)
         print(f"[PIPELINE -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
-
-        keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
-        if keygen_script.is_file():
-            print("\n[PIPELINE -> KEYGEN] Emitting production passkey and dispatch copy...")
-            subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
 
 if __name__ == "__main__":
     main()

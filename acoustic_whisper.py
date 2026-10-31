@@ -6,10 +6,13 @@ Description: Apple Silicon GPU-Accelerated MLX Whisper Word Timestamp Extractor.
 import hashlib
 import json
 import math
-import time
 import sys
+import threading
+import time
 from pathlib import Path
 from artifact_io import atomic_write_json
+
+_MLX_DEVICE_LOCK = threading.Lock()
 
 ACOUSTIC_PROFILE_VERSION = 2
 ACOUSTIC_TRANSCRIPTION_OPTIONS = {
@@ -39,13 +42,14 @@ def run_mlx_acoustic_extraction(
     start_t = time.time()
     
     call_options = {k: v for k, v in options.items() if v is not None}
-    result = transcribe_fn(
-        audio_path,
-        path_or_hf_repo=model_name,
-        word_timestamps=True,
-        verbose=False,
-        **call_options,
-    )
+    with _MLX_DEVICE_LOCK:
+        result = transcribe_fn(
+            audio_path,
+            path_or_hf_repo=model_name,
+            word_timestamps=True,
+            verbose=False,
+            **call_options,
+        )
     
     words_list = []
     segments_list = []

@@ -174,6 +174,46 @@ class AcousticAlignmentRemediationTests(unittest.TestCase):
             self.assertEqual(pass_res["status"], "passed")
             self.assertLessEqual(pass_res["mean_lead"], 0.10)
 
+    def test_structural_tabular_omission_marked_not_applicable(self):
+        """Pillar 3: Unnarrated table rows marked is_tabular must be marked not-applicable and exempted."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ac_path = root / "acoustic.json"
+            an_path = root / "analysis.json"
+            out_path = root / "aligned.json"
+
+            # Audio only narrates the intro sentence
+            ac_path.write_text(json.dumps({
+                "words": [
+                    {"word": "Here", "start": 1.0, "end": 1.3},
+                    {"word": "is", "start": 1.35, "end": 1.5},
+                    {"word": "the", "start": 1.55, "end": 1.7},
+                    {"word": "intro.", "start": 1.75, "end": 2.2},
+                ]
+            }), encoding="utf-8")
+
+            # Text contains intro + unread table row
+            an_path.write_text(json.dumps([
+                {"id": "s-0", "text": "Here is the intro."},
+                {"id": "s-1", "text": "Table 1. Triad across domains.", "is_tabular": True, "tag": "td"}
+            ]), encoding="utf-8")
+
+            results = align_sentences_with_audio(str(ac_path), str(an_path), str(out_path))
+            self.assertEqual(len(results), 2)
+            self.assertEqual(results[0]["alignment_status"], "validated")
+            self.assertEqual(results[1]["alignment_status"], "not-applicable")
+            self.assertEqual(results[1]["alignment_reason"], "structural_tabular_omitted_by_narrator")
+            self.assertFalse(results[1]["has_audio_match"])
+            self.assertTrue(results[1]["is_tabular"])
+
+    def test_roman_numeral_conversion_up_to_fifty(self):
+        """Test Roman numeral expansion up to 50 (I through L) for heading normalization."""
+        from dynamic_aligner import tokenize_clean
+        self.assertEqual(tokenize_clean("Chapter XVI."), ["chapter", "16"])
+        self.assertEqual(tokenize_clean("Chapter XXI."), ["chapter", "21"])
+        self.assertEqual(tokenize_clean("Chapter XXXIV."), ["chapter", "34"])
+        self.assertEqual(tokenize_clean("Chapter L."), ["chapter", "50"])
+
 
 if __name__ == "__main__":
     unittest.main()

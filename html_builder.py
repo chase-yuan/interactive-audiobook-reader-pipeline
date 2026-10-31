@@ -77,6 +77,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             'audio': c['audio'],
             'public_audio': c.get('public_audio'),
             'editorial_notice': c.get('editorial_notice'),
+            'aligned_json': c.get('aligned_json'),
             'sentences': sents
         })
         
@@ -90,9 +91,24 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
     audio_track_attr = "" if has_audio else ' style="display: none;"'
     repeat_group_attr = "" if has_audio else ' style="display: none;"'
     
-    clean_short_title = re.sub(r'[\(\[]\s*unabridged\s*[\)\]]', '', book_title, flags=re.I).strip()
-    if len(clean_short_title) > 28 and ':' in clean_short_title:
-        clean_short_title = clean_short_title.split(':')[0].strip()
+    clean_short_title = re.sub(r'[\(\[]\s*(?:unabridged|audiobook|edition|anniversary|deluxe|version)\s*[\)\]]', '', book_title, flags=re.I).strip()
+    for sep in [':', ' - ', ' — ', ' – ']:
+        if sep in clean_short_title:
+            cand = clean_short_title.split(sep)[0].strip()
+            if len(cand) >= 3:
+                clean_short_title = cand
+                break
+    if len(clean_short_title) > 16:
+        for word_sep in [" Things That ", " How to ", " The Story of ", " Why "]:
+            if word_sep.lower() in clean_short_title.lower():
+                clean_short_title = re.split(word_sep, clean_short_title, flags=re.IGNORECASE)[0].strip()
+                break
+    if len(clean_short_title) > 22 and ' ' in clean_short_title:
+        words = clean_short_title.split()
+        if len(words) >= 2 and len(" ".join(words[:2])) <= 22:
+            clean_short_title = " ".join(words[:2])
+        elif len(words) > 0:
+            clean_short_title = words[0]
 
     html_head = f"""<!DOCTYPE html>
 <html lang="en" data-theme="sepia">
@@ -147,73 +163,10 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
 
     html_head += f"""      </div>
     </div>
-    
-    <div class="nav-actions">
-      <button class="icon-btn primary" id="globalPlayBtn" onclick="toggleGlobalPlay()"{play_btn_attr}>▶ Play</button>
-      <button class="icon-btn" id="drawerToggleBtn" onclick="toggleDrawer()">Menu</button>
-    </div>
-  </div>
-  
-  <div class="control-drawer" id="controlDrawer">
-    <div class="drawer-inner">
-      <div class="audio-player-bar" id="audioPlayerBar"{audio_track_attr}>
-        <button class="player-speed-btn" id="audioSpeedBtn" onclick="cyclePlaybackRate()" aria-label="Playback speed">1.0×</button>
-        <span class="player-time" id="playerCurTime">00:00</span>
-        <div class="player-slider-wrap">
-          <input type="range" class="player-slider" id="playerScrubber" min="0" max="100" value="0" step="0.1" aria-label="Playback scrubber">
-        </div>
-        <span class="player-time" id="playerTotalTime">00:00</span>
-        <audio id="audioTrack" playsinline webkit-playsinline preload="auto" src="{html.escape(audio_src)}" class="hidden-audio"{audio_track_attr}></audio>
-      </div>
-      <div class="drawer-row">
-        <div class="drawer-group">
-          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (Shortcut: T)">Dual</button>
-          <button class="pill-btn" onclick="toggleTheme()" aria-label="Switch theme">Theme</button>
-        </div>
-        <div class="drawer-group"{repeat_group_attr}>
-          <button class="pill-btn" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (Shortcut: R)">Repeat</button>
-          <button class="pill-btn" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>
-        </div>
-        <div class="drawer-group">
-          <label class="toggle-pill" aria-label="Auto-scroll to active sentence">
-            <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
-            <span class="toggle-badge">Auto-scroll</span>
-          </label>
-          <button class="pill-btn" id="tipsToggleBtn" onclick="toggleTips()" aria-label="Keyboard & Gesture shortcuts">Shortcuts</button>
-        </div>
-      </div>
-      <div class="drawer-tips" id="drawerTips">
-        <div class="tips-columns">
-          <div class="tips-section">
-            <div class="tips-section-title">Reading & Playback</div>
-            <div class="tips-row"><span class="kbd-key">Tap Sentence</span><span>{'Play audio & show breakdown' if has_audio else 'Show translation & vocabulary breakdown'}</span></div>
-            <div class="tips-row"><span class="kbd-key">{'Double Tap' if has_audio else 'Tap Active'}</span><span>{'Repeat sentence loop' if has_audio else 'Collapse translation card'}</span></div>
-            {f'<div class="tips-row"><span class="kbd-key">Tap Card</span><span>Collapse card</span></div>' if has_audio else ''}
-            <div class="tips-row"><span class="kbd-key">Space</span><span>Toggle translation card (peek / hide)</span></div>
-            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence (audio only)</span></div>
-            <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
-            {f'<div class="tips-row"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>' if has_audio else ''}
-            {f'<div class="tips-row"><span class="kbd-key">P</span><span>Toggle Focus mode</span></div>' if has_audio else ''}
-          </div>
-          <div class="tips-section">
-            <div class="tips-section-title">Focus Mode (Immersion)</div>
-            <div class="tips-row"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
-            <div class="tips-row"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
-            <div class="tips-row"><span class="kbd-key">↑</span><span>Replay current sentence</span></div>
-            <div class="tips-row"><span class="kbd-key">Swipe L/R</span><span>Previous / Next sentence</span></div>
-            <div class="tips-row"><span class="kbd-key">R</span><span>Cycle repeats (1× / 2× / 3× / 5×)</span></div>
-            <div class="tips-row"><span class="kbd-key">T</span><span>Toggle Dual / English-only</span></div>
-            <div class="tips-row"><span class="kbd-key">H / B</span><span>Audio mode (hide text for listening)</span></div>
-            <div class="tips-row"><span class="kbd-key">A / +/-</span><span>Scale English font size</span></div>
-            <div class="tips-row"><span class="kbd-key">Double Tap / Esc</span><span>Exit Focus mode</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </header>
 
-<main class="container">
+<main class="reader-main">
 """
 
     for ch in loaded_chapters:
@@ -230,20 +183,24 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         disp_part = rf"|\b(?:Chapter\s+)?{re.escape(disp_num)}(?!\d)\s*[\.\:—–-]\s*" if disp_num else ""
         prefix_pattern = rf"^(?:{re.escape(ch['label'])}\s*[:—–-]?\s*{disp_part})"
         sub_title = re.sub(prefix_pattern, "", clean_title, flags=re.IGNORECASE).strip()
-        if not sub_title or clean_title.upper() == ch_heading_label or clean_title.upper() == f"CHAPTER {cnum}":
+        if not sub_title or len(sub_title) <= 2 or clean_title.upper() == ch_heading_label or clean_title.upper() == f"CHAPTER {cnum}":
             title_html = safe_heading_label
+        elif safe_heading_label in clean_title.upper() and len(sub_title) < 4:
+            title_html = html.escape(clean_title.upper())
         else:
             title_html = f"{safe_heading_label}<br>{html.escape(sub_title)}"
         
         html_head += f"""
   <!-- CHAPTER {cnum} -->
   <section class="chapter-section{active_cls}" id="chapter-{cnum}" data-audio="{html.escape(caudio)}" data-public-audio="{html.escape(cpublic_audio)}" data-ch="{cnum}">
-    <header class="book-header">
-      <h1 class="book-title">{title_html}</h1>
-      <div class="book-author">{html.escape(book_author)}</div>
-    </header>
+    <div class="chapter-layout">
+      <div class="prose-column">
+        <header class="book-header">
+          <h1 class="book-title">{title_html}</h1>
+          <div class="book-author">{html.escape(book_author)}</div>
+        </header>
 
-    <div class="book-content">
+        <div class="book-content">
 """
         if has_audio and csents:
             def is_sentence_explicitly_estimated(sent):
@@ -252,89 +209,39 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 return any(w.get("timing_source") == "estimated" for w in sent.get("word_spans", []))
 
             valid_flags = []
-            for s in csents:
-                start_chk = s.get("audio_start", s.get("start"))
-                end_chk = s.get("audio_end", s.get("end"))
-                is_valid = isinstance(start_chk, (int, float)) and isinstance(end_chk, (int, float)) and start_chk >= 0 and end_chk >= start_chk
-                valid_flags.append(is_valid)
+            # Resolve canonical metadata if available to preserve EPUB paragraph structure and heading hierarchy
+        canonical_path = ch.get('aligned_json', '').replace('_aligned_sentences.json', '_canonical_sentences.json')
+        canonical_map = {}
+        canonical_headings = set()
+        if os.path.exists(canonical_path):
+            try:
+                with open(canonical_path, 'r', encoding='utf-8') as cf:
+                    for item in json.load(cf):
+                        if 'id' in item:
+                            if 'elem_idx' in item:
+                                canonical_map[item['id']] = item['elem_idx']
+                            if item.get('is_heading'):
+                                canonical_headings.add(item['id'])
+            except Exception:
+                pass
 
-            gap_groups = []
-            curr_group = []
-            for idx, is_v in enumerate(valid_flags):
-                s = csents[idx]
-                is_divider = s.get("text", "").strip() in ['* * *', '***', '---', '* * * *', '– – –', '— — —', '… … …', '• • •']
-                is_estimated = is_sentence_explicitly_estimated(s)
-                if not is_v and not is_divider and not is_estimated:
-                    curr_group.append(idx)
-                else:
-                    if curr_group:
-                        gap_groups.append(curr_group)
-                        curr_group = []
-            if curr_group:
-                gap_groups.append(curr_group)
-
-            for group in gap_groups:
-                prev_idx = group[0] - 1
-                next_idx = group[-1] + 1
-                has_prev = prev_idx >= 0 and valid_flags[prev_idx]
-                has_next = next_idx < len(csents) and valid_flags[next_idx]
-                if not has_prev or not has_next:
-                    for g_idx in group:
-                        csents[g_idx]["audio_start"] = None
-                        csents[g_idx]["audio_end"] = None
-                        csents[g_idx]["has_audio_match"] = False
-                        csents[g_idx]["word_spans"] = []
-                    continue
-                t_prev = csents[prev_idx].get("audio_end", csents[prev_idx].get("end"))
-                t_next = csents[next_idx].get("audio_start", csents[next_idx].get("start"))
-                if not isinstance(t_prev, (int, float)) or not isinstance(t_next, (int, float)) or t_next <= t_prev:
-                    # Invariant: No physical acoustic gap exists between surrounding spoken sentences.
-                    # Unnarrated footnotes/dividers MUST NOT fabricate artificial timestamps that collide with t_next.
-                    for g_idx in group:
-                        csents[g_idx]["audio_start"] = None
-                        csents[g_idx]["audio_end"] = None
-                        csents[g_idx]["has_audio_match"] = False
-                        csents[g_idx]["word_spans"] = []
-                    continue
-                total_duration = t_next - t_prev
-                words_per_s = [max(1, len(csents[g_idx].get("text", "").split())) for g_idx in group]
-                total_w = sum(words_per_s)
-                cum_w = 0
-                for g_idx, w_cnt in zip(group, words_per_s):
-                    s_t = round(t_prev + total_duration * (cum_w / total_w), 2)
-                    cum_w += w_cnt
-                    e_t = round(t_prev + total_duration * (cum_w / total_w), 2)
-                    if has_next:
-                        e_t = min(t_next, e_t)
-                    if e_t <= s_t:
-                        e_t = round(min(t_next if has_next else s_t + 0.1, s_t + 0.05), 2)
-                    csents[g_idx]["audio_start"] = s_t
-                    csents[g_idx]["audio_end"] = e_t
-                    csents[g_idx]["has_audio_match"] = True
-                    raw_words = csents[g_idx].get("text", "").split()
-                    c_cnt = max(1, len(raw_words))
-                    w_spans = []
-                    prev_w_s = -1.0
-                    for m_i, rw in enumerate(raw_words):
-                        ws = round(s_t + (e_t - s_t) * (m_i / c_cnt), 2)
-                        we = round(s_t + (e_t - s_t) * ((m_i + 1) / c_cnt), 2)
-                        if ws <= prev_w_s:
-                            ws = round(prev_w_s + 0.01, 2)
-                        if we <= ws:
-                            we = round(ws + 0.01, 2)
-                        prev_w_s = ws
-                        w_spans.append({"word": rw, "start": ws, "end": we, "timing_source": "interpolated"})
-                    csents[g_idx]["word_spans"] = w_spans
+        prose_blocks = []
+        current_p_units = []
+        current_elem_idx = None
 
         for s in csents:
             if s.get("text", "").strip() in ['* * *', '***', '---', '* * * *', '– – –', '— — —', '… … …', '• • •']:
+                if current_p_units:
+                    prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                    current_p_units = []
+                    current_elem_idx = None
                 div_symbol = html.escape(s.get("text", "").strip())
-                html_head += f'      <div class="scene-divider" aria-hidden="true"><span>{div_symbol}</span></div>\n'
+                prose_blocks.append(f'        <div class="scene-divider" aria-hidden="true"><span>{div_symbol}</span></div>')
                 continue
 
             raw_sid = s["id"]
             sid = f"c{cnum}-{raw_sid}"
-            is_h = s.get("is_heading", False)
+            is_h = bool(s.get("is_heading")) or (raw_sid in canonical_headings)
             start = s.get("audio_start", s.get("start"))
             end = s.get("audio_end", s.get("end"))
             word_spans = s.get("word_spans", [])
@@ -344,7 +251,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             inspect_unmatched_notice = ""
             start_arg = "null" if start is None else str(start)
             end_arg = "null" if end is None else str(end)
-            trans = html.escape(s.get("trans", ""))
+            raw_trans = s.get("trans", "") or ""
             vocab = s.get("vocab", [])
             raw_text = s.get("text", "")
             
@@ -352,11 +259,14 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             if word_spans:
                 for w in word_spans:
                     rw = html.escape(w["word"])
-                    ws = w["start"]
-                    we = w["end"]
+                    ws = w.get("start")
+                    we = w.get("end")
                     timing_source = html.escape(w.get("timing_source", "observed"))
                     ts_attr = f' data-timing-source="{timing_source}"' if timing_source and timing_source != "observed" else ""
-                    word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}"{ts_attr}>{rw}</span>')
+                    if isinstance(ws, (int, float)) and isinstance(we, (int, float)):
+                        word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}"{ts_attr}>{rw}</span>')
+                    else:
+                        word_html_list.append(f'<span class="w"{ts_attr}>{rw}</span>')
             else:
                 c_cnt = max(1, len(s["text"].split()))
                 prev_w_s = -1.0
@@ -371,7 +281,7 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                         prev_w_s = ws
                         word_html_list.append(f'<span class="w" data-s="{ws}" data-e="{we}">{html.escape(rw)}</span>')
                     else:
-                        word_html_list.append(f'<span class="w" data-s="{start_arg}" data-e="{end_arg}">{html.escape(rw)}</span>')
+                        word_html_list.append(f'<span class="w">{html.escape(rw)}</span>')
             
             sentence_text_html = " ".join(word_html_list)
             
@@ -387,12 +297,30 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 vocab_section = f'<div class="inspect-vocab-list">{"".join(vocab_html_list)}</div>'
                 
             h_class = ""
+            is_intext_heading = bool(re.match(r"^CHAPTER\s+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|[A-Z\-]+|\d+)\s*$", raw_text.strip(), re.IGNORECASE))
+            if not is_h and not is_intext_heading:
+                rt_s = raw_text.strip()
+                if (
+                    rt_s.lower() in {"introduction", "acknowledgments", "conclusion", "foreword", "preface", "epilogue", "prologue", "afterword"}
+                    or rt_s.startswith("for ")
+                    or bool(re.match(r"^\d{4}[\-–—](\d{2,4}|now)$", rt_s, re.I))
+                    or bool(re.match(r"^\s*by\s+[A-Z]", rt_s))
+                    or (rt_s.isupper() and len(rt_s.split()) <= 4)
+                    or rt_s in {
+                        "Light", "Temperature", "Meal times", "Exercise", "Foundational", "Behavioral", "Pharmacological",
+                        "Animal-Based", "Design", "Marketing", "Sales", "Legal", "The Manhattan Project", "Vaccines", "Antibiotics"
+                    }
+                ):
+                    is_intext_heading = True
+            is_citation = raw_text.strip().startswith(("—", "–", "--", "- "))
+
             if is_h:
                 h_class += " chapter-heading-1"
-            elif re.match(r"^CHAPTER\s+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|[A-Z\-]+|\d+)\s*$", raw_text.strip(), re.IGNORECASE):
+            elif is_intext_heading:
                 h_class += " chapter-intext-heading"
-            elif raw_text.strip().startswith(("—", "–", "--", "- ")):
+            elif is_citation:
                 h_class += " epigraph-citation"
+
             is_reorder = 1 if s.get("alignment_method") in {
                 "leading_epigraph_attribution",
                 "chapter_heading_numeric_variant",
@@ -400,44 +328,153 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
                 "dialogue_attribution_reorder",
             } else 0
             reorder_attr = ' data-reorder="1"' if is_reorder else ''
+            trans_attr = f' data-trans="{html.escape(raw_trans, quote=True)}"' if raw_trans else ''
             vocab_attr = f' data-vocab="{html.escape(json.dumps(vocab, ensure_ascii=False))}"' if vocab else ''
-            html_head += f"""
-      <div class="sentence-unit" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" data-audio-order="{s.get('audio_order', '')}" data-epigraph="{1 if s.get('alignment_method') == 'leading_epigraph_attribution' else 0}"{reorder_attr} data-matched="{has_match}"{vocab_attr}>
-        <div class="sentence-text{h_class}" onclick="handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})">
-          <span class="s-content">{sentence_text_html}</span>{unmatched_tag}
-        </div>
-        <div class="inspect-panel" onclick="handleInspectPanelClick(event, '{sid}')">
-          {inspect_unmatched_notice}
-          <div class="inspect-trans">{trans}</div>
-          {vocab_section}
-        </div>
-      </div>
-"""
+
+            s_audio_order = s.get("audio_order", "")
+            s_epigraph = 1 if s.get("alignment_method") == "leading_epigraph_attribution" else 0
+            click_call = f"handleSentenceClick(event, '{sid}', {start_arg}, {end_arg}, {has_match})"
+
+            unit_markup = (
+                f'<span class="sentence-unit s-inline" id="{sid}" data-start="{start_arg}" data-end="{end_arg}" '
+                f'data-audio-order="{s_audio_order}" data-epigraph="{s_epigraph}"{reorder_attr} '
+                f'data-matched="{has_match}"{trans_attr}{vocab_attr}>'
+                f'<span class="sentence-text{h_class}" onclick="{click_call}">'
+                f'<span class="s-content">{sentence_text_html}</span>{unmatched_tag}</span>'
+                f'</span>'
+            )
+
+            is_standalone_block = is_h or is_intext_heading or is_citation
+
+            if is_standalone_block:
+                if current_p_units:
+                    prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                    current_p_units = []
+                    current_elem_idx = None
+                block_cls = "prose-heading-block" if (is_h or is_intext_heading) else "prose-epigraph-block"
+                prose_blocks.append(f'        <div class="{block_cls}">{unit_markup}</div>')
+                continue
+
+            elem_idx = s.get("elem_idx")
+            if elem_idx is None and raw_sid in canonical_map:
+                elem_idx = canonical_map[raw_sid]
+
+            if elem_idx is not None:
+                if current_p_units and current_elem_idx != elem_idx:
+                    prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                    current_p_units = []
+                current_p_units.append(unit_markup)
+                current_elem_idx = elem_idx
+            else:
+                current_p_units.append(unit_markup)
+                prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+                current_p_units = []
+                current_elem_idx = None
+
+        if current_p_units:
+            prose_blocks.append(f'        <p class="prose-p">{" ".join(current_p_units)}</p>')
+
+        html_head += "\n".join(prose_blocks) + "\n"
 
         editorial_notice = ch.get("editorial_notice")
         if editorial_notice:
             html_head += f"""
-      <div class="editorial-notice-box">
-        <span class="notice-badge">Editor's Note</span>
-        <div class="notice-content">
-          {html.escape(editorial_notice)}
+        <div class="editorial-notice-box">
+          <span class="notice-badge">Editor's Note</span>
+          <div class="notice-content">
+            {html.escape(editorial_notice)}
+          </div>
         </div>
-      </div>
 """
 
-        html_head += """    </div>
+        html_head += f"""      </div>
+      </div>
+    </div>
   </section>
 """
 
     book_id_json = json.dumps(book_id)
     html_tail = f"""
+  <div class="marginalia-backdrop" id="marginaliaBackdrop" onclick="hideMarginalia(event)" aria-hidden="true"></div>
+  <aside class="marginalia-note" id="marginaliaNote" aria-live="polite">
+    <div class="marginalia-header">
+      <div class="marginalia-drag-pill" onclick="hideMarginalia(event)" aria-label="Dismiss"></div>
+    </div>
+    <div class="marginalia-content" id="marginaliaContent">
+      <div class="marginalia-trans" id="marginaliaTrans"></div>
+      <div class="marginalia-vocab" id="marginaliaVocab"></div>
+    </div>
+  </aside>
 </main>
+
+<nav class="bottom-control-dock{' text-only-dock' if not has_audio else ''}" id="bottomControlDock" aria-label="Reader dock">
+  <div class="dock-primary-row">
+    <button class="dock-play-btn" id="globalPlayBtn" onclick="toggleGlobalPlay()"{play_btn_attr}>▶ Play</button>
+    <button class="dock-chip" id="repeatBtn" onclick="cycleMainRepeat()" aria-label="Sentence repeat loop (Shortcut: R)"{repeat_group_attr}><svg class="dock-rep-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></button>
+    <button class="dock-chip" id="audioSpeedBtn" onclick="cyclePlaybackRate()" aria-label="Playback speed"{audio_track_attr}>1.0×</button>
+    <div class="dock-scrubber-wrap"{audio_track_attr}>
+      <span class="dock-time" id="playerCurTime">00:00</span>
+      <input type="range" class="player-slider" id="playerScrubber" min="0" max="100" value="0" step="0.1" aria-label="Playback scrubber">
+      <span class="dock-time" id="playerTotalTime">00:00</span>
+    </div>
+    <button class="dock-chip" id="drawerToggleBtn" onclick="toggleDrawer(event)" aria-label="Preferences">Menu</button>
+  </div>
+
+  <div class="dock-expanded-content control-drawer" id="controlDrawer" onclick="event.stopPropagation()">
+    <div class="dock-hairline"></div>
+    <div class="dock-expanded-grid">
+      <div class="dock-sub-row dock-row-modes">
+        <div class="dock-chip-group">
+          <button class="pill-btn active" id="chineseLockBtn" onclick="toggleChineseLock()" aria-label="Language mode (Shortcut: T)">Dual</button>
+          <button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)"{repeat_group_attr}>Focus</button>
+        </div>
+        <label class="toggle-pill" aria-label="Auto-scroll to active sentence">
+          <input type="checkbox" id="autoScrollCheck" checked onchange="toggleAutoScroll(this.checked)">
+          <span class="toggle-badge">Auto</span>
+        </label>
+      </div>
+      <div class="dock-sub-hairline"></div>
+      <div class="dock-sub-row dock-row-theme">
+        <div class="dock-theme-group">
+          <div class="theme-swatches">
+            <button class="theme-dot theme-dot-sepia active" onclick="setTheme('sepia')" aria-label="Sepia"></button>
+            <button class="theme-dot theme-dot-light" onclick="setTheme('light')" aria-label="Light"></button>
+            <button class="theme-dot theme-dot-dark" onclick="setTheme('dark')" aria-label="Dark"></button>
+            <button class="theme-dot theme-dot-night" onclick="setTheme('night')" aria-label="Night"></button>
+          </div>
+          <button class="dock-text-link" id="tipsToggleBtn" onclick="toggleTips()" aria-label="Keyboard & Gesture shortcuts">Shortcuts</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <audio id="audioTrack" playsinline webkit-playsinline preload="auto" src="{html.escape(audio_src)}" class="hidden-audio"{audio_track_attr}></audio>
+</nav>
+
+<!-- Shortcuts Centered Raycast Modal -->
+<div class="shortcuts-modal-overlay" id="drawerTips" onclick="toggleTips()">
+  <div class="shortcuts-modal" onclick="event.stopPropagation()">
+    <div class="shortcuts-modal-header">
+      <span class="shortcuts-modal-title">Shortcuts</span>
+      <button class="shortcuts-modal-close" onclick="toggleTips()" aria-label="Close shortcuts">✕</button>
+    </div>
+    <div class="shortcuts-table">
+      <div class="shortcut-item"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
+      <div class="shortcut-item"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
+      <div class="shortcut-item"><span class="kbd-key">[ / ]</span><span>Previous / Next chapter</span></div>
+      <div class="shortcut-item"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
+      <div class="shortcut-item"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>
+      <div class="shortcut-item"><span class="kbd-key">P</span><span>Focus Mode (Immersion)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">H / B</span><span>Audio mode (hide text for listening)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Dismiss popover / modal</span></div>
+    </div>
+  </div>
+</div>
 
 <div id="focus-overlay" class="focus-overlay pocket-overlay" onclick="handleFocusOverlayClick(event)" ondblclick="handleFocusDblClick(event)" ontouchstart="handleFocusTouchStart(event)" ontouchend="handleFocusTouchEnd(event)">
   <div class="focus-top-bar pocket-header">
     <button class="focus-close-icon pocket-close-icon" id="focusExitBtn" onclick="toggleFocusMode(false)">✕</button>
   </div>
-  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)" ondblclick="handleFocusDblClick(event)">
+  <div class="focus-sentence-container pocket-sentence-container" id="focusSentenceContainer" onclick="handleFocusSentenceBoxClick(event)">
     <div class="focus-sentence-box pocket-sentence-box" id="focusSentenceBox">
       <div class="focus-sentence-text pocket-sentence-text" id="focusSentenceText"></div>
       <div class="focus-sentence-trans pocket-sentence-trans" id="focusSentenceTrans"></div>
@@ -478,6 +515,11 @@ let pocketModeActive = false;
 let isUserSeeking = false;
 let targetSeekTime = -1;
 let seekWatchdogTimer = null;
+let audioRecoveryRetries = 0;
+const MAX_AUDIO_RETRIES = 3;
+let lastClickedSentenceId = null;
+let lastSentenceClickId = null;
+let lastSentenceClickTime = 0;
 
 function setUserSeeking(active, targetTime) {
   isUserSeeking = active;
@@ -499,6 +541,7 @@ function setUserSeeking(active, targetTime) {
 
 function safePlay(audioEl) {
   if (!audioEl) return;
+  audioRecoveryRetries = 0;
   const p = audioEl.play();
   if (p && typeof p.catch === 'function') {
     p.catch(function(err) {
@@ -509,20 +552,24 @@ function safePlay(audioEl) {
   }
 }
 
-const SPEED_PRESETS = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 0.75];
-const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 1.75: '1.75×', 2.0: '2.0×', 2.25: '2.25×', 2.5: '2.5×', 2.75: '2.75×', 3.0: '3.0×', 0.75: '0.75×' };
+const SPEED_PRESETS = [1.0, 1.25, 1.5, 2.0];
+const SPEED_LABELS = { 1.0: '1.0×', 1.25: '1.25×', 1.5: '1.5×', 2.0: '2.0×' };
 let currentPlaybackSpeed = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'playback_speed') || '1.0');
-if (!SPEED_PRESETS.includes(currentPlaybackSpeed)) currentPlaybackSpeed = 1.0;
+if (!Number.isFinite(currentPlaybackSpeed) || currentPlaybackSpeed <= 0) currentPlaybackSpeed = 1.0;
 
 function applyPlaybackRate(rate) {
-  currentPlaybackSpeed = rate;
-  localStorage.setItem(STORAGE_PREFIX + 'playback_speed', String(rate));
-  if (audio) {
-    audio.playbackRate = rate;
+  const cleanRate = Math.round(rate * 100) / 100;
+  currentPlaybackSpeed = cleanRate;
+  try {
+    localStorage.setItem(STORAGE_PREFIX + 'playback_speed', String(cleanRate));
+  } catch(e) {}
+  if (audio && Math.abs(audio.playbackRate - cleanRate) >= 0.01) {
+    audio.playbackRate = cleanRate;
   }
   if (audioSpeedBtn) {
-    audioSpeedBtn.textContent = SPEED_LABELS[rate] || (rate + '×');
-    if (rate !== 1.0) {
+    const label = SPEED_LABELS[cleanRate] || ((cleanRate % 1 === 0 ? cleanRate.toFixed(1) : String(cleanRate)) + '×');
+    audioSpeedBtn.textContent = label;
+    if (Math.abs(cleanRate - 1.0) >= 0.01) {
       audioSpeedBtn.classList.add('custom-speed');
     } else {
       audioSpeedBtn.classList.remove('custom-speed');
@@ -530,10 +577,22 @@ function applyPlaybackRate(rate) {
   }
 }
 
+// Synchronize UI and audio rate with stored preference immediately on startup
+applyPlaybackRate(currentPlaybackSpeed);
+
 function cyclePlaybackRate() {
-  const curIdx = SPEED_PRESETS.indexOf(currentPlaybackSpeed);
-  const nextRate = SPEED_PRESETS[(curIdx >= 0 ? curIdx + 1 : 0) % SPEED_PRESETS.length];
+  const curIdx = SPEED_PRESETS.findIndex(r => Math.abs(r - currentPlaybackSpeed) < 0.01);
+  let nextRate;
+  if (curIdx >= 0) {
+    nextRate = SPEED_PRESETS[(curIdx + 1) % SPEED_PRESETS.length];
+  } else {
+    // If extension set custom speed (e.g. 2.5x, 3.0x, 0.75x):
+    // Stepping moves to next preset above it, or loops to 1.0 if >= 2.0
+    const nextHigherIdx = SPEED_PRESETS.findIndex(r => r > currentPlaybackSpeed + 0.05);
+    nextRate = nextHigherIdx >= 0 ? SPEED_PRESETS[nextHigherIdx] : SPEED_PRESETS[0];
+  }
   applyPlaybackRate(nextRate);
+  scheduleMainDockHide();
 }
 
 function formatAudioTime(sec) {
@@ -548,9 +607,6 @@ let lastScrubberRenderPct = -1;
 
 function updateAudioPlayerUI() {
   if (!audio) return;
-  if (audio.playbackRate !== currentPlaybackSpeed) {
-    audio.playbackRate = currentPlaybackSpeed;
-  }
   const cur = audio.currentTime || 0;
   const dur = audio.duration || 0;
   const pct = dur > 0 ? (cur / dur) * 100 : 0;
@@ -583,8 +639,22 @@ function updateAudioPlayerUI() {
 }
 
 if (playerScrubber) {
+  function commitScrubberChange() {
+    if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
+      try {
+        audio.currentTime = (parseFloat(playerScrubber.value) / 100) * audio.duration;
+      } catch(e) {}
+    }
+    isUserScrubbing = false;
+    scheduleMainDockHide();
+  }
+
   playerScrubber.addEventListener('input', () => {
     isUserScrubbing = true;
+    if (dockIdleTimer) {
+      clearTimeout(dockIdleTimer);
+      dockIdleTimer = null;
+    }
     const pct = parseFloat(playerScrubber.value) || 0;
     playerScrubber.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
     if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -592,14 +662,112 @@ if (playerScrubber) {
       if (playerCurTime) playerCurTime.textContent = formatAudioTime(targetSec);
     }
   });
-  playerScrubber.addEventListener('change', () => {
-    if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
-      try {
-        audio.currentTime = (parseFloat(playerScrubber.value) / 100) * audio.duration;
-      } catch(e) {}
-    }
+  playerScrubber.addEventListener('change', commitScrubberChange);
+  playerScrubber.addEventListener('touchend', commitScrubberChange, { passive: true });
+  playerScrubber.addEventListener('touchcancel', () => {
     isUserScrubbing = false;
+    scheduleMainDockHide();
+  }, { passive: true });
+  playerScrubber.addEventListener('pointerup', commitScrubberChange);
+  window.addEventListener('pointerup', () => {
+    if (isUserScrubbing) {
+      commitScrubberChange();
+    }
   });
+  window.addEventListener('touchend', () => {
+    if (isUserScrubbing) {
+      commitScrubberChange();
+    }
+  }, { passive: true });
+}
+
+let isProgrammaticAutoScroll = false;
+let programmaticScrollTimer = null;
+let isKeyboardNavigating = false;
+let keyboardNavTimer = null;
+
+function setKeyboardNavigating() {
+  isKeyboardNavigating = true;
+  if (keyboardNavTimer) clearTimeout(keyboardNavTimer);
+  keyboardNavTimer = setTimeout(() => {
+    isKeyboardNavigating = false;
+  }, 1200);
+}
+
+function performAutoScroll(element) {
+  if (!element || typeof element.scrollIntoView !== 'function') return;
+  isProgrammaticAutoScroll = true;
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+  programmaticScrollTimer = setTimeout(() => {
+    isProgrammaticAutoScroll = false;
+  }, 1200);
+  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+let dockIdleTimer = null;
+const DOCK_IDLE_DELAY = 3500;
+const DOCK_SILENT_IDLE_DELAY = 4500;
+
+function scheduleMainDockHide() {
+  if (dockIdleTimer) {
+    clearTimeout(dockIdleTimer);
+    dockIdleTimer = null;
+  }
+  const dock = document.getElementById('bottomControlDock');
+  if (!dock || dock.classList.contains('expanded')) return;
+  if (typeof controlDrawer !== 'undefined' && controlDrawer && controlDrawer.classList.contains('open')) return;
+  if (isUserScrubbing) return;
+  if (dock._isMouseOver) return;
+
+  const isAudioActive = audio && (!audio.paused || shadowState.isInternalPause);
+  const delay = isAudioActive ? DOCK_IDLE_DELAY : DOCK_SILENT_IDLE_DELAY;
+
+  dockIdleTimer = setTimeout(() => {
+    const d = document.getElementById('bottomControlDock');
+    if (!d || d.classList.contains('expanded') || isUserScrubbing || d._isMouseOver) return;
+    if (typeof controlDrawer !== 'undefined' && controlDrawer && controlDrawer.classList.contains('open')) return;
+    d.classList.add('dock-idle-hidden');
+  }, delay);
+}
+
+function showMainDock() {
+  if (focusModeActive || pocketModeActive || isKeyboardNavigating) return;
+  const dock = document.getElementById('bottomControlDock');
+  if (!dock) return;
+  dock.classList.remove('dock-idle-hidden');
+  scheduleMainDockHide();
+}
+
+function onUserDockActivity() {
+  const e = arguments[0];
+  if (focusModeActive || pocketModeActive || isKeyboardNavigating) return;
+  if (isProgrammaticAutoScroll) return;
+  
+  if (e) {
+    if (e.type === 'scroll') {
+      // AP5 Ergonomic Flow: Natural reading page scroll must NEVER pop open player dock
+      return;
+    }
+    if (e.type === 'pointermove') {
+      // Reveal dock only when pointer enters the bottom activation strip (bottom 72px) or is over the dock
+      const dock = document.getElementById('bottomControlDock');
+      const isNearBottom = (typeof e.clientY === 'number') ? (e.clientY >= window.innerHeight - 72) : false;
+      if (!isNearBottom && !(dock && dock._isMouseOver)) {
+        return;
+      }
+    }
+    if (e.type === 'pointerdown' || e.type === 'touchstart') {
+      isProgrammaticAutoScroll = false;
+      const dock = document.getElementById('bottomControlDock');
+      const clientY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
+      const isNearBottom = (typeof clientY === 'number') ? (clientY >= window.innerHeight - 72) : false;
+      const isTargetOnDock = Boolean(dock && e.target && dock.contains(e.target));
+      if (!isNearBottom && !isTargetOnDock) {
+        return;
+      }
+    }
+  }
+  showMainDock();
 }
 
 let activeChapterNum = parseInt(localStorage.getItem(STORAGE_PREFIX + 'active_ch') || String(window.__INITIAL_CHAPTER__), 10);
@@ -608,6 +776,45 @@ let currentPlayingId = null;
 let currentActiveWordEl = null;
 let currentActiveWordStart = -1;
 let currentActiveWordEnd = -1;
+
+function clearActiveWord() {
+  if (currentActiveWordEl) {
+    currentActiveWordEl.classList.remove('active-word');
+    currentActiveWordEl = null;
+  }
+  const orphans = document.querySelectorAll('.w.active-word');
+  for (let i = 0; i < orphans.length; i++) {
+    orphans[i].classList.remove('active-word');
+  }
+  currentActiveWordStart = -1;
+  currentActiveWordEnd = -1;
+}
+
+function setActiveWord(wordEl, start, end, wordIndex) {
+  if (currentActiveWordEl === wordEl && wordEl && wordEl.classList.contains('active-word')) {
+    return;
+  }
+  clearActiveWord();
+  if (wordEl) {
+    wordEl.classList.add('active-word');
+    currentActiveWordEl = wordEl;
+    currentActiveWordStart = Number.isFinite(start) ? start : (parseFloat(wordEl.dataset.s) || -1);
+    currentActiveWordEnd = Number.isFinite(end) ? end : (parseFloat(wordEl.dataset.e) || -1);
+    
+    if (focusModeActive || pocketModeActive) {
+      const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
+      if (pText) {
+        if (!pText._cachedFocusWords) {
+          pText._cachedFocusWords = Array.from(pText.querySelectorAll('.w'));
+        }
+        const idx = Number.isFinite(wordIndex) && wordIndex >= 0 ? wordIndex : (wordEl.parentElement ? Array.from(wordEl.parentElement.querySelectorAll('.w')).indexOf(wordEl) : -1);
+        if (idx >= 0 && idx < pText._cachedFocusWords.length) {
+          pText._cachedFocusWords[idx].classList.add('active-word');
+        }
+      }
+    }
+  }
+}
 let currentActiveSection = null;
 let sentenceTimeIndex = [];
 let syncFrameId = null;
@@ -643,23 +850,50 @@ function toggleAutoScroll(enabled) {
   if (btn) btn.classList.toggle('active', enabled);
   const chk = document.getElementById('autoScrollCheck');
   if (chk) chk.checked = enabled;
+  scheduleMainDockHide();
 }
 
 function toggleAutoScrollPill(btn) {
   toggleAutoScroll(!autoScrollEnabled);
-  showToast(autoScrollEnabled ? 'Auto-scroll enabled' : 'Auto-scroll paused');
 }
 window.toggleAutoScrollPill = toggleAutoScrollPill;
 
 // Chapter Switching
 function toggleChapterDropdown(event) {
-  if (event) event.stopPropagation();
+  if (event && event.stopPropagation) event.stopPropagation();
+  hideMarginalia();
+  if (controlDrawer) controlDrawer.classList.remove('open');
+  const dock = document.getElementById('bottomControlDock');
+  if (dock) dock.classList.remove('expanded');
+  if (drawerToggleBtn) {
+    drawerToggleBtn.innerHTML = 'Menu';
+    drawerToggleBtn.classList.remove('active');
+  }
   chapterDropdown.classList.toggle('open');
 }
 
 function closeDropdowns(event) {
-  if (chapterDropdown.classList.contains('open')) {
+  if (chapterDropdown && chapterDropdown.classList.contains('open')) {
     chapterDropdown.classList.remove('open');
+  }
+  if (controlDrawer && controlDrawer.classList.contains('open')) {
+    const dock = document.getElementById('bottomControlDock');
+    if (dock && !dock.contains(event.target)) {
+      controlDrawer.classList.remove('open');
+      dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
+      }
+    }
+  }
+  const tips = document.getElementById('drawerTips');
+  if (tips && tips.classList.contains('open')) {
+    if (event.target === tips) {
+      tips.classList.remove('open');
+      const btn = document.getElementById('tipsToggleBtn');
+      if (btn) btn.classList.remove('active');
+    }
   }
 }
 
@@ -773,13 +1007,15 @@ function playSentenceAtTime(start) {
       targetSentence._cachedWords = Array.from(targetSentence.querySelectorAll('.w'));
     }
     const firstWord = targetSentence._cachedWords[0];
-    if (currentActiveWordEl && currentActiveWordEl !== firstWord) {
-      currentActiveWordEl.classList.remove('active-word');
-    }
     if (firstWord) {
-      firstWord.classList.add('active-word');
-      currentActiveWordEl = firstWord;
+      const ws = parseFloat(firstWord.dataset.s) || start;
+      const we = (targetSentence._cachedWords[1] ? parseFloat(targetSentence._cachedWords[1].dataset.s) : parseFloat(firstWord.dataset.e)) || (start + 0.3);
+      setActiveWord(firstWord, ws, we, 0);
+    } else {
+      clearActiveWord();
     }
+  } else {
+    clearActiveWord();
   }
 
   const isDifferentTrack = targetUrl && (!audio.src || !isSameAudioSource(audio.src, targetUrl));
@@ -805,6 +1041,7 @@ function playSentenceAtTime(start) {
           performPlay();
         }
       }, { once: true });
+      audio.load();
     }
   }
 }
@@ -852,6 +1089,8 @@ window.preloadNextChapterAudio = preloadNextChapterAudio;
 
 function switchChapter(chNum, autoPlay) {
   setUserSeeking(false);
+  // Architectural boundary: Client-side PasskeyGate is an interactive preview guard.
+  // In production delivery, chapters are physically chunk-sliced and access-controlled by publisher.py.
   if (chNum > 2 && typeof window.PasskeyGate !== 'undefined' && !window.PasskeyGate.isUnlocked()) {
     if (audio && !audio.paused) audio.pause();
     if (typeof window.PasskeyGate.openModal === 'function') {
@@ -873,6 +1112,7 @@ function switchChapter(chNum, autoPlay) {
   document.querySelectorAll('.chapter-item').forEach(el => el.classList.remove('active'));
   if (menuEl) menuEl.classList.add('active');
   chapterDropdown.classList.remove('open');
+  hideMarginalia();
   
   document.querySelectorAll('.chapter-section').forEach(sec => {
     sec.classList.remove('active');
@@ -887,10 +1127,7 @@ function switchChapter(chNum, autoPlay) {
         audio.src = audioSrc;
         try { audio.currentTime = 0; } catch(e) {}
         currentPlayingId = null;
-        if (currentActiveWordEl) {
-          currentActiveWordEl.classList.remove('active-word');
-          currentActiveWordEl = null;
-        }
+        clearActiveWord();
         if (wasPlaying) {
           try { audio.currentTime = 0; } catch(e) {}
           safePlay(audio);
@@ -921,7 +1158,7 @@ function switchChapter(chNum, autoPlay) {
           }
           if (typeof updateFocusSentenceDisplay === 'function') updateFocusSentenceDisplay();
           if (typeof updateFocusStatus === 'function') updateFocusStatus();
-          if (typeof showFocusDock === 'function') showFocusDock();
+          if (typeof scheduleFocusDockHide === 'function') scheduleFocusDockHide();
           if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(autoPlay);
         }
       } else if (autoPlay && firstSentence) {
@@ -944,24 +1181,44 @@ function switchChapter(chNum, autoPlay) {
 switchChapter(activeChapterNum);
 preloadNextChapterAudio(activeChapterNum + 1);
 
-function toggleDrawer() {
+function toggleDrawer(event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  const dock = document.getElementById('bottomControlDock');
   const isOpen = controlDrawer.classList.contains('open');
   if (isOpen) {
     controlDrawer.classList.remove('open');
-    drawerToggleBtn.innerHTML = 'Menu';
+    if (dock) dock.classList.remove('expanded');
+    if (drawerToggleBtn) {
+      drawerToggleBtn.innerHTML = 'Menu';
+      drawerToggleBtn.classList.remove('active');
+    }
     localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'false');
+    scheduleMainDockHide();
   } else {
+    hideMarginalia();
+    if (chapterDropdown) chapterDropdown.classList.remove('open');
+    const tips = document.getElementById('drawerTips');
+    if (tips) tips.classList.remove('open');
     controlDrawer.classList.add('open');
-    drawerToggleBtn.innerHTML = 'Close';
+    if (dock) {
+      dock.classList.remove('dock-idle-hidden');
+      dock.classList.add('expanded');
+    }
+    if (dockIdleTimer) {
+      clearTimeout(dockIdleTimer);
+      dockIdleTimer = null;
+    }
+    if (drawerToggleBtn) {
+      drawerToggleBtn.innerHTML = 'Close';
+      drawerToggleBtn.classList.add('active');
+    }
     localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'true');
   }
 }
 
 const savedDrawerState = localStorage.getItem(STORAGE_PREFIX + 'drawer_open');
-if (savedDrawerState === 'true') {
-  controlDrawer.classList.add('open');
-  drawerToggleBtn.innerHTML = 'Close';
-}
+// Clean reading canvas invariant: drawers always start closed on load
+localStorage.setItem(STORAGE_PREFIX + 'drawer_open', 'false');
 
 const themes = ['sepia', 'light', 'dark', 'night'];
 
@@ -980,6 +1237,10 @@ function setTheme(theme) {
   localStorage.setItem('audible_theme', theme);
   const themePreset = document.getElementById('themePreset');
   if (themePreset) themePreset.value = theme;
+  document.querySelectorAll('.theme-dot').forEach(dot => {
+    dot.classList.toggle('active', dot.classList.contains('theme-dot-' + theme));
+  });
+  scheduleMainDockHide();
 }
 
 window.toggleTheme = toggleTheme;
@@ -1003,12 +1264,14 @@ function setLanguageMode(mode) {
   if (isEnglish) {
     document.documentElement.setAttribute('data-hide-chinese', 'true');
     document.querySelectorAll('.sentence-unit.active').forEach(u => u.classList.add('card-collapsed'));
+    if (typeof hideMarginalia === 'function') hideMarginalia();
   } else {
     document.documentElement.removeAttribute('data-hide-chinese');
   }
   localStorage.setItem(STORAGE_PREFIX + 'hide_chinese', String(isEnglish));
   localStorage.setItem('audible_hide_chinese', String(isEnglish));
   updateLanguageModeUI(mode);
+  scheduleMainDockHide();
 }
 
 function updateLanguageModeUI(mode) {
@@ -1054,6 +1317,7 @@ function setFontSizePreset(value) {
 function adjustFontSize(delta) {
   const next = Math.max(0.95, Math.min(1.8, (currentFontSizeRem || 1.2) + delta * 0.1));
   setFontSizePreset(next);
+  scheduleMainDockHide();
 }
 
 window.setFontSizePreset = setFontSizePreset;
@@ -1067,33 +1331,26 @@ function toggleTips() {
   const tipsEl = document.getElementById('drawerTips');
   const btn = document.getElementById('tipsToggleBtn');
   if (tipsEl) {
+    const willOpen = !tipsEl.classList.contains('open');
     tipsEl.classList.toggle('open');
-    if (btn) btn.classList.toggle('active');
+    if (btn) btn.classList.toggle('active', willOpen);
+    if (willOpen && controlDrawer && controlDrawer.classList.contains('open')) {
+      controlDrawer.classList.remove('open');
+      const dock = document.getElementById('bottomControlDock');
+      if (dock) dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
+      }
+    }
   }
 }
 
-function showToast(msg) {
-  let toast = document.getElementById('reader-toast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'reader-toast';
-    document.body.appendChild(toast);
-  }
-  toast.textContent = msg;
-  toast.classList.add('show');
-  clearTimeout(toast.__timer);
-  toast.__timer = setTimeout(() => {
-    toast.classList.remove('show');
-  }, 2200);
-}
-
-let lastSentenceClickTime = 0;
-let lastSentenceClickId = null;
+function showToast() {}
 
 function startSentenceShadowing(sentenceEl) {
   if (!sentenceEl) return;
   if (sentenceEl.dataset.matched !== '1') {
-    showToast('No audio available for this sentence');
     return;
   }
   if (shadowState.timer) clearTimeout(shadowState.timer);
@@ -1101,10 +1358,8 @@ function startSentenceShadowing(sentenceEl) {
   shadowState.completed = 0;
   shadowState.pauseStartTime = 0;
   shadowState.sentence = sentenceEl;
-  const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-  if (btn) btn.textContent = 'Stop Repeat';
+  renderRepeatBtn(shadowState.repetitions || 1);
   requestShadowWakeLock();
-  showToast('Shadowing loop active');
   updatePocketStatus();
   updatePocketSentenceDisplay();
   
@@ -1125,20 +1380,196 @@ function startSentenceShadowing(sentenceEl) {
   sentenceEl.classList.add('active', 'card-collapsed');
 }
 
+function hideMarginalia(event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  const note = document.getElementById('marginaliaNote');
+  if (note) {
+    note.classList.remove('visible');
+    note.style.transform = '';
+  }
+  const backdrop = document.getElementById('marginaliaBackdrop');
+  if (backdrop) {
+    backdrop.classList.remove('visible');
+  }
+  lastClickedSentenceId = null;
+}
+
+function positionMarginalia(targetEl, noteEl) {
+  if (!targetEl || !noteEl) return;
+  const mainEl = document.querySelector('.reader-main');
+  if (!mainEl) return;
+  const mRect = mainEl.getBoundingClientRect();
+  const tRect = targetEl.getBoundingClientRect();
+  const relTop = Math.max(0, tRect.top - mRect.top);
+  noteEl.style.top = Math.round(relTop) + 'px';
+}
+
+function showMarginaliaForSentence(sentenceEl, forceShow = false) {
+  if (!sentenceEl) return;
+  if (chapterDropdown && chapterDropdown.classList.contains('open')) return;
+  const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
+  if (isChineseLocked && !forceShow) return;
+
+  const note = document.getElementById('marginaliaNote');
+  if (!note) return;
+
+  let transHtml = '';
+  let vocabHtml = '';
+
+  const transAttr = sentenceEl.getAttribute('data-trans');
+  if (transAttr) {
+    transHtml = escapeHtml(transAttr);
+  } else {
+    const transEl = sentenceEl.querySelector('.inspect-trans');
+    if (transEl) transHtml = transEl.innerHTML;
+  }
+
+  const vocabRaw = sentenceEl.getAttribute('data-vocab');
+  if (vocabRaw) {
+    try {
+      const vocabList = JSON.parse(vocabRaw);
+      if (Array.isArray(vocabList) && vocabList.length > 0) {
+        vocabHtml = vocabList.map(v =>
+          `<div class="vocab-row"><span class="v-word">${escapeHtml(v.word || '')}</span><span class="v-pos">${escapeHtml(v.pos || '')}</span><span class="v-def">${escapeHtml(v.def || '')}</span></div>`
+        ).join('');
+      }
+    } catch(e) {}
+  } else {
+    const vocabEl = sentenceEl.querySelector('.inspect-vocab-list');
+    if (vocabEl) vocabHtml = vocabEl.innerHTML;
+  }
+
+  if (!transHtml && !vocabHtml) {
+    hideMarginalia();
+    return;
+  }
+
+  const transTarget = document.getElementById('marginaliaTrans');
+  const vocabTarget = document.getElementById('marginaliaVocab');
+
+  if (transTarget) transTarget.innerHTML = transHtml;
+  if (vocabTarget) {
+    vocabTarget.innerHTML = vocabHtml;
+    vocabTarget.style.display = vocabHtml ? 'flex' : 'none';
+  }
+
+  const contentEl = document.getElementById('marginaliaContent');
+  if (contentEl) contentEl.scrollTop = 0;
+
+  positionMarginalia(sentenceEl, note);
+  note.classList.add('visible');
+  const backdrop = document.getElementById('marginaliaBackdrop');
+  if (backdrop) {
+    backdrop.classList.add('visible');
+  }
+  lastClickedSentenceId = sentenceEl.id;
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function updateSentenceInspectors(sentenceEl) {
+  // Pure focus playback: quietly fade out marginalia when audio advances to a new sentence
+  if (lastClickedSentenceId && sentenceEl && sentenceEl.id !== lastClickedSentenceId) {
+    hideMarginalia();
+  }
+}
+
+document.addEventListener('click', function(e) {
+  if (controlDrawer && controlDrawer.classList.contains('open')) {
+    const dock = document.getElementById('bottomControlDock');
+    if (dock && !dock.contains(e.target)) {
+      controlDrawer.classList.remove('open');
+      dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
+      }
+      scheduleMainDockHide();
+    }
+  }
+  const note = document.getElementById('marginaliaNote');
+  if (!note || !note.classList.contains('visible')) return;
+  if (note.contains(e.target) || e.target.closest('.sentence-text') || e.target.closest('.sentence-unit')) {
+    return;
+  }
+  hideMarginalia();
+});
+
+window.addEventListener('resize', function() {
+  if (lastClickedSentenceId) {
+    const el = document.getElementById(lastClickedSentenceId);
+    const note = document.getElementById('marginaliaNote');
+    if (el && note && note.classList.contains('visible')) {
+      positionMarginalia(el, note);
+    }
+  }
+});
+
+(function initMarginaliaGestures() {
+  const note = document.getElementById('marginaliaNote');
+  if (!note) return;
+  let startY = 0;
+  let currentY = 0;
+  let isDragging = false;
+
+  note.addEventListener('touchstart', function(e) {
+    if (e.touches.length !== 1) return;
+    const content = document.getElementById('marginaliaContent');
+    if (content && content.scrollTop > 4) return;
+    startY = e.touches[0].clientY;
+    currentY = startY;
+    isDragging = true;
+  }, { passive: true });
+
+  note.addEventListener('touchmove', function(e) {
+    if (!isDragging) return;
+    currentY = e.touches[0].clientY;
+    const dy = currentY - startY;
+    if (dy > 0) {
+      note.style.transform = 'translateY(' + dy + 'px)';
+    }
+  }, { passive: true });
+
+  note.addEventListener('touchend', function(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    const dy = currentY - startY;
+    note.style.transform = '';
+    if (dy > 48) {
+      hideMarginalia();
+    }
+  }, { passive: true });
+})();
+
 function handleSentenceClick(event, id, start, end, hasMatch) {
   if (event && event.stopPropagation) event.stopPropagation();
+  if (controlDrawer && controlDrawer.classList.contains('open')) {
+    controlDrawer.classList.remove('open');
+    const dock = document.getElementById('bottomControlDock');
+    if (dock) dock.classList.remove('expanded');
+    if (drawerToggleBtn) {
+      drawerToggleBtn.innerHTML = 'Menu';
+      drawerToggleBtn.classList.remove('active');
+    }
+  }
+  if (chapterDropdown && chapterDropdown.classList.contains('open')) {
+    chapterDropdown.classList.remove('open');
+  }
+  audioRecoveryRetries = 0;
+  scheduleMainDockHide();
   const el = document.getElementById(id);
   if (!el) return;
   
   const now = Date.now();
-  const isDoubleTap = (lastSentenceClickId === id && (now - lastSentenceClickTime) < 350);
-  lastSentenceClickTime = now;
-  lastSentenceClickId = id;
-  
-  if (isDoubleTap && window.__HAS_AUDIO__) {
-    startSentenceShadowing(el);
-    return;
+  const isDoubleTap = (lastSentenceClickId === id && (now - lastSentenceClickTime) < 400);
+  if (isDoubleTap) {
+    lastSentenceClickTime = 0;
+  } else {
+    lastSentenceClickTime = now;
   }
+  lastSentenceClickId = id;
 
   // Cancel any pending shadow repeat timer
   if (shadowState.timer) {
@@ -1160,9 +1591,37 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
   const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
   el.classList.add('active');
   if (isChineseLocked) {
-    el.classList.add('card-collapsed');
+    if (isDoubleTap) {
+      const note = document.getElementById('marginaliaNote');
+      const isAlreadyVisible = note && note.classList.contains('visible') && lastClickedSentenceId === id;
+      if (isAlreadyVisible) {
+        el.classList.add('card-collapsed');
+        hideMarginalia();
+      } else {
+        el.classList.remove('card-collapsed');
+        showMarginaliaForSentence(el, true);
+      }
+      try { window.getSelection().removeAllRanges(); } catch(e) {}
+    } else {
+      el.classList.add('card-collapsed');
+      hideMarginalia();
+    }
   } else {
-    el.classList.remove('card-collapsed');
+    if (isDoubleTap) {
+      const note = document.getElementById('marginaliaNote');
+      const isAlreadyVisible = note && note.classList.contains('visible') && lastClickedSentenceId === id;
+      if (isAlreadyVisible) {
+        el.classList.add('card-collapsed');
+        hideMarginalia();
+      } else {
+        el.classList.remove('card-collapsed');
+        showMarginaliaForSentence(el);
+      }
+      try { window.getSelection().removeAllRanges(); } catch(e) {}
+    } else {
+      el.classList.remove('card-collapsed');
+      showMarginaliaForSentence(el);
+    }
   }
 
   currentPlayingId = id;
@@ -1172,14 +1631,12 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
     el._cachedWords = Array.from(el.querySelectorAll('.w'));
   }
   const firstWord = el._cachedWords[0];
-  if (currentActiveWordEl && currentActiveWordEl !== firstWord) {
-    currentActiveWordEl.classList.remove('active-word');
-  }
   if (firstWord) {
-    firstWord.classList.add('active-word');
-    currentActiveWordEl = firstWord;
-    currentActiveWordStart = parseFloat(firstWord.dataset.s) || start;
-    currentActiveWordEnd = (el._cachedWords[1] ? parseFloat(el._cachedWords[1].dataset.s) : parseFloat(firstWord.dataset.e)) || (start + 0.3);
+    const ws = parseFloat(firstWord.dataset.s) || start;
+    const we = (el._cachedWords[1] ? parseFloat(el._cachedWords[1].dataset.s) : parseFloat(firstWord.dataset.e)) || (start + 0.3);
+    setActiveWord(firstWord, ws, we, 0);
+  } else {
+    clearActiveWord();
   }
 
   if (focusModeActive || pocketModeActive) {
@@ -1234,7 +1691,6 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
           playSentenceAtTime(prevTime);
           interpolated = true;
         } else {
-          showToast('Audio narration concluded; expanded bilingual study breakdown.');
           interpolated = true;
         }
       } else if (nextTime !== null) {
@@ -1271,7 +1727,20 @@ audio.preservesPitch = true;
 audio.mozPreservesPitch = true;
 audio.webkitPreservesPitch = true;
 
-const MAIN_REP_LEVELS = [1, 2, 3, 5];
+const MAIN_REP_LEVELS = [1, 2, 3];
+const REPEAT_ICON_SVG = '<svg class="dock-rep-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>';
+
+function renderRepeatBtn(rep) {
+  const repBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
+  if (!repBtn) return;
+  if (rep > 1) {
+    repBtn.innerHTML = `${REPEAT_ICON_SVG}<span class="rep-badge">${rep}</span>`;
+    repBtn.classList.add('active');
+  } else {
+    repBtn.innerHTML = REPEAT_ICON_SVG;
+    repBtn.classList.remove('active');
+  }
+}
 
 function setMainRepetitions(n) {
   const nextRep = Math.max(1, parseInt(n, 10) || 1);
@@ -1280,16 +1749,7 @@ function setMainRepetitions(n) {
     localStorage.setItem(STORAGE_PREFIX + 'repetitions', String(nextRep));
     localStorage.setItem('reader_focus_repetitions', String(nextRep));
   } catch(e) {}
-  const repBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-  if (repBtn) {
-    if (nextRep === 1) {
-      repBtn.textContent = 'Repeat';
-      repBtn.classList.remove('active');
-    } else {
-      repBtn.textContent = `${nextRep}×`;
-      repBtn.classList.add('active');
-    }
-  }
+  renderRepeatBtn(nextRep);
   const focusRepBtn = document.getElementById('focusRepBtn');
   if (focusRepBtn) {
     focusRepBtn.textContent = `${nextRep}×`;
@@ -1298,9 +1758,7 @@ function setMainRepetitions(n) {
     if (shadowState.phase !== 'idle') {
       stopShadowing();
     }
-    showToast('Continuous reading mode active');
   } else {
-    showToast(`Sentence repeat set to ${nextRep}×`);
     if (shadowState.phase === 'idle' && audio && !audio.paused) {
       const activeSection = document.querySelector('.chapter-section.active');
       const sentence = findSentenceAt(audio.currentTime) || 
@@ -1311,6 +1769,7 @@ function setMainRepetitions(n) {
       }
     }
   }
+  scheduleMainDockHide();
 }
 
 function cycleMainRepeat(e) {
@@ -1319,6 +1778,7 @@ function cycleMainRepeat(e) {
   const idx = MAIN_REP_LEVELS.indexOf(cur);
   const nextRep = idx !== -1 ? MAIN_REP_LEVELS[(idx + 1) % MAIN_REP_LEVELS.length] : 1;
   setMainRepetitions(nextRep);
+  scheduleMainDockHide();
 }
 
 function setShadowRepetitions(value) {
@@ -1338,17 +1798,8 @@ function stopShadowing() {
   }
   shadowState.sentence = null;
   releaseShadowWakeLock();
-  const btn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-  if (btn) {
-    const cur = shadowState.repetitions || 1;
-    if (cur === 1) {
-      btn.textContent = 'Repeat';
-      btn.classList.remove('active');
-    } else {
-      btn.textContent = `${cur}×`;
-      btn.classList.add('active');
-    }
-  }
+  clearActiveWord();
+  renderRepeatBtn(shadowState.repetitions || 1);
   updatePocketStatus();
 }
 
@@ -1419,17 +1870,15 @@ function advanceShadowing() {
       if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
-      currentActiveWordEl = null;
-      currentActiveWordStart = -1;
-      currentActiveWordEnd = -1;
+      clearActiveWord();
       nextSentence.classList.add('active', 'card-collapsed');
       updateFocusStatus();
       updateFocusSentenceDisplay();
-      if (autoScrollEnabled) {
+      if (autoScrollEnabled && !focusModeActive && !pocketModeActive) {
         const rect = nextSentence.getBoundingClientRect();
         const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
         if (!inView) {
-          nextSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          performAutoScroll(nextSentence);
         }
       }
       return;
@@ -1459,20 +1908,18 @@ function advanceShadowing() {
       if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
       shadowState.sentence = nextSentence;
       shadowState.completed = 0;
-      currentActiveWordEl = null;
-      currentActiveWordStart = -1;
-      currentActiveWordEnd = -1;
+      clearActiveWord();
       updateFocusStatus();
       updateFocusSentenceDisplay();
       shadowState.phase = 'pause_buffer';
       shadowState.pauseStartTime = Date.now();
       armShadowPauseWatchdog();
       nextSentence.classList.add('active', 'card-collapsed');
-      if (autoScrollEnabled) {
+      if (autoScrollEnabled && !focusModeActive && !pocketModeActive) {
         const rect = nextSentence.getBoundingClientRect();
         const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
         if (!inView) {
-          nextSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          performAutoScroll(nextSentence);
         }
       }
       if (shadowState.timer) clearTimeout(shadowState.timer);
@@ -1505,6 +1952,7 @@ function advanceShadowing() {
   
   shadowState.phase = 'pause_buffer';
   shadowState.pauseStartTime = Date.now();
+  clearActiveWord();
   armShadowPauseWatchdog();
   if (shadowState.timer) clearTimeout(shadowState.timer);
   shadowState.timer = setTimeout(() => {
@@ -1523,7 +1971,7 @@ let focusSingleTapTimer = null;
 let focusBlindMode = false;
 let pocketBlindMode = false;
 let focusShowTrans = true;
-const FOCUS_REP_LEVELS = [1, 3, 5];
+const FOCUS_REP_LEVELS = [1, 2, 3];
 const FOCUS_FONT_SCALES = [1.0, 1.25, 1.55];
 let focusFontScaleIndex = 0;
 let focusTouchStartY = 0;
@@ -1558,6 +2006,7 @@ function cycleFocusFontSize(e) {
   try {
     localStorage.setItem('reader_focus_font_scale', String(nextScale));
   } catch (err) {}
+  scheduleFocusDockHide();
 }
 
 function adjustFocusFontScale(delta) {
@@ -1571,6 +2020,7 @@ function adjustFocusFontScale(delta) {
   try {
     localStorage.setItem('reader_focus_font_scale', String(next));
   } catch (err) {}
+  scheduleFocusDockHide();
 }
 
 function initFocusPreferences() {
@@ -1588,16 +2038,7 @@ function initFocusPreferences() {
     } else {
       shadowState.repetitions = 1;
     }
-    const initialRepBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
-    if (initialRepBtn) {
-      if (shadowState.repetitions > 1) {
-        initialRepBtn.textContent = `${shadowState.repetitions}×`;
-        initialRepBtn.classList.add('active');
-      } else {
-        initialRepBtn.textContent = 'Repeat';
-        initialRepBtn.classList.remove('active');
-      }
-    }
+    renderRepeatBtn(shadowState.repetitions);
     const savedScale = parseFloat(localStorage.getItem('reader_focus_font_scale'));
     if (Number.isFinite(savedScale)) {
       const idx = FOCUS_FONT_SCALES.findIndex(s => Math.abs(s - savedScale) < 0.05);
@@ -1632,7 +2073,7 @@ function toggleFocusTransMode(e) {
     localStorage.setItem('reader_focus_show_trans', focusShowTrans ? '1' : '0');
   } catch (err) {}
   applyFocusTransVisibility();
-  showToast(focusShowTrans ? 'Dual mode' : 'English only');
+  scheduleFocusDockHide();
 }
 
 function cycleFocusRepetitions(e) {
@@ -1647,7 +2088,7 @@ function cycleFocusRepetitions(e) {
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) repBtn.textContent = `${nextRep}×`;
   updateFocusStatus();
-  showToast(`Sentence repeat set to ${nextRep}×`);
+  scheduleFocusDockHide(true);
 }
 
 function updateFocusStatus() {
@@ -1721,9 +2162,7 @@ function updateFocusSentenceDisplay() {
   }
   
   const el = shadowState.sentence;
-  currentActiveWordEl = null;
-  currentActiveWordStart = -1;
-  currentActiveWordEnd = -1;
+  clearActiveWord();
   const contentEl = el.querySelector('.s-content') || el.querySelector('.sentence-text');
   if (contentEl) {
     textEl.innerHTML = contentEl.innerHTML;
@@ -1739,9 +2178,23 @@ function updateFocusSentenceDisplay() {
   
   const vocabEl = document.getElementById('focusSentenceVocab');
   if (vocabEl) {
-    const rawVocab = el.querySelector('.inspect-vocab-list');
-    if (rawVocab && rawVocab.children.length > 0) {
-      vocabEl.innerHTML = rawVocab.innerHTML;
+    let vocabHtml = '';
+    const vocabRaw = el.dataset.vocab;
+    if (vocabRaw) {
+      try {
+        const vocabList = JSON.parse(vocabRaw);
+        if (Array.isArray(vocabList) && vocabList.length > 0) {
+          vocabHtml = vocabList.map(v =>
+            `<div class="vocab-row"><span class="v-word">${escapeHtml(v.word || '')}</span><span class="v-pos">${escapeHtml(v.pos || '')}</span><span class="v-def">${escapeHtml(v.def || '')}</span></div>`
+          ).join('');
+        }
+      } catch(e) {}
+    } else {
+      const rawVocab = el.querySelector('.inspect-vocab-list');
+      if (rawVocab) vocabHtml = rawVocab.innerHTML;
+    }
+    if (vocabHtml) {
+      vocabEl.innerHTML = vocabHtml;
       vocabEl.style.display = 'flex';
     } else {
       vocabEl.innerHTML = '';
@@ -1757,7 +2210,7 @@ const updatePocketSentenceDisplay = updateFocusSentenceDisplay;
 
 function gotoNextShadowSentence() {
   if (!sentenceTimeIndex || !sentenceTimeIndex.length) return;
-  showFocusDock();
+  scheduleFocusDockHide();
   let curIdx = shadowState.sentence ? sentenceTimeIndex.findIndex(item => item.el === shadowState.sentence) : -1;
   if (curIdx === -1) {
     const curSentence = findSentenceAt(audio.currentTime);
@@ -1782,7 +2235,7 @@ function gotoNextShadowSentence() {
 
 function gotoPreviousShadowSentence() {
   if (!sentenceTimeIndex || !sentenceTimeIndex.length) return;
-  showFocusDock();
+  scheduleFocusDockHide();
   let curIdx = shadowState.sentence ? sentenceTimeIndex.findIndex(item => item.el === shadowState.sentence) : -1;
   if (curIdx === -1) {
     const curSentence = findSentenceAt(audio.currentTime);
@@ -1814,6 +2267,7 @@ function replayCurrentShadowSentence() {
         safePlay(audio);
       }
     }
+    updateFocusPlayBtn(true);
     updateFocusStatus();
     updateFocusSentenceDisplay();
   }
@@ -1832,22 +2286,13 @@ function toggleFocusBlindMode(e) {
     btn.textContent = 'Audio';
     btn.classList.toggle('active', focusBlindMode);
   }
-  showToast(focusBlindMode ? 'Audio mode ON (tap text to peek)' : 'Audio mode OFF');
+  scheduleFocusDockHide();
 }
 const togglePocketBlindMode = toggleFocusBlindMode;
 
 
 function handleFocusDblClick(e) {
-  if (e && e.target && (
-    e.target.closest('#focusDock') ||
-    e.target.closest('.focus-close-icon') || e.target.closest('.pocket-close-icon')
-  )) {
-    return;
-  }
-  if (focusSingleTapTimer) {
-    clearTimeout(focusSingleTapTimer);
-    focusSingleTapTimer = null;
-  }
+  if (e && e.stopPropagation) e.stopPropagation();
   toggleFocusMode(false);
 }
 
@@ -1858,36 +2303,18 @@ function handleFocusSentenceBoxClick(e) {
   )) {
     return;
   }
-  showFocusDock();
-  const now = Date.now();
-  if (now - lastFocusTapTime < 450) {
-    if (focusSingleTapTimer) {
-      clearTimeout(focusSingleTapTimer);
-      focusSingleTapTimer = null;
-    }
-    lastFocusTapTime = 0;
-    toggleFocusMode(false);
-    return;
+  const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
+  if (focusBlindMode && box && !box.classList.contains('revealed')) {
+    box.classList.add('revealed');
   }
-  lastFocusTapTime = now;
-
-  if (focusSingleTapTimer) clearTimeout(focusSingleTapTimer);
-  focusSingleTapTimer = setTimeout(() => {
-    focusSingleTapTimer = null;
-    if (!focusModeActive && !pocketModeActive) return;
-    const box = document.getElementById('focusSentenceBox') || document.getElementById('pocketSentenceBox');
-    if (focusBlindMode && box) {
-      box.classList.toggle('revealed');
-    } else {
-      replayCurrentShadowSentence();
-    }
-  }, 220);
+  replayCurrentShadowSentence();
 }
 const handlePocketSentenceBoxClick = handleFocusSentenceBoxClick;
 
 function handleFocusTouchStart(e) {
-  showFocusDock();
   if ((!focusModeActive && !pocketModeActive) || !e.touches || e.touches.length !== 1) return;
+  const isNearBottom = (typeof e.touches[0].clientY === 'number') && (e.touches[0].clientY >= window.innerHeight - 64);
+  if (isNearBottom) showFocusDock();
   focusTouchStartY = e.touches[0].clientY;
   focusTouchStartX = e.touches[0].clientX;
   focusTouchStartTime = Date.now();
@@ -1915,25 +2342,41 @@ const handlePocketTouchEnd = handleFocusTouchEnd;
 let focusDockHideTimer = null;
 
 function scheduleFocusDockHide() {
-  if (focusDockHideTimer) {
+  const forceReset = arguments[0];
+  const dock = document.getElementById('focusDock');
+  if (!dock) return;
+  if (dock.classList.contains('dock-hidden')) return;
+  if (forceReset && focusDockHideTimer) {
     clearTimeout(focusDockHideTimer);
     focusDockHideTimer = null;
   }
-  const dock = document.getElementById('focusDock');
-  if (!dock) return;
-  dock.classList.remove('dock-hidden');
-  if (focusModeActive && audio && !audio.paused) {
+  if (focusDockHideTimer) return;
+
+  const isAudioActive = audio && (!audio.paused || shadowState.isInternalPause);
+  const delay = isAudioActive ? 2800 : 3500;
+
+  if (focusModeActive) {
     focusDockHideTimer = setTimeout(() => {
-      if (focusModeActive && audio && !audio.paused) {
-        dock.classList.add('dock-hidden');
+      focusDockHideTimer = null;
+      const d = document.getElementById('focusDock');
+      if (d && focusModeActive) {
+        d.classList.add('dock-hidden');
       }
-    }, 3000);
+    }, delay);
   }
 }
 
 function showFocusDock() {
+  if (isKeyboardNavigating) {
+    scheduleFocusDockHide();
+    return;
+  }
   const dock = document.getElementById('focusDock');
   if (dock) dock.classList.remove('dock-hidden');
+  if (focusDockHideTimer) {
+    clearTimeout(focusDockHideTimer);
+    focusDockHideTimer = null;
+  }
   scheduleFocusDockHide();
 }
 
@@ -1944,17 +2387,20 @@ function toggleFocusMode(force) {
   const target = typeof force === 'boolean' ? force : !focusModeActive;
   focusModeActive = target;
   pocketModeActive = target;
-  currentActiveWordEl = null;
-  currentActiveWordStart = -1;
-  currentActiveWordEnd = -1;
+  clearActiveWord();
+  hideMarginalia();
   if (focusSingleTapTimer) {
     clearTimeout(focusSingleTapTimer);
     focusSingleTapTimer = null;
   }
   
   if (focusModeActive) {
+    const bottomDock = document.getElementById('bottomControlDock');
+    if (bottomDock) bottomDock.classList.add('dock-idle-hidden');
     initFocusPreferences();
-    showFocusDock();
+    const fDock = document.getElementById('focusDock');
+    if (fDock) fDock.classList.remove('dock-hidden');
+    scheduleFocusDockHide(true);
     const activeSec = document.querySelector('.chapter-section.active') || document.querySelector('.chapter-section');
     const curTime = (audio && Number.isFinite(audio.currentTime)) ? audio.currentTime : 0;
     const cur = findSentenceAt(curTime);
@@ -2009,6 +2455,7 @@ function toggleFocusMode(force) {
 }
 const togglePocketMode = toggleFocusMode;
 
+let lastFocusOverlayTapTime = 0;
 function handleFocusOverlayClick(e) {
   if (e && e.target && (
     e.target.closest('#focusDock') ||
@@ -2016,18 +2463,16 @@ function handleFocusOverlayClick(e) {
   )) {
     return;
   }
-  showFocusDock();
   const now = Date.now();
-  if (now - lastFocusTapTime < 450) {
-    if (focusSingleTapTimer) {
-      clearTimeout(focusSingleTapTimer);
-      focusSingleTapTimer = null;
-    }
-    lastFocusTapTime = 0;
+  if (now - lastFocusOverlayTapTime < 350) {
+    lastFocusOverlayTapTime = 0;
     toggleFocusMode(false);
     return;
   }
-  lastFocusTapTime = now;
+  lastFocusOverlayTapTime = now;
+  if (typeof e.clientY === 'number' && e.clientY >= window.innerHeight - 64) {
+    showFocusDock();
+  }
 }
 const handlePocketOverlayClick = handleFocusOverlayClick;
 
@@ -2131,22 +2576,25 @@ function initMediaSession() {
 
 audio.addEventListener('play', () => {
   globalPlayBtn.textContent = '⏸ Pause';
-  if (audio && audio.playbackRate !== currentPlaybackSpeed) {
-    audio.playbackRate = currentPlaybackSpeed;
-  }
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   updateMediaSessionMetadata();
   startSyncLoop();
+  scheduleMainDockHide();
   if (focusModeActive) {
     scheduleFocusDockHide();
   }
 });
 audio.addEventListener('pause', () => {
+  if (shadowState.isInternalPause) {
+    // Internal shadow iteration pause: audio will resume in ~250ms, do NOT disrupt user immersion!
+    return;
+  }
   globalPlayBtn.textContent = '▶ Play';
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   stopSyncLoop();
+  scheduleMainDockHide();
   if (focusModeActive) {
-    showFocusDock();
+    scheduleFocusDockHide();
   }
 });
 audio.addEventListener('error', (e) => {
@@ -2179,15 +2627,21 @@ audio.addEventListener('timeupdate', () => {
   }
 });
 audio.addEventListener('loadedmetadata', () => {
-  if (audio) audio.playbackRate = currentPlaybackSpeed;
+  if (audio && currentPlaybackSpeed) audio.playbackRate = currentPlaybackSpeed;
   updateAudioPlayerUI();
+});
+audio.addEventListener('ratechange', () => {
+  if (!audio) return;
+  const newRate = Math.round(audio.playbackRate * 100) / 100;
+  if (!Number.isFinite(newRate) || newRate <= 0) return;
+  if (Math.abs(currentPlaybackSpeed - newRate) >= 0.01) {
+    applyPlaybackRate(newRate);
+  }
 });
 audio.addEventListener('durationchange', updateAudioPlayerUI);
 audio.addEventListener('seeked', () => {
   setUserSeeking(false);
 });
-let audioRecoveryRetries = 0;
-const MAX_AUDIO_RETRIES = 3;
 
 audio.addEventListener('playing', () => {
   audioRecoveryRetries = 0;
@@ -2229,7 +2683,7 @@ audio.addEventListener('error', (err) => {
   }
 });
 audio.addEventListener('ended', () => {
-  if (focusModeActive) {
+  if (focusModeActive && shadowState.phase === 'idle') {
     showFocusDock();
   }
   if (shadowState.phase !== 'idle') {
@@ -2254,16 +2708,30 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     stopSyncLoop();
   } else {
-    if (shadowState.phase !== 'idle' && audio && !audio.paused) {
+    if (audio && !audio.paused) {
       const curSentence = findSentenceAt(audio.currentTime);
-      if (curSentence && curSentence !== shadowState.sentence) {
-        if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
-        shadowState.sentence = curSentence;
-        shadowState.completed = 0;
-        shadowState.phase = 'playing';
-        curSentence.classList.add('active', 'card-collapsed');
-        if (autoScrollEnabled) {
-          curSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (curSentence) {
+        if (shadowState.phase !== 'idle') {
+          if (curSentence !== shadowState.sentence) {
+            if (shadowState.sentence) shadowState.sentence.classList.remove('active', 'card-collapsed');
+            shadowState.sentence = curSentence;
+            shadowState.completed = 0;
+            shadowState.phase = 'playing';
+            curSentence.classList.add('active', 'card-collapsed');
+            if (autoScrollEnabled) {
+              performAutoScroll(curSentence);
+            }
+          }
+        } else {
+          if (curSentence.id !== currentPlayingId) {
+            const oldUnit = currentPlayingId ? document.getElementById(currentPlayingId) : null;
+            if (oldUnit) oldUnit.classList.remove('active');
+            currentPlayingId = curSentence.id;
+            curSentence.classList.add('active');
+            if (autoScrollEnabled) {
+              performAutoScroll(curSentence);
+            }
+          }
         }
       }
     }
@@ -2283,7 +2751,7 @@ function syncPlayback() {
       return;
     }
     const now = performance.now();
-    if (now - lastSyncTimestamp >= 25) {
+    if (now - lastSyncTimestamp >= 12) {
       lastSyncTimestamp = now;
       const curTime = audio.currentTime;
       if (!currentActiveSection || !currentActiveSection.classList.contains('active')) {
@@ -2296,14 +2764,14 @@ function syncPlayback() {
         if (activeUnit) {
           if (activeUnit.id !== currentPlayingId) {
             currentPlayingId = activeUnit.id;
-            currentActiveWordStart = -1;
-            currentActiveWordEnd = -1;
+            clearActiveWord();
             try { localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id); } catch(e) {}
             
             currentActiveSection.querySelectorAll('.sentence-unit.active').forEach(u => {
               if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
             });
             activeUnit.classList.add('active', 'card-collapsed');
+            updateSentenceInspectors(activeUnit);
 
             if (focusModeActive || pocketModeActive) {
               shadowState.sentence = activeUnit;
@@ -2316,8 +2784,8 @@ function syncPlayback() {
                 if (pocketModeActive || focusModeActive || !autoScrollEnabled) return;
                 const rect = activeUnit.getBoundingClientRect();
                 const inView = rect.top >= 90 && rect.bottom <= (window.innerHeight - 90);
-                if (!inView && typeof activeUnit.scrollIntoView === 'function') {
-                  activeUnit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (!inView) {
+                  performAutoScroll(activeUnit);
                 }
               });
             }
@@ -2337,7 +2805,9 @@ function syncPlayback() {
             for (let i = 0; i < wordEls.length; i++) {
               const w = wordEls[i];
               const ws = parseFloat(w.dataset.s);
-              const we = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : parseFloat(w.dataset.e);
+              const wEnd = parseFloat(w.dataset.e);
+              const nextStart = (i < wordEls.length - 1) ? parseFloat(wordEls[i + 1].dataset.s) : wEnd;
+              const we = (nextStart > wEnd && nextStart - wEnd <= 0.10) ? nextStart : (wEnd + 0.06);
               if (curTime >= ws && curTime < we) {
                 foundWord = w;
                 foundIndex = i;
@@ -2348,43 +2818,15 @@ function syncPlayback() {
             }
             
             if (foundWord !== currentActiveWordEl) {
-              if (currentActiveWordEl) currentActiveWordEl.classList.remove('active-word');
-              if (foundWord) foundWord.classList.add('active-word');
-              currentActiveWordEl = foundWord;
-              if (focusModeActive || pocketModeActive) {
-                const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
-                if (pText) {
-                  const prevW = pText.querySelector('.w.active-word');
-                  if (prevW) prevW.classList.remove('active-word');
-                  if (foundIndex >= 0) {
-                    if (!pText._cachedFocusWords) {
-                      pText._cachedFocusWords = Array.from(pText.querySelectorAll('.w'));
-                    }
-                    const focusWord = pText._cachedFocusWords[foundIndex];
-                    if (focusWord && !focusWord.classList.contains('active-word')) {
-                      focusWord.classList.add('active-word');
-                    }
-                  }
-                }
+              if (foundWord) {
+                setActiveWord(foundWord, foundStart, foundEnd, foundIndex);
+              } else {
+                clearActiveWord();
               }
             }
-            currentActiveWordStart = foundStart;
-            currentActiveWordEnd = foundEnd;
           }
         } else {
-          if (currentActiveWordEl) {
-            currentActiveWordEl.classList.remove('active-word');
-            currentActiveWordEl = null;
-          }
-          currentActiveWordStart = -1;
-          currentActiveWordEnd = -1;
-          if (focusModeActive || pocketModeActive) {
-            const pText = document.getElementById('focusSentenceText') || document.getElementById('pocketSentenceText');
-            if (pText) {
-              const prevW = pText.querySelector('.w.active-word');
-              if (prevW) prevW.classList.remove('active-word');
-            }
-          }
+          clearActiveWord();
         }
       }
       advanceShadowing();
@@ -2403,9 +2845,14 @@ window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) {
     return;
   }
+  setKeyboardNavigating();
+  isProgrammaticAutoScroll = true;
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+  programmaticScrollTimer = setTimeout(() => {
+    isProgrammaticAutoScroll = false;
+  }, 1200);
 
   if (focusModeActive || pocketModeActive) {
-    showFocusDock();
     if (e.key === 'Escape') {
       e.preventDefault();
       toggleFocusMode(false);
@@ -2520,8 +2967,30 @@ window.addEventListener('keydown', (e) => {
   }
   if (currentIndex === -1) currentIndex = 0;
   
+  if (e.key === '[' || e.code === 'BracketLeft') {
+    e.preventDefault();
+    const prevCh = Math.max(0, activeChapterNum - 1);
+    if (prevCh !== activeChapterNum) switchChapter(prevCh, true);
+    return;
+  }
+  if (e.key === ']' || e.code === 'BracketRight') {
+    e.preventDefault();
+    const nextCh = activeChapterNum + 1;
+    const nextOption = document.getElementById('menu-ch-' + nextCh) || 
+                       document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+    if (nextOption) switchChapter(nextCh, true);
+    return;
+  }
+
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
     e.preventDefault();
+    if (currentIndex === 0 && e.key === 'ArrowLeft') {
+      const prevCh = Math.max(0, activeChapterNum - 1);
+      if (prevCh !== activeChapterNum) {
+        switchChapter(prevCh, true);
+        return;
+      }
+    }
     const targetIdx = Math.max(0, currentIndex - 1);
     const targetUnit = units[targetIdx];
     if (targetUnit) {
@@ -2539,6 +3008,15 @@ window.addEventListener('keydown', (e) => {
     }
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     e.preventDefault();
+    if (currentIndex === units.length - 1 && e.key === 'ArrowRight') {
+      const nextCh = activeChapterNum + 1;
+      const nextOption = document.getElementById('menu-ch-' + nextCh) || 
+                         document.querySelector(`.chapter-item[data-chapter="${nextCh}"]`);
+      if (nextOption) {
+        switchChapter(nextCh, true);
+        return;
+      }
+    }
     const targetIdx = Math.min(units.length - 1, currentIndex + 1);
     const targetUnit = units[targetIdx];
     if (targetUnit) {
@@ -2554,24 +3032,29 @@ window.addEventListener('keydown', (e) => {
       }
       targetUnit.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  } else if (e.code === 'Space') {
-    e.preventDefault();
-    const currentUnit = units[currentIndex];
-    if (currentUnit) {
-      const isChineseLocked = document.documentElement.getAttribute('data-hide-chinese') === 'true';
-      if (!isChineseLocked) {
-        if (currentUnit.classList.contains('card-collapsed')) {
-          currentUnit.classList.remove('card-collapsed');
-        } else if (currentUnit.classList.contains('active')) {
-          currentUnit.classList.add('card-collapsed');
-        } else {
-          currentUnit.classList.add('active');
-          currentUnit.classList.remove('card-collapsed');
-        }
-      } else {
-        toggleGlobalPlay();
+  } else if (e.key === 'Escape') {
+    hideMarginalia();
+    const tips = document.getElementById('drawerTips');
+    if (tips && tips.classList.contains('open')) {
+      tips.classList.remove('open');
+      const btn = document.getElementById('tipsToggleBtn');
+      if (btn) btn.classList.remove('active');
+    }
+    if (controlDrawer && controlDrawer.classList.contains('open')) {
+      controlDrawer.classList.remove('open');
+      const dock = document.getElementById('bottomControlDock');
+      if (dock) dock.classList.remove('expanded');
+      if (drawerToggleBtn) {
+        drawerToggleBtn.innerHTML = 'Menu';
+        drawerToggleBtn.classList.remove('active');
       }
     }
+    if (chapterDropdown && chapterDropdown.classList.contains('open')) {
+      chapterDropdown.classList.remove('open');
+    }
+  } else if (e.code === 'Space') {
+    e.preventDefault();
+    toggleGlobalPlay();
   }
 });
 initMediaSession();
@@ -2579,19 +3062,40 @@ updateMediaSessionMetadata();
 const focusOverlayEl = document.getElementById('focus-overlay');
 if (focusOverlayEl) {
   focusOverlayEl.addEventListener('dblclick', handleFocusDblClick);
-  focusOverlayEl.addEventListener('pointermove', () => {
-    if (focusModeActive) scheduleFocusDockHide();
+  focusOverlayEl.addEventListener('pointermove', (e) => {
+    if (focusModeActive && typeof e.clientY === 'number' && e.clientY >= window.innerHeight - 64) {
+      showFocusDock();
+    }
   });
-  focusOverlayEl.addEventListener('pointerdown', () => {
-    if (focusModeActive) showFocusDock();
+  focusOverlayEl.addEventListener('pointerdown', (e) => {
+    if (focusModeActive && typeof e.clientY === 'number' && e.clientY >= window.innerHeight - 64) {
+      showFocusDock();
+    }
   });
 }
 const focusDockEl = document.getElementById('focusDock');
 if (focusDockEl) {
-  focusDockEl.addEventListener('pointerdown', () => {
+  focusDockEl.addEventListener('pointerdown', (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
     showFocusDock();
   });
 }
+document.addEventListener('pointermove', onUserDockActivity);
+document.addEventListener('pointerdown', onUserDockActivity);
+document.addEventListener('touchstart', onUserDockActivity, { passive: true });
+window.addEventListener('scroll', onUserDockActivity, { passive: true });
+const bottomControlDock = document.getElementById('bottomControlDock');
+if (bottomControlDock) {
+  bottomControlDock.addEventListener('mouseenter', () => {
+    bottomControlDock._isMouseOver = true;
+    if (dockIdleTimer) { clearTimeout(dockIdleTimer); dockIdleTimer = null; }
+  });
+  bottomControlDock.addEventListener('mouseleave', () => {
+    bottomControlDock._isMouseOver = false;
+    scheduleMainDockHide();
+  });
+}
+scheduleMainDockHide();
 </script>
 </body>
 </html>

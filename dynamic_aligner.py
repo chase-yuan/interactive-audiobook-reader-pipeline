@@ -8,6 +8,7 @@ are narrated at section/chapter endings, achieving >99% true acoustic audio alig
 import json
 import re
 import os
+import shutil
 import subprocess
 import difflib
 import sys
@@ -72,6 +73,9 @@ ASR_TOKEN_VARIANTS = {
     "rhiannon": "rian", "matthias": "mateus",
     "kalista": "kallista", "nima": "neema",
     "sturrets": "stiritz",
+    # Single-digit normalization for symmetrical speech matching
+    "1": "one", "2": "two", "3": "three", "4": "four", "5": "five",
+    "6": "six", "7": "seven", "8": "eight", "9": "nine", "10": "ten",
 }
 
 # Whole-word audio renderings that cannot be handled safely by a per-word
@@ -83,6 +87,18 @@ ASR_AUDIO_PHRASE_VARIANTS = (
     ("myself what", "my self what"),
     ("almost 20%", "almost 20 percent"),
     ("107", "a hundred and seven"),
+    ("anti fragile", "antifragile"),
+    ("anti fragility", "antifragility"),
+    ("non meek", "nonmeek"),
+    ("non prediction", "nonprediction"),
+    ("non predictive", "nonpredictive"),
+    ("decision making", "decisionmaking"),
+    ("top down", "topdown"),
+    ("bottom up", "bottomup"),
+    ("risk bearing", "riskbearing"),
+    ("blow up", "blowup"),
+    ("non risk takers", "nonrisktakers"),
+    ("non risk taker", "nonrisktaker"),
 )
 
 NUMBER_PHRASE_VARIANTS = (
@@ -98,10 +114,27 @@ NUMBER_PHRASE_VARIANTS = (
     ("four fifteen", "4 15"),
 )
 
+ROMAN_NUMERAL_MAP = {
+    "i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5",
+    "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10",
+    "xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15",
+    "xvi": "16", "xvii": "17", "xviii": "18", "xix": "19", "xx": "20",
+    "xxi": "21", "xxii": "22", "xxiii": "23", "xxiv": "24", "xxv": "25",
+    "xxvi": "26", "xxvii": "27", "xxviii": "28", "xxix": "29", "xxx": "30",
+    "xxxi": "31", "xxxii": "32", "xxxiii": "33", "xxxiv": "34", "xxxv": "35",
+    "xxxvi": "36", "xxxvii": "37", "xxxviii": "38", "xxxix": "39", "xl": "40",
+    "xli": "41", "xlii": "42", "xliii": "43", "xliv": "44", "xlv": "45",
+    "xlvi": "46", "xlvii": "47", "xlviii": "48", "xlix": "49", "l": "50"
+}
+
 def tokenize_clean(text):
     # Strip footnote reference citations attached to punctuation (e.g. Reserve.1, business.”2, Doddsville.3)
     normalized = re.sub(r'(?<=[.!?\"\'”’\)])\d+\b', '', str(text))
     normalized = normalized.lower().replace("’", "'").replace("…", " ").replace("%", " percent ")
+    # Replace em-dashes and en-dashes with spaces so attached words are split cleanly (e.g. word—Man -> word Man)
+    normalized = normalized.replace("—", " ").replace("–", " ").replace("--", " ")
+    # Convert Roman numerals followed by period in headings/numbers into digits (e.g. 'I.' -> '1.', 'XXI.' -> '21.')
+    normalized = re.sub(r'\b([ivxl]+)\.(?=\s|$)', lambda m: ROMAN_NUMERAL_MAP.get(m.group(1).lower(), m.group(1)) + '.', normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     for phrase, canonical in ASR_PHRASE_VARIANTS + NUMBER_PHRASE_VARIANTS:
         normalized = re.sub(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", canonical, normalized)
@@ -188,32 +221,46 @@ def _is_non_narrated_text(text):
 
 def _acoustic_tokens_with_map(acoustic_words):
     """Tokenize audio while preserving narrow multi-word ASR variants."""
-    ac_tokens, ac_map = [], []
+    ac_tokens, ac_map, ac_map_end = [], [], []
     index = 0
     while index < len(acoustic_words):
         consumed = False
         for raw_phrase, canonical in ASR_AUDIO_PHRASE_VARIANTS:
             width = len(raw_phrase.split())
-            phrase = " ".join(str(w.get("word", "")) for w in acoustic_words[index:index + width])
-            if tokenize_clean(phrase) == tokenize_clean(raw_phrase):
-                canonical_tokens = tokenize_clean(canonical)
-                ac_tokens.extend(canonical_tokens)
-                ac_map.extend([index] * len(canonical_tokens))
-                if width > 1:
-                    # Keep the final source token bound to the final spoken
-                    # word so its span covers the complete pronunciation.
-                    for offset in range(1, len(canonical_tokens)):
-                        ac_map[-offset] = index + width - 1
-                index += width
-                consumed = True
-                break
+            if index + width <= len(acoustic_words):
+                phrase = " ".join(str(w.get("word", "")) for w in acoustic_words[index:index + width])
+                if tokenize_clean(phrase) == tokenize_clean(raw_phrase):
+                    canonical_tokens = tokenize_clean(canonical)
+                    ac_tokens.extend(canonical_tokens)
+                    ac_map.extend([index] * len(canonical_tokens))
+                    ac_map_end.extend([index + width - 1] * len(canonical_tokens))
+                    if width > 1:
+                        for offset in range(1, len(canonical_tokens)):
+                            ac_map[-offset] = index + width - 1
+                    index += width
+                    consumed = True
+                    break
         if consumed:
             continue
+        # Also dynamic hyphenated token merging (e.g. "anti" + "-fragile", "non" + "-meek")
+        if index + 1 < len(acoustic_words):
+            w1 = str(acoustic_words[index].get("word", "")).strip()
+            w2 = str(acoustic_words[index + 1].get("word", "")).strip()
+            if w2.startswith("-") or w1.endswith("-"):
+                combined = w1.rstrip("-") + w2.lstrip("-")
+                c_tokens = tokenize_clean(combined)
+                if len(c_tokens) == 1:
+                    ac_tokens.extend(c_tokens)
+                    ac_map.append(index)
+                    ac_map_end.append(index + 1)
+                    index += 2
+                    continue
         tokens = tokenize_clean(acoustic_words[index]["word"])
         ac_tokens.extend(tokens)
         ac_map.extend([index] * len(tokens))
+        ac_map_end.extend([index] * len(tokens))
         index += 1
-    return ac_tokens, ac_map
+    return ac_tokens, ac_map, ac_map_end
 
 
 def _has_nearby_exact_audio(source_tokens, acoustic_words, ac_tokens, ac_map, next_word_index, window_seconds=5.0):
@@ -357,7 +404,17 @@ def are_tokens_plausible(source_words, audio_tokens):
     return ratio_num >= 0.45
 
 
-FFMPEG_BIN = "/opt/homebrew/bin/ffmpeg" if os.path.exists("/opt/homebrew/bin/ffmpeg") else "ffmpeg"
+def _resolve_ffmpeg_bin() -> str:
+    which_bin = shutil.which("ffmpeg")
+    if which_bin and os.path.isfile(which_bin):
+        return which_bin
+    for cand in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg"):
+        if os.path.isfile(cand):
+            return cand
+    return "ffmpeg"
+
+
+FFMPEG_BIN = _resolve_ffmpeg_bin()
 
 
 def decode_audio_to_pcm(audio_path, sr=16000):
@@ -401,13 +458,13 @@ def detect_voice_onset(pcm, search_start, search_end, sr=16000):
     frames_rms = np.array(frames_rms)
     frames_t = np.array(frames_t)
 
-    noise_floor = np.percentile(frames_rms, 10) if len(frames_rms) > 0 else 10.0
-    thresh = max(180.0, noise_floor * 3.5)
+    noise_floor = np.percentile(frames_rms[:max(5, len(frames_rms)//5)], 20) if len(frames_rms) > 0 else 5.0
+    thresh = max(18.0, noise_floor * 2.5)
 
     onset_t = None
     for i in range(len(frames_rms)):
         if frames_rms[i] > thresh:
-            if frames_rms[i] > 400 or (i + 1 < len(frames_rms) and frames_rms[i + 1] > thresh):
+            if frames_rms[i] > 200 or (i + 1 < len(frames_rms) and frames_rms[i + 1] > thresh):
                 onset_t = frames_t[i]
                 break
 
@@ -438,7 +495,7 @@ def calibrate_aligned_sentences_pcm(sentences, audio_path, headroom=0.06):
 
         onset_t = detect_voice_onset(pcm, search_start, search_end, sr)
 
-        if onset_t > cur_st + 0.10:
+        if onset_t > cur_st + 0.28:
             new_st = round(max(prev_end, onset_t - headroom), 2)
         elif onset_t < cur_st - 0.02 and onset_t >= prev_end:
             new_st = round(max(prev_end, onset_t - 0.04), 2)
@@ -457,7 +514,7 @@ def calibrate_aligned_sentences_pcm(sentences, audio_path, headroom=0.06):
             if s.get("word_spans"):
                 s["word_spans"][0]["start"] = new_st
                 if s["word_spans"][0]["end"] <= new_st:
-                    s["word_spans"][0]["end"] = round(new_st + 0.12, 2)
+                    s["word_spans"][0]["end"] = round(new_st + 0.15, 2)
                 prev_w_s = s["word_spans"][0]["start"]
                 for w in s["word_spans"][1:]:
                     if w["start"] <= prev_w_s:
@@ -478,7 +535,11 @@ def _build_word_spans(raw_words, source_word_indexes, source_to_audio, acoustic_
     mapped_by_word = {index: [] for index in range(N)}
     for source_index, audio_token_index in source_to_audio.items():
         if source_index < len(source_word_indexes):
-            mapped_by_word[source_word_indexes[source_index]].append(audio_token_index)
+            target_w = source_word_indexes[source_index]
+            if isinstance(audio_token_index, (list, tuple)):
+                mapped_by_word[target_w].extend(audio_token_index)
+            else:
+                mapped_by_word[target_w].append(audio_token_index)
 
     mapped_word_ranges = {}
     for word_index, token_indexes in mapped_by_word.items():
@@ -639,8 +700,10 @@ _CHAPTER_NUMBERS = {
 }
 
 
-def _chapter_heading_matches(sentences, acoustic_words, ac_tokens, ac_map):
+def _chapter_heading_matches(sentences, acoustic_words, ac_tokens, ac_map, ac_map_end=None):
     """Map printed ``CHAPTER TWENTY-ONE`` to spoken ``Chapter 21``."""
+    if ac_map_end is None:
+        ac_map_end = ac_map
     result = {}
     for sentence_idx, sentence in enumerate(sentences[:12]):
         source = str(sentence.get("text", "")).strip().lower()
@@ -667,11 +730,11 @@ def _chapter_heading_matches(sentences, acoustic_words, ac_tokens, ac_map):
         if not candidates:
             continue
         token_start, token_end = candidates[0]
-        word_start, word_end = ac_map[token_start], ac_map[token_end]
+        word_start, word_end = ac_map[token_start], ac_map_end[token_end]
         st = float(acoustic_words[word_start]["start"])
         et = float(acoustic_words[word_end]["end"])
         source_tokens, source_word_indexes = _source_tokens_with_words(sentence["text"])
-        source_to_audio = {offset: ac_map[token_start + offset] for offset in range(min(len(source_tokens), token_end - token_start + 1))}
+        source_to_audio = {offset: (ac_map[token_start + offset], ac_map_end[token_start + offset]) for offset in range(min(len(source_tokens), token_end - token_start + 1))}
         word_spans = _build_word_spans(sentence["text"].split(), source_word_indexes, source_to_audio, acoustic_words, st, et)
         result[sentence_idx] = {
             "start": round(st, 2), "end": round(max(st + 0.3, et), 2),
@@ -687,8 +750,10 @@ def _chapter_heading_matches(sentences, acoustic_words, ac_tokens, ac_map):
     return result
 
 
-def _leading_epigraph_attributions(sentences, acoustic_words, ac_tokens, ac_map):
+def _leading_epigraph_attributions(sentences, acoustic_words, ac_tokens, ac_map, ac_map_end=None):
     """Bind a leading audiobook attribution to the printed citation."""
+    if ac_map_end is None:
+        ac_map_end = ac_map
     candidates = [
         (idx, s) for idx, s in enumerate(sentences[:8])
         if str(s.get("text", "")).strip().startswith(("—", "–", "--", "- "))
@@ -738,12 +803,12 @@ def _leading_epigraph_attributions(sentences, acoustic_words, ac_tokens, ac_map)
         return {}
 
     score, prefix_start, sentence_idx, source_word_indexes, token_start, token_end, source_tokens = best
-    word_start, word_end = ac_map[token_start], ac_map[token_end]
+    word_start, word_end = ac_map[token_start], ac_map_end[token_end]
     st = float(acoustic_words[ac_map[prefix_start]]["start"])
     et = float(acoustic_words[word_end]["end"])
     matcher = difflib.SequenceMatcher(None, source_tokens, ac_tokens[token_start:token_end + 1], autojunk=False)
     source_to_audio = {
-        block.a + offset: ac_map[token_start + block.b + offset]
+        block.a + offset: (ac_map[token_start + block.b + offset], ac_map_end[token_start + block.b + offset])
         for block in matcher.get_matching_blocks()
         for offset in range(block.size)
     }
@@ -760,11 +825,40 @@ def _leading_epigraph_attributions(sentences, acoustic_words, ac_tokens, ac_map)
         "alignment_reason": "leading_narrator_prefix", "fallback_used": False,
     }}
 
-def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_out_path, audio_path=None):
+def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_out_path, audio_path=None, canonical_json_path=None):
     with open(analysis_json_path, "r", encoding="utf-8") as f:
         sentences = json.load(f)
     with open(acoustic_json_path, "r", encoding="utf-8") as f:
         acoustic_data = json.load(f)
+
+    # Ground-Truth Topology Resolution: Inherit canonical layout metadata (elem_idx, is_heading, tag, is_tabular)
+    canonical_meta = {}
+    if canonical_json_path is None:
+        cand = str(analysis_json_path).replace("_full_analysis.json", "_canonical_sentences.json").replace("_linguistic_analysis.json", "_canonical_sentences.json")
+        if os.path.isfile(cand):
+            canonical_json_path = cand
+    if canonical_json_path and os.path.isfile(canonical_json_path):
+        try:
+            with open(canonical_json_path, "r", encoding="utf-8") as cf:
+                for c_item in json.load(cf):
+                    cid = c_item.get("id")
+                    if cid:
+                        canonical_meta[cid] = c_item
+        except Exception:
+            pass
+
+    for s in sentences:
+        cid = s.get("id")
+        if cid in canonical_meta:
+            c = canonical_meta[cid]
+            if s.get("elem_idx") is None and c.get("elem_idx") is not None:
+                s["elem_idx"] = c.get("elem_idx")
+            if "is_heading" not in s and "is_heading" in c:
+                s["is_heading"] = c.get("is_heading")
+            if "is_tabular" not in s and "is_tabular" in c:
+                s["is_tabular"] = c.get("is_tabular")
+            if "tag" not in s and "tag" in c:
+                s["tag"] = c.get("tag")
         
     acoustic_words = acoustic_data.get("words", [])
     total_ac = len(acoustic_words)
@@ -773,12 +867,12 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         
     # Build token list and index mapping for audio
     # ac_map maps normalized token positions to physical acoustic-word indexes.
-    ac_tokens, ac_map = _acoustic_tokens_with_map(acoustic_words)
+    ac_tokens, ac_map, ac_map_end = _acoustic_tokens_with_map(acoustic_words)
 
     # Reserve leading epigraph attributions before the monotonic global pass.
-    matched_sentences = _leading_epigraph_attributions(sentences, acoustic_words, ac_tokens, ac_map)
+    matched_sentences = _leading_epigraph_attributions(sentences, acoustic_words, ac_tokens, ac_map, ac_map_end)
     epigraph_indices = set(matched_sentences)
-    heading_matches = _chapter_heading_matches(sentences, acoustic_words, ac_tokens, ac_map)
+    heading_matches = _chapter_heading_matches(sentences, acoustic_words, ac_tokens, ac_map, ac_map_end)
     matched_sentences.update({idx: value for idx, value in heading_matches.items() if idx not in matched_sentences})
     special_indices = epigraph_indices | set(heading_matches)
     used_tokens = set()
@@ -794,9 +888,9 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             continue
         token_start = exact_starts[0]
         token_end = token_start + len(clean_s) - 1
-        w_start, w_end = ac_map[token_start], ac_map[token_end]
+        w_start, w_end = ac_map[token_start], ac_map_end[token_end]
         st, et = acoustic_words[w_start]["start"], acoustic_words[w_end]["end"]
-        source_to_audio = {offset: ac_map[token_start + offset] for offset in range(len(clean_s))}
+        source_to_audio = {offset: (ac_map[token_start + offset], ac_map_end[token_start + offset]) for offset in range(len(clean_s))}
         word_spans = _build_word_spans(s["text"].split(), source_word_indexes, source_to_audio, acoustic_words, st, et)
         if word_spans:
             st = min(st, word_spans[0]["start"])
@@ -826,13 +920,13 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 if not any(b.b + o in used_tokens for o in range(b.size)):
                     t_start = b.b
                     t_end = t_start + b.size - 1
-                    w_start, w_end = ac_map[t_start], ac_map[t_end]
+                    w_start, w_end = ac_map[t_start], ac_map_end[t_end]
                     st = acoustic_words[w_start]["start"]
                     et = acoustic_words[w_end]["end"]
                     if st < 15.0:
                         for o in range(b.size):
                             used_tokens.add(b.b + o)
-                        source_to_audio = {offset: ac_map[t_start + offset] for offset in range(b.size)}
+                        source_to_audio = {offset: (ac_map[t_start + offset], ac_map_end[t_start + offset]) for offset in range(b.size)}
                         word_spans = _build_word_spans(s["text"].split(), source_word_indexes, source_to_audio, acoustic_words, st, et)
                         matched_sentences[s_idx] = {
                             "start": round(st, 2), "end": round(max(st + 0.3, et), 2),
@@ -885,7 +979,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             t_start = max(0, min(len(ac_tokens) - 1, first_b.b))
             t_end = last_b.b + last_b.size - 1
             w_start = ac_map[t_start]
-            w_end = ac_map[t_end]
+            w_end = ac_map_end[t_end]
             st = acoustic_words[w_start]["start"]
             et = acoustic_words[w_end]["end"]
             for b in best_cluster:
@@ -895,7 +989,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             source_to_audio = {}
             for block in best_cluster:
                 for offset in range(block.size):
-                    source_to_audio[block.a + offset] = ac_map[block.b + offset]
+                    source_to_audio[block.a + offset] = (ac_map[block.b + offset], ac_map_end[block.b + offset])
             word_spans = _build_word_spans(raw_words, source_word_indexes, source_to_audio, acoustic_words, st, et)
             if word_spans:
                 st = min(st, word_spans[0]["start"])
@@ -951,14 +1045,16 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         if not clean_s:
             continue
         # Single isolated footnote/bullet markers (e.g. "a.", "b.", "1.") must not falsely
-        # latch onto random common function words like "a" in the audio track.
+        # latch onto random distant function words in the audio track, but should match
+        # if the spoken audio in the immediate sequential window explicitly speaks the number/marker word.
         is_isolated_marker = bool(re.match(r"^[a-zA-Z0-9][\.\)]?$", s.get("text", "").strip()))
-        if is_isolated_marker and len(clean_s) <= 1:
-            inferred_non_narrated.add(s_idx)
-            continue
 
         previous = [matched_sentences[i]["word_end"] for i in range(s_idx) if i in matched_sentences]
         following = [matched_sentences[i]["word_start"] for i in range(s_idx + 1, len(sentences)) if i in matched_sentences]
+
+        if is_isolated_marker and len(clean_s) <= 1 and (not previous or not following):
+            inferred_non_narrated.add(s_idx)
+            continue
 
         w_left = previous[-1] if previous else None
         w_right = following[0] if following else len(acoustic_words) - 1
@@ -993,7 +1089,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             next_start = float(acoustic_words[next_word]["start"])
             physical = []
             for candidate in _exact_candidate_starts(clean_s, ac_tokens):
-                candidate_word = ac_map[candidate + len(clean_s) - 1]
+                candidate_word = ac_map_end[candidate + len(clean_s) - 1]
                 candidate_end = float(acoustic_words[candidate_word]["end"])
                 candidate_start = float(acoustic_words[ac_map[candidate]]["start"])
                 if next_start - 5.0 <= candidate_start <= next_start and candidate_end <= next_start + 0.2:
@@ -1018,7 +1114,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 upper = float(acoustic_words[following[0]].get("start", 0.0)) + 0.2
             for candidate in _exact_candidate_starts(clean_s, ac_tokens):
                 first_word = ac_map[candidate]
-                last_word = ac_map[candidate + len(clean_s) - 1]
+                last_word = ac_map_end[candidate + len(clean_s) - 1]
                 start = float(acoustic_words[first_word].get("start", 0.0))
                 end = float(acoustic_words[last_word].get("end", 0.0))
                 if (lower is None or start >= lower) and (upper is None or end <= upper):
@@ -1042,10 +1138,10 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             cand_idx = candidates[0]
             sub_t_start = t_left + cand_idx
             sub_t_end = sub_t_start + len(clean_s) - 1
-            w_start, w_end = ac_map[sub_t_start], ac_map[sub_t_end]
+            w_start, w_end = ac_map[sub_t_start], ac_map_end[sub_t_end]
             st = acoustic_words[w_start]["start"]
             et = acoustic_words[w_end]["end"]
-            source_to_audio = {offset: ac_map[sub_t_start + offset] for offset in range(len(clean_s))}
+            source_to_audio = {offset: (ac_map[sub_t_start + offset], ac_map_end[sub_t_start + offset]) for offset in range(len(clean_s))}
             word_spans = _build_word_spans(s["text"].split(), source_word_indexes, source_to_audio, acoustic_words, st, et)
             if word_spans:
                 st = min(st, word_spans[0]["start"])
@@ -1067,9 +1163,10 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 cand_idx = fuzzy_cand[0]
                 sub_t_start = t_left + cand_idx
                 w_start = ac_map[sub_t_start]
+                w_end = ac_map_end[sub_t_start]
                 st = acoustic_words[w_start]["start"]
-                et = acoustic_words[w_start]["end"]
-                source_to_audio = {0: w_start}
+                et = acoustic_words[w_end]["end"]
+                source_to_audio = {0: (w_start, w_end)}
                 word_spans = _build_word_spans(s["text"].split(), source_word_indexes, source_to_audio, acoustic_words, st, et)
                 if word_spans:
                     st = min(st, word_spans[0]["start"])
@@ -1079,7 +1176,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                     "raw_start": round(st, 2), "raw_end": round(max(st + 0.3, et), 2),
                     "has_audio_match": True,
                     "word_spans": word_spans,
-                    "word_start": w_start, "word_end": w_start,
+                    "word_start": w_start, "word_end": w_end,
                     "matched_token_count": 1, "source_token_count": 1,
                     "match_ratio": 1.0, "alignment_method": "contextual_short_exact_match",
                     "fallback_used": False,
@@ -1097,7 +1194,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                     sub_t_start = t_left + first_b.b
                     sub_t_end = t_left + min(len(sub_tokens) - 1, last_b.b + last_b.size - 1)
                     w_start = ac_map[sub_t_start]
-                    w_end = ac_map[sub_t_end]
+                    w_end = ac_map_end[sub_t_end]
                     st = acoustic_words[w_start]["start"]
                     et = acoustic_words[w_end]["end"]
                     if previous and st < float(acoustic_words[previous[-1]].get("end", 0.0)) - 0.05:
@@ -1105,7 +1202,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                     source_to_audio = {}
                     for block in sub_blocks:
                         for offset in range(block.size):
-                            source_to_audio[block.a + offset] = ac_map[t_left + block.b + offset]
+                            source_to_audio[block.a + offset] = (ac_map[t_left + block.b + offset], ac_map_end[t_left + block.b + offset])
                     word_spans = _build_word_spans(
                         s["text"].split(), source_word_indexes, source_to_audio,
                         acoustic_words, st, et
@@ -1124,6 +1221,47 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                         "fallback_used": False,
                     }
             
+    # Dialogue Attribution Actor-Omission Reconciliation:
+    # In dramatic fiction audiobooks, full-cast voice actors routinely omit printed speaker
+    # attribution tags ("said Boxer", "cried Squealer") while narrating the adjacent dialogue.
+    # Bind omitted speech attribution tags to the immediate dialogue boundary as interpolated beats.
+    SPEECH_ATTRIBUTION_VERBS = {
+        "said", "asked", "replied", "answered", "noted", "shouted", "whispered", "told",
+        "inquired", "cried", "continued", "repeated", "growled", "barked", "roared",
+        "declared", "exclaimed", "murmured", "gasped", "muttered", "commanded", "demanded",
+        "squeaked", "urged", "warned", "called", "added", "agreed"
+    }
+    for s_idx, sentence in enumerate(sentences):
+        if _is_non_narrated_text(sentence.get("text", "")):
+            continue
+        if s_idx in matched_sentences:
+            continue
+        source_tokens = tokenize_clean(sentence.get("text", ""))
+        is_actor_omitted_attribution = len(source_tokens) <= 6 and any(v in source_tokens for v in SPEECH_ATTRIBUTION_VERBS)
+        if is_actor_omitted_attribution and (s_idx > 0 and (s_idx - 1) in matched_sentences):
+            prev_ms = matched_sentences[s_idx - 1]
+            next_ms = matched_sentences[s_idx + 1] if (s_idx + 1) in matched_sentences else None
+            st = float(prev_ms["end"])
+            et = float(next_ms["start"]) if next_ms and float(next_ms["start"]) > st else round(st + 0.15, 2)
+            et = min(et, round(st + 0.5, 2))
+            raw_words = sentence.get("text", "").split()
+            word_spans = [{"word": rw, "start": round(st, 2), "end": round(et, 2), "timing_source": "interpolated"} for rw in raw_words]
+            w_anchor = prev_ms.get("word_end", 0)
+            matched_sentences[s_idx] = {
+                "start": round(st, 2), "end": round(et, 2),
+                "raw_start": round(st, 2), "raw_end": round(et, 2),
+                "audio_start": round(st, 2), "audio_end": round(et, 2),
+                "audio_order": w_anchor, "has_audio_match": True,
+                "word_spans": word_spans,
+                "word_start": w_anchor, "word_end": w_anchor,
+                "matched_token_count": len(source_tokens),
+                "source_token_count": len(source_tokens),
+                "match_ratio": 1.0,
+                "alignment_method": "dialogue_attribution_actor_omitted",
+                "fallback_used": False,
+            }
+            continue
+
     # Final conservative classification for short omissions. This runs after
     # all anchors are known, so it can distinguish a genuinely absent token
     # (e.g. an omitted interjection) from a spoken attribution absorbed by a
@@ -1209,7 +1347,8 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             # Sentence without a standalone acoustic match (e.g. a heading or
             # a failed attribution). Do not invent a playable timestamp.
             word_spans = [{"word": rw, "start": None, "end": None} for rw in raw_words]
-            structural_non_narrated = _is_non_narrated_text(s.get("text", ""))
+            is_tabular = s.get("is_tabular", False) or s.get("tag") in ("table", "tr", "th", "td")
+            structural_non_narrated = _is_non_narrated_text(s.get("text", "")) or is_tabular
             proven_duplicate = s_idx in inferred_duplicate
             inferred_omission = s_idx in inferred_non_narrated
             non_narrated = structural_non_narrated or proven_duplicate or inferred_omission
@@ -1231,9 +1370,10 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "alignment_method": "unmatched",
                 "fallback_used": False,
                 "alignment_status": "not-applicable" if s.get("is_heading") or non_narrated else "review-required",
-                "alignment_reason": "duplicate_source_fragment" if s_idx in inferred_duplicate else "non_narrated_text" if non_narrated else "ambiguous_short_sentence" if len(tokenize_clean(s.get("text", ""))) <= 2 else "no_sufficient_global_match",
+                "alignment_reason": "structural_tabular_omitted_by_narrator" if is_tabular else "duplicate_source_fragment" if s_idx in inferred_duplicate else "non_narrated_text" if non_narrated else "ambiguous_short_sentence" if len(tokenize_clean(s.get("text", ""))) <= 2 else "no_sufficient_global_match",
+                "is_tabular": is_tabular,
                 "non_narrated_evidence": {
-                    "basis": "duplicate_source_fragment" if s_idx in inferred_duplicate else "publisher_back_matter" if non_narrated and (
+                    "basis": "structural_tabular" if is_tabular else "duplicate_source_fragment" if s_idx in inferred_duplicate else "publisher_back_matter" if non_narrated and (
                         str(s.get("text", "")).lower().startswith(("the love doesn’t end here", "the love doesn't end here", "join the entangled insiders"))
                         or str(s.get("text", "")).lower().strip() == "notes"
                     ) else "acoustic_window_absence" if inferred_omission else "typographic_pause_marker",

@@ -29,13 +29,18 @@ def discover_chapters(book_dir) -> List[ChapterArtifact]:
         if not match:
             continue
         chapter_number = int(match.group(1))
+        acoustic_candidate = book_dir / "audio" / f"{prefix}_acoustic_words.json"
+        if not acoustic_candidate.exists():
+            generic_candidate = book_dir / "audio" / f"chapter_{chapter_number:02d}_acoustic_words.json"
+            if generic_candidate.exists():
+                acoustic_candidate = generic_candidate
         artifacts.append(
             ChapterArtifact(
                 chapter_number=chapter_number,
                 prefix=prefix,
                 canonical_path=canonical_path,
                 analysis_path=book_dir / f"{prefix}_full_analysis.json",
-                acoustic_path=book_dir / "audio" / f"{prefix}_acoustic_words.json",
+                acoustic_path=acoustic_candidate,
             )
         )
     return artifacts

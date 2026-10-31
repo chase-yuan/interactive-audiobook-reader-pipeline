@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -35,10 +36,10 @@ from typing import Any, Dict, List, Optional, Tuple
 PIPELINE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from intake_reconciler import parse_epub
+from intake_reconciler import parse_epub, extract_book_metadata
 from extract_epub import extract_chapter_from_epub
 from agy_linguistic_worker import process_canonical_sentences, PROMPT_PATH, verify_analysis
-from validate_outputs import validate, validate_canonical_sentences
+from validate_outputs import validate, validate_canonical_sentences, auto_heal_canonical_quotes
 from release_token import issue_release_token
 from html_builder import build_master_reader
 from quality_gate import smoke_check_html, check_audio_physical_integrity
@@ -111,6 +112,8 @@ def infer_chapter_role_and_label(index: int, title: str, href: str) -> Tuple[str
     elif m_arabic:
         ch_num = int(m_arabic.group(1))
         return "chapter", ch_num, f"Chapter {ch_num}"
+    elif "prologue" in lower_t or "prologue" in lower_h:
+        return "preface", None, "Prologue"
     elif "preface" in lower_t or "preface" in lower_h or "foreword" in lower_t:
         lbl = "Preface"
         if "first" in lower_t:
@@ -134,7 +137,11 @@ def infer_chapter_role_and_label(index: int, title: str, href: str) -> Tuple[str
     elif "conclusion" in lower_t:
         return "chapter", None, "Conclusions"
     else:
-        return "chapter", None, title[:24].strip()
+        clean = title.strip()
+        if len(clean) > 36:
+            m = re.match(r"^(.{1,35})\b", clean)
+            clean = m.group(1).strip() if m else clean[:36].strip()
+        return "chapter", None, clean
 
 
 def discover_epub_chapters(
@@ -147,7 +154,8 @@ def discover_epub_chapters(
     all_chapters = parsed.get("chapters", [])
     cover_member = parsed.get("cover_member")
 
-    excludes = [p.lower() for p in (exclude_patterns or DEFAULT_EXCLUDE_PATTERNS) if p]
+    user_excludes = [p.lower() for p in (exclude_patterns or []) if p]
+    excludes = list(DEFAULT_EXCLUDE_PATTERNS) + [p for p in user_excludes if p not in DEFAULT_EXCLUDE_PATTERNS]
 
     selected = []
     for ch in all_chapters:
@@ -216,6 +224,10 @@ def setup_book_directory(
             }
             if item.get("display_number") is not None:
                 row["display_number"] = item["display_number"]
+            if item.get("hrefs"):
+                row["hrefs"] = item["hrefs"]
+            elif item.get("href"):
+                row["href"] = item["href"]
             metadata_rows.append(row)
 
         atomic_write_json(metadata_path, {
@@ -234,11 +246,11 @@ def extract_chapters_sentences(
     print(f"\n=== [Stage 1: EPUB Sentence Extraction ({len(chapters_meta)} tracks)] ===", flush=True)
     for item in chapters_meta:
         num = item["num"]
-        href = item["href"]
+        hrefs = item.get("hrefs") or ([item["href"]] if item.get("href") else [])
         can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
         if not force and can_path.is_file() and can_path.stat().st_size > 50:
             continue
-        extract_chapter_from_epub(str(epub_path), href, str(can_path))
+        extract_chapter_from_epub(str(epub_path), hrefs, str(can_path))
     print("[Stage 1] Sentence extraction completed.")
 
 
@@ -264,6 +276,16 @@ def validate_extracted_sentences_gate(
             continue
         total_sentences += len(data)
         issues = validate_canonical_sentences(data)
+        if issues:
+            # Shift-Left Auto-Healer: If the only ortho defect is unclosed quote at chapter end,
+            # auto-balance the discourse quote and re-verify before reporting hard gate errors.
+            unclosed_quotes = [iss for iss in issues if "Unclosed quote (unmatched quotation marks at chapter end)" in iss]
+            if len(unclosed_quotes) == len(issues):
+                data = auto_heal_canonical_quotes(data)
+                issues = validate_canonical_sentences(data)
+                if not issues:
+                    atomic_write_json(can_path, data)
+
         if issues:
             for iss in issues[:10]:
                 all_gate_failures.append(f"Track {num:02d} ({label}) {iss}")
@@ -347,11 +369,15 @@ def run_parallel_linguistic_analysis(
             ): item
             for item in chapters_meta
         }
-        for f in as_completed(futures):
-            item = futures[f]
-            ok = f.result()
-            if not ok:
-                raise RuntimeError(f"Linguistic analysis failed on track {item['num']:02d} ({item['label']})")
+        try:
+            for f in as_completed(futures):
+                item = futures[f]
+                ok = f.result()
+                if not ok:
+                    raise RuntimeError(f"Linguistic analysis failed on track {item['num']:02d} ({item['label']})")
+        except Exception:
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
     print("[Stage 2] High-throughput linguistic analysis completed.")
 
 
@@ -455,6 +481,7 @@ def align_complete_audio_chapters(
     prefix: str,
     audio_dir: Optional[Path],
     concurrency: int = 4,
+    force: bool = False,
 ) -> None:
     if not audio_dir or not Path(audio_dir).is_dir():
         raise FileNotFoundError(f"Studio audio directory required for complete audio mode: {audio_dir}")
@@ -504,7 +531,25 @@ def align_complete_audio_chapters(
         aligned_path = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
         acoustic_path = target_audio_dir / f"{prefix}_ch{num:02d}_acoustic_words.json"
 
-        if not acoustic_path.is_file() or acoustic_path.stat().st_size < 100:
+        can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
+        needs_realign = force or not (aligned_path.is_file() and aligned_path.stat().st_size > 100)
+        if not needs_realign:
+            # Shift-Left Cache Invalidation: Re-align if audio, canonical or analysis ground truth has been updated
+            if dest_audio.is_file() and dest_audio.stat().st_mtime > aligned_path.stat().st_mtime:
+                needs_realign = True
+            elif can_path.is_file() and can_path.stat().st_mtime > aligned_path.stat().st_mtime:
+                needs_realign = True
+            elif analysis_path.is_file() and analysis_path.stat().st_mtime > aligned_path.stat().st_mtime:
+                needs_realign = True
+
+        if not needs_realign:
+            return True
+
+        needs_acoustic = force or not (acoustic_path.is_file() and acoustic_path.stat().st_size > 100)
+        if not needs_acoustic and dest_audio.is_file() and dest_audio.stat().st_mtime > acoustic_path.stat().st_mtime:
+            needs_acoustic = True
+
+        if needs_acoustic:
             print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
             run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
 
@@ -546,6 +591,12 @@ def build_and_verify_reader(
     audio_dir: Optional[Path] = None,
 ) -> Path:
     print(f"\n=== [Stage 4: Quality Gate & Release Validation] ===", flush=True)
+    stale_manifest = book_dir / "reader_run_manifest.json"
+    if stale_manifest.is_file():
+        try:
+            stale_manifest.unlink()
+        except OSError:
+            pass
     rep_path = book_dir / "reader_validation_report.json"
     allowed_ch = {item["num"] for item in chapters_meta}
     code = validate(book_dir, rep_path, allowed_chapters=allowed_ch)
@@ -607,18 +658,21 @@ def build_and_verify_reader(
         f"({smoke['chapter_count']} chapters, {out_html.stat().st_size:,} bytes)"
     )
 
-    if mode == "synthetic" and audio_dir:
-        for item in chapters_meta:
-            num = item["num"]
-            c_mp3 = audio_dir / f"chapter_{num:02d}.mp3"
-            c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
-            if c_mp3.is_file() and c_alg.is_file():
-                alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
-                last_end = alg_data[-1]["end"] if alg_data else 0.0
-                probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=0.45)
-                if probe["status"] != "passed":
-                    raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
-        print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
+    if mode in ("synthetic", "complete"):
+        audio_check_dir = audio_dir if (audio_dir and mode == "synthetic") else (book_dir / "audio")
+        if audio_check_dir.is_dir():
+            for item in chapters_meta:
+                num = item["num"]
+                c_mp3 = audio_check_dir / f"chapter_{num:02d}.mp3"
+                c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
+                if c_mp3.is_file() and c_alg.is_file():
+                    alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
+                    last_end = alg_data[-1]["end"] if alg_data else 0.0
+                    max_delta = 0.45 if mode == "synthetic" else 8.0
+                    probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=max_delta)
+                    if probe["status"] != "passed":
+                        raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
+            print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
 
     return out_html
 
@@ -680,7 +734,8 @@ def build_reader_pipeline(
 
     # Set up book directory
     if book_dir is None:
-        target_dir = Path.home() / "Vault" / "audiobook" / title
+        safe_title = re.sub(r"[/\\:*?\"<>|]", "-", title).strip()
+        target_dir = Path.home() / "Vault" / "audiobook" / safe_title
     else:
         target_dir = book_dir.expanduser().resolve()
 
@@ -710,6 +765,7 @@ def build_reader_pipeline(
                     "title": row["title"],
                     "label": row.get("label", row["title"][:20]),
                     "href": href,
+                    "hrefs": row.get("hrefs") or ([href] if href else []),
                 }
                 if row.get("display_number") is not None:
                     item["display_number"] = row["display_number"]
@@ -791,7 +847,7 @@ def build_reader_pipeline(
             chapters_meta=chapters_meta,
             prefix=prefix,
             audio_dir=audio_dir,
-            concurrency=concurrency,
+            concurrency=1,
         )
     else:
         raise ValueError(f"Unknown pipeline mode: {mode}")
@@ -835,11 +891,6 @@ def build_reader_pipeline(
             print("[UNIVERSAL RUNNER -> AUTO-PUBLISH] Publication rejected by gatekeeper!")
             raise SystemExit(1)
         print(f"[UNIVERSAL RUNNER -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
-
-        keygen_script = Path.home() / "Vault" / "Audible" / "keygen.py"
-        if keygen_script.is_file():
-            print("\n[UNIVERSAL RUNNER -> KEYGEN] Emitting production passkey and dispatch copy...")
-            subprocess.run([sys.executable, str(keygen_script), "--book", book_id], check=False)
 
     if open_in_browser and not publish:
         try:

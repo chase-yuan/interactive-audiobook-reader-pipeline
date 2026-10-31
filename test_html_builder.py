@@ -492,7 +492,164 @@ class HTMLBuilderTests(unittest.TestCase):
             # 6. Scrubber NaN / non-finite duration guards
             self.assertIn('Number.isFinite(audio.duration)', rendered)
 
+    def test_dock_idle_auto_hide_and_english_mode_double_click(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Dock & Mode Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # 1. Dock auto-hide engine
+            self.assertIn("function scheduleMainDockHide()", rendered)
+            self.assertIn("function showMainDock()", rendered)
+            self.assertIn("function onUserDockActivity()", rendered)
+            self.assertIn(".dock-idle-hidden", rendered)
+            self.assertIn("scheduleMainDockHide();", rendered)
+            self.assertIn("showMainDock();", rendered)
+            # 2. English mode double-click translation peek
+            self.assertIn("isDoubleTap", rendered)
+            self.assertIn("showMarginaliaForSentence(el, true)", rendered)
+            # 3. Speed presets & extension priority
+            self.assertIn("SPEED_PRESETS = [1.0, 1.25, 1.5, 2.0]", rendered)
+            self.assertIn("audio.addEventListener('ratechange'", rendered)
+            # 4. Repeat loop levels
+            self.assertIn("MAIN_REP_LEVELS = [1, 2, 3]", rendered)
+            # 5. Zero title attributes (no browser hover tooltips)
+            self.assertNotIn('title="Sepia"', rendered)
+            self.assertNotIn('title="Light"', rendered)
+            self.assertNotIn('title="Dark"', rendered)
+            self.assertNotIn('title="Night"', rendered)
+            self.assertNotIn('audioSpeedBtn.setAttribute(\'title\'', rendered)
+            self.assertNotIn('repBtn.setAttribute(\'title\'', rendered)
+            # 6. Zero toast callers
+            self.assertIn('#reader-toast {\n  display: none !important;\n}', rendered)
+            # 7. Scrubber touch release safety (iOS Safari dropped change event defense)
+            self.assertIn("function commitScrubberChange()", rendered)
+            self.assertIn("playerScrubber.addEventListener('touchend', commitScrubberChange", rendered)
+            self.assertIn("playerScrubber.addEventListener('touchcancel'", rendered)
+            self.assertIn("playerScrubber.addEventListener('pointerup', commitScrubberChange", rendered)
+            # 8. Silent reading idle timer (4500ms auto-hide during paused/text-only reading)
+            self.assertIn("DOCK_SILENT_IDLE_DELAY = 4500", rendered)
+            self.assertIn("const delay = isAudioActive ? DOCK_IDLE_DELAY : DOCK_SILENT_IDLE_DELAY;", rendered)
+            self.assertIn("window.addEventListener('scroll', onUserDockActivity", rendered)
+            self.assertIn("document.addEventListener('touchstart', onUserDockActivity", rendered)
+            # 9. Audio recovery retry reset on user interaction (prevent bricking)
+            self.assertIn("audioRecoveryRetries = 0;", rendered)
+            self.assertIn("const MAX_AUDIO_RETRIES = 3;", rendered)
+            # 10. Lock screen background resume immediate sentence latch
+            self.assertIn("if (curSentence.id !== currentPlayingId)", rendered)
+            # 11. Landscape mobile ergonomics media query
+            self.assertIn("@media (max-height: 520px) and (orientation: landscape)", rendered)
 
+    def test_extract_book_metadata_unification(self):
+        from intake_reconciler import extract_book_metadata
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            # Test direct folder name splitting
+            book_dir = tmp_path / "Nassim Nicholas Taleb - Antifragile"
+            book_dir.mkdir()
+            meta = extract_book_metadata(book_dir)
+            self.assertEqual(meta["title"], "Nassim Nicholas Taleb")
+            self.assertEqual(meta["author"], "Antifragile")
 
+            # Test standard folder
+            plain_dir = tmp_path / "Antifragile"
+            plain_dir.mkdir()
+            meta_plain = extract_book_metadata(plain_dir)
+            self.assertEqual(meta_plain["title"], "Antifragile")
+            self.assertEqual(meta_plain["author"], "Author")
+            self.assertEqual(meta_plain["subtitle"], "Bilingual Synchronized Reader")
 
+    def test_keyboard_nav_and_focus_repeat_dock_immunity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Dock Immunity Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # 1. Keyboard navigation flag & timer
+            self.assertIn("let isKeyboardNavigating = false;", rendered)
+            self.assertIn("function setKeyboardNavigating()", rendered)
+            self.assertIn("setKeyboardNavigating();", rendered)
+            # 2. Main dock suppressed on scroll and keyboard navigation
+            self.assertIn("if (focusModeActive || pocketModeActive || isKeyboardNavigating) return;", rendered)
+            self.assertIn("if (e.type === 'scroll')", rendered)
+            self.assertIn("window.innerHeight - 72", rendered)
+            # 3. Focus mode dock autohide & ergonomics
+            self.assertIn("if (focusModeActive && shadowState.phase === 'idle')", rendered)
+            self.assertIn("window.innerHeight - 64", rendered)
+            self.assertIn("scheduleFocusDockHide(true);", rendered)
+            # 4. Focus mode: single click replays without waking dock, double click exits
+            self.assertIn("function handleFocusDblClick(e) {\n  if (e && e.stopPropagation) e.stopPropagation();\n  toggleFocusMode(false);\n}", rendered)
+            self.assertIn("function handleFocusSentenceBoxClick(e) {", rendered)
+            self.assertIn("replayCurrentShadowSentence();", rendered)
+            # 5. Mobile chapter menu closes marginalia and blocks collision
+            self.assertIn("function toggleChapterDropdown(event) {\n  if (event && event.stopPropagation) event.stopPropagation();\n  hideMarginalia();", rendered)
+            self.assertIn("if (chapterDropdown && chapterDropdown.classList.contains('open')) return;", rendered)
+            # 6. Auto-hide scheduled on initial page load
+            self.assertIn("scheduleMainDockHide();\n</script>", rendered)
 
+    def test_marginalia_anti_screen_takeover_and_escape_hatches(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Marginalia Ergonomics Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(tmp_path / "book_ch01_aligned_sentences.json"),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # 1. Anti-takeover: Height clamping and scroll container
+            self.assertIn("max-height: clamp(140px, 38vh, 320px);", rendered)
+            self.assertIn("class=\"marginalia-content\"", rendered)
+            self.assertIn("class=\"marginalia-header\"", rendered)
+            # 2. Escape hatch controls: Backdrop scrim, Drag pill, Zero redundant close button (AP1/AP3)
+            self.assertIn("id=\"marginaliaBackdrop\"", rendered)
+            self.assertNotIn("id=\"marginaliaCloseBtn\"", rendered)
+            self.assertIn("class=\"marginalia-drag-pill\"", rendered)
+            # 3. Touch pull-down dismiss gesture
+            self.assertIn("initMarginaliaGestures()", rendered)
+
+    def test_translation_zero_double_escaping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_path = Path(temp_dir)
+            token, report_path = _make_release_token(tmp_path)
+            aligned_file = tmp_path / "book_ch01_aligned_sentences.json"
+            aligned_data = [{
+                "id": "s-0",
+                "text": "He said: 'Hello & Welcome'.",
+                "trans": '他说：“你好 & 欢迎”。',
+                "start": 0.0,
+                "end": 2.0,
+                "has_audio_match": True,
+                "word_spans": [
+                    {"word": "He", "start": 0.0, "end": 0.5, "timing_source": "observed"},
+                    {"word": "said", "start": 0.5, "end": 1.0, "timing_source": "observed"},
+                ]
+            }]
+            aligned_file.write_text(json.dumps(aligned_data), encoding="utf-8")
+            output = tmp_path / "reader.html"
+            build_master_reader(
+                "Escaping Test", "Audiobook", "Author", [{
+                    "num": 1, "title": "Chapter 1", "audio": "./audio/chapter_01.mp3",
+                    "aligned_json": str(aligned_file),
+                }], str(output), release_token=token, release_report_path=report_path,
+            )
+            rendered = output.read_text(encoding="utf-8")
+            # Must NOT contain double-escaped &amp;quot; or &amp;amp;
+            self.assertNotIn("&amp;amp;", rendered)
+            self.assertNotIn("&amp;quot;", rendered)
+            # Must properly escape into data-trans attribute
+            self.assertIn('data-trans="他说：“你好 &amp; 欢迎”。"', rendered)
