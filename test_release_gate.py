@@ -629,6 +629,85 @@ class ReleaseGateTests(unittest.TestCase):
         num_tokens_seven = tokenize_clean("7.")
         self.assertEqual(num_tokens_seven, ["seven"])
 
+    def test_untrimmed_bumper_blocks_release(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+            c1 = [{"id": "s-1", "text": "First sentence of novel."}]
+            a1 = [{**item, "trans": "第一句", "vocab": []} for item in c1]
+            # Untrimmed 11.5s bumper offset
+            alg1 = [{
+                **a1[0],
+                "word_spans": [{"word": "First", "start": 11.5, "end": 12.5, "timing_source": "observed"}],
+                "raw_start": 11.5, "raw_end": 12.5, "start": 11.5, "end": 12.5,
+                "has_audio_match": True, "fallback_used": False,
+                "alignment_status": "validated", "matched_token_count": 4, "source_token_count": 4, "match_ratio": 1.0,
+            }]
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            code = validate(root, rep_path)
+            self.assertNotEqual(code, 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertFalse(rep["release_ready"])
+            self.assertTrue(any("initial speech onset lead" in err for err in rep["errors"]))
+
+    def test_dialogue_attribution_actor_omitted_validates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+            c1 = [
+                {"id": "s-1", "text": "Never at all."},
+                {"id": "s-2", "text": "Said Boxer."},
+                {"id": "s-3", "text": "And his eyes were full of tears."},
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = [
+                {
+                    **a1[0],
+                    "word_spans": [{"word": "Never", "start": 1.0, "end": 2.0, "timing_source": "observed"}],
+                    "raw_start": 1.0, "raw_end": 2.0, "start": 1.0, "end": 2.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 3, "source_token_count": 3, "match_ratio": 1.0,
+                },
+                {
+                    **a1[1],
+                    "word_spans": [
+                        {"word": "Said", "start": 2.0, "end": 2.15, "timing_source": "interpolated"},
+                        {"word": "Boxer.", "start": 2.15, "end": 2.3, "timing_source": "interpolated"},
+                    ],
+                    "raw_start": 2.0, "raw_end": 2.3, "start": 2.0, "end": 2.3,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_method": "dialogue_attribution_actor_omitted",
+                    "alignment_status": "validated", "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                },
+                {
+                    **a1[2],
+                    "word_spans": [{"word": "And", "start": 2.3, "end": 4.0, "timing_source": "observed"}],
+                    "raw_start": 2.3, "raw_end": 4.0, "start": 2.3, "end": 4.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 7, "source_token_count": 7, "match_ratio": 1.0,
+                },
+            ]
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            code = validate(root, rep_path)
+            self.assertEqual(code, 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertTrue(rep["release_ready"])
+
+    def test_extract_epub_promo_element_detector(self):
+        from extract_epub import is_publisher_promo_element
+        self.assertTrue(is_publisher_promo_element({"text": "Visit www.globalgreyebooks.com for thousands of free ebooks"}))
+        self.assertTrue(is_publisher_promo_element({"text": "Produced by Global Grey 2024"}))
+        self.assertTrue(is_publisher_promo_element({"text": "End of the Project Gutenberg EBook of Animal Farm"}))
+        self.assertFalse(is_publisher_promo_element({"text": "Mr. Jones, of the Manor Farm, had locked the hen-houses."}))
+
 
 if __name__ == "__main__":
     unittest.main()

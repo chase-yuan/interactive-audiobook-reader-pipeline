@@ -534,8 +534,10 @@ def align_complete_audio_chapters(
         can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
         needs_realign = force or not (aligned_path.is_file() and aligned_path.stat().st_size > 100)
         if not needs_realign:
-            # Shift-Left Cache Invalidation: Re-align if canonical or analysis ground truth has been updated
-            if can_path.is_file() and can_path.stat().st_mtime > aligned_path.stat().st_mtime:
+            # Shift-Left Cache Invalidation: Re-align if audio, canonical or analysis ground truth has been updated
+            if dest_audio.is_file() and dest_audio.stat().st_mtime > aligned_path.stat().st_mtime:
+                needs_realign = True
+            elif can_path.is_file() and can_path.stat().st_mtime > aligned_path.stat().st_mtime:
                 needs_realign = True
             elif analysis_path.is_file() and analysis_path.stat().st_mtime > aligned_path.stat().st_mtime:
                 needs_realign = True
@@ -543,7 +545,11 @@ def align_complete_audio_chapters(
         if not needs_realign:
             return True
 
-        if not acoustic_path.is_file() or acoustic_path.stat().st_size < 100:
+        needs_acoustic = force or not (acoustic_path.is_file() and acoustic_path.stat().st_size > 100)
+        if not needs_acoustic and dest_audio.is_file() and dest_audio.stat().st_mtime > acoustic_path.stat().st_mtime:
+            needs_acoustic = True
+
+        if needs_acoustic:
             print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
             run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
 
@@ -652,18 +658,21 @@ def build_and_verify_reader(
         f"({smoke['chapter_count']} chapters, {out_html.stat().st_size:,} bytes)"
     )
 
-    if mode == "synthetic" and audio_dir:
-        for item in chapters_meta:
-            num = item["num"]
-            c_mp3 = audio_dir / f"chapter_{num:02d}.mp3"
-            c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
-            if c_mp3.is_file() and c_alg.is_file():
-                alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
-                last_end = alg_data[-1]["end"] if alg_data else 0.0
-                probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=0.45)
-                if probe["status"] != "passed":
-                    raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
-        print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
+    if mode in ("synthetic", "complete"):
+        audio_check_dir = audio_dir if (audio_dir and mode == "synthetic") else (book_dir / "audio")
+        if audio_check_dir.is_dir():
+            for item in chapters_meta:
+                num = item["num"]
+                c_mp3 = audio_check_dir / f"chapter_{num:02d}.mp3"
+                c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
+                if c_mp3.is_file() and c_alg.is_file():
+                    alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
+                    last_end = alg_data[-1]["end"] if alg_data else 0.0
+                    max_delta = 0.45 if mode == "synthetic" else 8.0
+                    probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=max_delta)
+                    if probe["status"] != "passed":
+                        raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
+            print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
 
     return out_html
 

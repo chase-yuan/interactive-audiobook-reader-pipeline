@@ -147,6 +147,21 @@ class ChapterParser(HTMLParser):
             self.stack[-1][2].append(data)
 
 
+def is_publisher_promo_element(el: dict) -> bool:
+    """Detect third-party eBook aggregator promotional headers, footers, and license boilerplate."""
+    txt = el.get("text", "").strip().lower()
+    promo_markers = [
+        "www.globalgreyebooks.com",
+        "global grey ebooks",
+        "produced by global grey",
+        "end of the project gutenberg",
+        "project gutenberg license",
+        "distributed by standard ebooks",
+        "download more free ebooks at",
+    ]
+    return any(marker in txt for marker in promo_markers)
+
+
 def is_title_text(txt: str) -> bool:
     if not txt:
         return False
@@ -344,6 +359,9 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                 elif active and stop_marker and _matches_marker(stop_marker, el):
                     break
                 if not active:
+                    continue
+
+                if is_publisher_promo_element(el):
                     continue
 
                 is_h = is_heading_element(el)

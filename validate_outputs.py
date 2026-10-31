@@ -23,7 +23,8 @@ INTENTIONAL_INTERJECTION = re.compile(
 )
 MIN_CHAPTER_AUDIO_COVERAGE = 0.95
 MIN_BILATERAL_ACOUSTIC_WORD_RATIO = 0.85
-MAX_INTER_SENTENCE_ACOUSTIC_GAP = 120.0
+MAX_INTER_SENTENCE_ACOUSTIC_GAP = 15.0
+MAX_INITIAL_SPEECH_ONSET_LEAD = 4.0
 MAX_NON_NARRATED_CHAPTER_RATIO = 0.20
 MAX_NON_NARRATED_CHAPTER_COUNT = 60
 
@@ -667,6 +668,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
         expansions = content_profile.get("author_audio_expansions", {})
         ch_expansion = expansions.get(str(number)) or expansions.get(number) or {}
         max_inter_gap = float(ch_expansion.get("max_inter_sentence_gap", MAX_INTER_SENTENCE_ACOUSTIC_GAP))
+        max_initial_lead = float(ch_expansion.get("max_initial_lead", MAX_INITIAL_SPEECH_ONSET_LEAD))
         min_bilateral_ratio = float(ch_expansion.get("min_bilateral_ratio", MIN_BILATERAL_ACOUSTIC_WORD_RATIO))
         max_non_narrated_count = int(ch_expansion.get("max_non_narrated_count", MAX_NON_NARRATED_CHAPTER_COUNT))
 
@@ -678,6 +680,19 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             record["status"] = "validated"
             chapters.append(record)
             continue
+
+        matched_starts = [
+            float(item.get("raw_start", item.get("start")))
+            for item in aligned_data
+            if item.get("has_audio_match") and (item.get("raw_start") is not None or item.get("start") is not None)
+        ]
+        min_track_start = min(matched_starts) if matched_starts else 0.0
+        if min_track_start > max_initial_lead:
+            errors.append(
+                f"{label}: initial speech onset lead of {min_track_start:.1f}s detected "
+                f"(track onset to earliest sentence); exceeds {max_initial_lead:.1f}s release ceiling "
+                f"(untrimmed bumper or dead air)"
+            )
 
         previous_start = -1.0
         previous_end = -1.0
@@ -735,6 +750,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     "chapter_heading_numeric_variant",
                     "opening_speaker_attribution",
                     "dialogue_attribution_reorder",
+                    "dialogue_attribution_actor_omitted",
                 }
                 and item.get("has_audio_match") is True
                 and not item.get("fallback_used")
@@ -771,12 +787,14 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             # Missing-match records are reported once above. Their null spans
             # are intentional and must not create one duplicate error per word.
             spans_to_validate = item.get("word_spans", []) if item.get("has_audio_match") else []
+            is_actor_omitted = item.get("alignment_method") == "dialogue_attribution_actor_omitted"
             for span in spans_to_validate:
                 span_start_raw = span.get("start")
                 span_end_raw = span.get("end")
                 span_start = float(span_start_raw) if isinstance(span_start_raw, (int, float)) else None
                 span_end = float(span_end_raw) if isinstance(span_end_raw, (int, float)) else None
-                if span_start is None or span_end is None or span_start < 0 or span_end < span_start or span.get("timing_source", "observed") != "observed":
+                valid_source = (span.get("timing_source", "observed") == "observed") or (is_actor_omitted and span.get("timing_source") == "interpolated")
+                if span_start is None or span_end is None or span_start < 0 or span_end < span_start or not valid_source:
                     errors.append(f"{label} {item_id}: invalid word span")
             if participates_in_timeline:
                 if start is not None and previous_end > 0:

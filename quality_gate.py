@@ -114,9 +114,23 @@ def check_acoustic_lead_silence(units_or_html, audio_path, max_lead=0.10, sample
             
     if not candidates:
         return {"status": "skipped", "reason": "no audio-matched sentence units"}
+
+    # Track Preamble Integrity: Earliest spoken sentence must start within 4.0s of physical audio onset
+    first_st = min(c[0] for c in candidates)
+    if first_st > 4.0:
+        return {
+            "status": "failed",
+            "first_onset": round(first_st, 3),
+            "max_lead_tolerance": 4.0,
+            "error": f"Initial track speech onset ({first_st:.2f}s) exceeds maximum allowed lead (4.0s); untrimmed platform bumper detected"
+        }
         
     step = max(1, len(candidates) // sample_size)
     sampled = candidates[::step][:sample_size]
+    if candidates[0] not in sampled:
+        sampled.insert(0, candidates[0])
+    if candidates[-1] not in sampled:
+        sampled.append(candidates[-1])
     
     leads = []
     for st, et in sampled:

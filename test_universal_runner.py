@@ -292,10 +292,11 @@ class UniversalRunnerTests(unittest.TestCase):
             self.assertTrue(rep["release_ready"])
             self.assertEqual(rep["audio_content_mode"], "synthetic")
 
+    @patch("universal_runner.check_audio_physical_integrity", return_value={"status": "passed", "audio_duration": 10.0, "delta": 0.0})
     @patch("universal_runner.process_canonical_sentences")
     @patch("acoustic_whisper.run_mlx_acoustic_extraction")
     @patch("dynamic_aligner.align_sentences_with_audio")
-    def test_build_reader_pipeline_complete_audio_mode_end_to_end(self, mock_align, mock_acoustic, mock_process_linguistics):
+    def test_build_reader_pipeline_complete_audio_mode_end_to_end(self, mock_align, mock_acoustic, mock_process_linguistics, mock_audio_probe):
         def fake_linguistics(canonical_data, **kwargs):
             return [
                 {

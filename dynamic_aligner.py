@@ -1221,6 +1221,47 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                         "fallback_used": False,
                     }
             
+    # Dialogue Attribution Actor-Omission Reconciliation:
+    # In dramatic fiction audiobooks, full-cast voice actors routinely omit printed speaker
+    # attribution tags ("said Boxer", "cried Squealer") while narrating the adjacent dialogue.
+    # Bind omitted speech attribution tags to the immediate dialogue boundary as interpolated beats.
+    SPEECH_ATTRIBUTION_VERBS = {
+        "said", "asked", "replied", "answered", "noted", "shouted", "whispered", "told",
+        "inquired", "cried", "continued", "repeated", "growled", "barked", "roared",
+        "declared", "exclaimed", "murmured", "gasped", "muttered", "commanded", "demanded",
+        "squeaked", "urged", "warned", "called", "added", "agreed"
+    }
+    for s_idx, sentence in enumerate(sentences):
+        if _is_non_narrated_text(sentence.get("text", "")):
+            continue
+        if s_idx in matched_sentences:
+            continue
+        source_tokens = tokenize_clean(sentence.get("text", ""))
+        is_actor_omitted_attribution = len(source_tokens) <= 6 and any(v in source_tokens for v in SPEECH_ATTRIBUTION_VERBS)
+        if is_actor_omitted_attribution and (s_idx > 0 and (s_idx - 1) in matched_sentences):
+            prev_ms = matched_sentences[s_idx - 1]
+            next_ms = matched_sentences[s_idx + 1] if (s_idx + 1) in matched_sentences else None
+            st = float(prev_ms["end"])
+            et = float(next_ms["start"]) if next_ms and float(next_ms["start"]) > st else round(st + 0.15, 2)
+            et = min(et, round(st + 0.5, 2))
+            raw_words = sentence.get("text", "").split()
+            word_spans = [{"word": rw, "start": round(st, 2), "end": round(et, 2), "timing_source": "interpolated"} for rw in raw_words]
+            w_anchor = prev_ms.get("word_end", 0)
+            matched_sentences[s_idx] = {
+                "start": round(st, 2), "end": round(et, 2),
+                "raw_start": round(st, 2), "raw_end": round(et, 2),
+                "audio_start": round(st, 2), "audio_end": round(et, 2),
+                "audio_order": w_anchor, "has_audio_match": True,
+                "word_spans": word_spans,
+                "word_start": w_anchor, "word_end": w_anchor,
+                "matched_token_count": len(source_tokens),
+                "source_token_count": len(source_tokens),
+                "match_ratio": 1.0,
+                "alignment_method": "dialogue_attribution_actor_omitted",
+                "fallback_used": False,
+            }
+            continue
+
     # Final conservative classification for short omissions. This runs after
     # all anchors are known, so it can distinguish a genuinely absent token
     # (e.g. an omitted interjection) from a spoken attribution absorbed by a
