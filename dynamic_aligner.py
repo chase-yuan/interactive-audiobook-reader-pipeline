@@ -1157,8 +1157,11 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "fallback_used": False,
             }
         elif len(clean_s) == 1 and (previous or following):
-            # Single token spelling variance match (e.g. Cecelia vs Cecilia)
-            fuzzy_cand = [i for i, t in enumerate(sub_tokens) if difflib.SequenceMatcher(None, clean_s[0], t).ratio() >= 0.75]
+            # Single token spelling variance match (e.g. Cecelia vs Cecilia, Mollie vs Molly)
+            fuzzy_cand = [
+                i for i, t in enumerate(sub_tokens)
+                if are_tokens_plausible([clean_s[0]], [t]) or difflib.SequenceMatcher(None, clean_s[0], t).ratio() >= 0.70
+            ]
             if fuzzy_cand:
                 cand_idx = fuzzy_cand[0]
                 sub_t_start = t_left + cand_idx
