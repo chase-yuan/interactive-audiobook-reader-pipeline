@@ -541,6 +541,14 @@ def align_complete_audio_chapters(
                 needs_realign = True
             elif analysis_path.is_file() and analysis_path.stat().st_mtime > aligned_path.stat().st_mtime:
                 needs_realign = True
+            else:
+                try:
+                    data = json.loads(aligned_path.read_text(encoding="utf-8"))
+                    items = data if isinstance(data, list) else data.get("sentences", [])
+                    if items and not any(it.get("has_audio_match") for it in items):
+                        needs_realign = True
+                except Exception:
+                    needs_realign = True
 
         if not needs_realign:
             return True
