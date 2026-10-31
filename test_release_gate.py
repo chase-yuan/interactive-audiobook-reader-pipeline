@@ -564,6 +564,71 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertFalse(rep["release_ready"])
             self.assertTrue(any("abnormal single-sentence paragraph density" in err.lower() for err in rep["errors"]))
 
+    def test_zero_interior_void_invariant_rejects_unmatched_body_paragraph(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "audio").mkdir()
+            (root / "audio" / "chapter_01.mp3").write_bytes(b"fixture")
+
+            c1 = [
+                {"id": "s-0", "text": "Chapter One", "tag": "h1", "elem_idx": 0, "is_heading": True},
+                {"id": "s-1", "text": "First narrative sentence.", "tag": "p", "elem_idx": 1, "is_heading": False},
+                {"id": "s-2", "text": "Second dropped sentence.", "tag": "p", "elem_idx": 2, "is_heading": False},
+                {"id": "s-3", "text": "Third narrative sentence.", "tag": "p", "elem_idx": 3, "is_heading": False},
+            ]
+            a1 = [{**item, "trans": "译文", "vocab": []} for item in c1]
+            alg1 = [
+                {
+                    **a1[0],
+                    "word_spans": [{"word": "Chapter", "start": 0.0, "end": 0.5, "timing_source": "observed"}, {"word": "One", "start": 0.5, "end": 1.0, "timing_source": "observed"}],
+                    "raw_start": 0.0, "raw_end": 1.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 2, "source_token_count": 2, "match_ratio": 1.0,
+                },
+                {
+                    **a1[1],
+                    "word_spans": [{"word": "First", "start": 1.0, "end": 1.5, "timing_source": "observed"}, {"word": "narrative", "start": 1.5, "end": 2.0, "timing_source": "observed"}, {"word": "sentence.", "start": 2.0, "end": 2.5, "timing_source": "observed"}],
+                    "raw_start": 1.0, "raw_end": 2.5,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 3, "source_token_count": 3, "match_ratio": 1.0,
+                },
+                {
+                    **a1[2],
+                    "word_spans": [],
+                    "raw_start": None, "raw_end": None,
+                    "has_audio_match": False, "fallback_used": False,
+                    "alignment_status": "not-applicable", "alignment_reason": "non_narrated_text",
+                    "matched_token_count": 0, "source_token_count": 3, "match_ratio": 0.0,
+                },
+                {
+                    **a1[3],
+                    "word_spans": [{"word": "Third", "start": 2.6, "end": 3.0, "timing_source": "observed"}, {"word": "narrative", "start": 3.0, "end": 3.5, "timing_source": "observed"}, {"word": "sentence.", "start": 3.5, "end": 4.0, "timing_source": "observed"}],
+                    "raw_start": 2.6, "raw_end": 4.0,
+                    "has_audio_match": True, "fallback_used": False,
+                    "alignment_status": "validated", "matched_token_count": 3, "source_token_count": 3, "match_ratio": 1.0,
+                },
+            ]
+            for suffix, data in (("canonical_sentences", c1), ("full_analysis", a1), ("aligned_sentences", alg1)):
+                (root / f"book_ch01_{suffix}.json").write_text(json.dumps(data), encoding="utf-8")
+
+            rep_path = root / "report.json"
+            code = validate(root, rep_path)
+            self.assertNotEqual(code, 0)
+            rep = json.loads(rep_path.read_text(encoding="utf-8"))
+            self.assertFalse(rep["release_ready"])
+            self.assertTrue(any("unapproved interior body omission" in err for err in rep["errors"]))
+
+    def test_dynamic_aligner_em_dash_and_digit_normalization(self):
+        from dynamic_aligner import tokenize_clean
+        tokens = tokenize_clean("It is summed up in a single word—Man.")
+        self.assertIn("word", tokens)
+        self.assertIn("man", tokens)
+
+        num_tokens = tokenize_clean("1.")
+        self.assertEqual(num_tokens, ["one"])
+        num_tokens_seven = tokenize_clean("7.")
+        self.assertEqual(num_tokens_seven, ["seven"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -557,7 +557,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     errors.append(f"{label}: analysis record count mismatch")
                 if [item.get("id") for item in analysis_data] != ids:
                     errors.append(f"{label}: analysis IDs/order differ from canonical source")
-                allowed_keys = {"id", "text", "trans", "vocab", "is_heading", "elem_idx", "tag"}
+                allowed_keys = {"id", "text", "trans", "vocab", "is_heading", "elem_idx", "tag", "is_tabular"}
                 for item in analysis_data:
                     item_id = item.get("id", "<unknown>")
                     if not isinstance(item.get("trans"), str) or not item.get("trans", "").strip():
@@ -872,6 +872,23 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 f"({non_narrated_records}/{len(aligned_data)} sentences) exceeds the {MAX_NON_NARRATED_CHAPTER_RATIO:.0%} / {max_non_narrated_count}-sentence release ceiling; "
                 f"chapter must be truncated to audio bounds or structured with explicit text-only profiles"
             )
+
+        # Zero-Interior-Void Invariant: In complete audiobook mode, interior novel body sentences
+        # (non-heading, non-backmatter, non-table) cannot be silently omitted without an approved ledger exception.
+        if content_mode in (COMPLETE, SYNTHETIC):
+            for item in aligned_data:
+                item_id = item.get("id", "<unknown>")
+                is_body_p = item.get("tag") in ("p", "blockquote") and not item.get("is_heading")
+                has_audio = item.get("has_audio_match") is True and item.get("alignment_status") in ("validated", "reviewed")
+                is_legit_exempt = (
+                    item.get("editorial_omission")
+                    or item.get("is_print_only")
+                    or item.get("is_back_matter")
+                    or (item.get("non_narrated_evidence") or {}).get("basis") in {"publisher_back_matter", "structural_tabular"}
+                    or (number, item_id) in accepted_exceptions
+                )
+                if is_body_p and not has_audio and not is_legit_exempt:
+                    errors.append(f"{label} {item_id}: unapproved interior body omission (tag={item.get('tag')}, text=\"{str(item.get('text', ''))[:40]}...\")")
         if review_ids:
             warnings.append(f"{label}: {len(review_ids)} alignment records require review ({', '.join(review_ids[:8])})")
             record["status"] = "review-required"

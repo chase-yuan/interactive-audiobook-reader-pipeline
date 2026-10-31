@@ -73,6 +73,9 @@ ASR_TOKEN_VARIANTS = {
     "rhiannon": "rian", "matthias": "mateus",
     "kalista": "kallista", "nima": "neema",
     "sturrets": "stiritz",
+    # Single-digit normalization for symmetrical speech matching
+    "1": "one", "2": "two", "3": "three", "4": "four", "5": "five",
+    "6": "six", "7": "seven", "8": "eight", "9": "nine", "10": "ten",
 }
 
 # Whole-word audio renderings that cannot be handled safely by a per-word
@@ -128,6 +131,8 @@ def tokenize_clean(text):
     # Strip footnote reference citations attached to punctuation (e.g. Reserve.1, business.”2, Doddsville.3)
     normalized = re.sub(r'(?<=[.!?\"\'”’\)])\d+\b', '', str(text))
     normalized = normalized.lower().replace("’", "'").replace("…", " ").replace("%", " percent ")
+    # Replace em-dashes and en-dashes with spaces so attached words are split cleanly (e.g. word—Man -> word Man)
+    normalized = normalized.replace("—", " ").replace("–", " ").replace("--", " ")
     # Convert Roman numerals followed by period in headings/numbers into digits (e.g. 'I.' -> '1.', 'XXI.' -> '21.')
     normalized = re.sub(r'\b([ivxl]+)\.(?=\s|$)', lambda m: ROMAN_NUMERAL_MAP.get(m.group(1).lower(), m.group(1)) + '.', normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
@@ -1040,14 +1045,16 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         if not clean_s:
             continue
         # Single isolated footnote/bullet markers (e.g. "a.", "b.", "1.") must not falsely
-        # latch onto random common function words like "a" in the audio track.
+        # latch onto random distant function words in the audio track, but should match
+        # if the spoken audio in the immediate sequential window explicitly speaks the number/marker word.
         is_isolated_marker = bool(re.match(r"^[a-zA-Z0-9][\.\)]?$", s.get("text", "").strip()))
-        if is_isolated_marker and len(clean_s) <= 1:
-            inferred_non_narrated.add(s_idx)
-            continue
 
         previous = [matched_sentences[i]["word_end"] for i in range(s_idx) if i in matched_sentences]
         following = [matched_sentences[i]["word_start"] for i in range(s_idx + 1, len(sentences)) if i in matched_sentences]
+
+        if is_isolated_marker and len(clean_s) <= 1 and (not previous or not following):
+            inferred_non_narrated.add(s_idx)
+            continue
 
         w_left = previous[-1] if previous else None
         w_right = following[0] if following else len(acoustic_words) - 1

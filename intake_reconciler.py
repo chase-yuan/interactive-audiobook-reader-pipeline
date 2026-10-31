@@ -59,11 +59,11 @@ class _TextExtractor(HTMLParser):
         self._ignored = 0
 
     def handle_starttag(self, tag, attrs):
-        if tag.casefold() in {"script", "style", "svg"}:
+        if tag.casefold() in {"script", "style", "svg", "sup"}:
             self._ignored += 1
 
     def handle_endtag(self, tag):
-        if tag.casefold() in {"script", "style", "svg"} and self._ignored:
+        if tag.casefold() in {"script", "style", "svg", "sup"} and self._ignored:
             self._ignored -= 1
 
     def handle_data(self, data):

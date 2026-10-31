@@ -39,7 +39,7 @@ sys.path.insert(0, str(PIPELINE_DIR))
 from intake_reconciler import parse_epub, extract_book_metadata
 from extract_epub import extract_chapter_from_epub
 from agy_linguistic_worker import process_canonical_sentences, PROMPT_PATH, verify_analysis
-from validate_outputs import validate, validate_canonical_sentences
+from validate_outputs import validate, validate_canonical_sentences, auto_heal_canonical_quotes
 from release_token import issue_release_token
 from html_builder import build_master_reader
 from quality_gate import smoke_check_html, check_audio_physical_integrity
@@ -154,7 +154,8 @@ def discover_epub_chapters(
     all_chapters = parsed.get("chapters", [])
     cover_member = parsed.get("cover_member")
 
-    excludes = [p.lower() for p in (exclude_patterns or DEFAULT_EXCLUDE_PATTERNS) if p]
+    user_excludes = [p.lower() for p in (exclude_patterns or []) if p]
+    excludes = list(DEFAULT_EXCLUDE_PATTERNS) + [p for p in user_excludes if p not in DEFAULT_EXCLUDE_PATTERNS]
 
     selected = []
     for ch in all_chapters:
@@ -275,6 +276,16 @@ def validate_extracted_sentences_gate(
             continue
         total_sentences += len(data)
         issues = validate_canonical_sentences(data)
+        if issues:
+            # Shift-Left Auto-Healer: If the only ortho defect is unclosed quote at chapter end,
+            # auto-balance the discourse quote and re-verify before reporting hard gate errors.
+            unclosed_quotes = [iss for iss in issues if "Unclosed quote (unmatched quotation marks at chapter end)" in iss]
+            if len(unclosed_quotes) == len(issues):
+                data = auto_heal_canonical_quotes(data)
+                issues = validate_canonical_sentences(data)
+                if not issues:
+                    atomic_write_json(can_path, data)
+
         if issues:
             for iss in issues[:10]:
                 all_gate_failures.append(f"Track {num:02d} ({label}) {iss}")
