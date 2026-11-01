@@ -29,35 +29,59 @@ MAX_GROQ_PAYLOAD_BYTES = 24 * 1024 * 1024  # 24MB safe buffer for Groq 25MB mult
 ACOUSTIC_PROFILE_VERSION = 2
 
 
-def resolve_groq_api_key(api_key: Optional[str] = None) -> Optional[str]:
+def resolve_groq_api_keys(api_key: Optional[str] = None) -> List[str]:
     """
-    Resolve Groq API key with multi-tier priority:
-    1. Explicit function argument
-    2. Environment variable GROQ_API_KEY
-    3. User config file (~/.config/groq/key)
+    Resolve all available Groq API keys for pooling with standard precedence:
+    1. Explicit api_key argument
+    2. GROQ_API_KEY or GROQ_API_KEYS (comma-separated) environment variables
+    3. User config file (~/.config/groq/keys.json or ~/.config/groq/key)
     4. Gemini config directory (~/.gemini/groq_key)
+    Returns a deduplicated list of valid keys.
     """
+    keys = []
     if api_key and str(api_key).strip():
-        return str(api_key).strip()
+        keys.append(str(api_key).strip())
 
-    env_key = os.environ.get("GROQ_API_KEY")
-    if env_key and env_key.strip():
-        return env_key.strip()
+    env_single = os.environ.get("GROQ_API_KEY")
+    if env_single and env_single.strip() not in keys:
+        keys.append(env_single.strip())
 
-    candidates = [
-        Path.home() / ".config" / "groq" / "key",
-        Path.home() / ".gemini" / "groq_key",
-    ]
-    for cand in candidates:
+    env_multi = os.environ.get("GROQ_API_KEYS")
+    if env_multi:
+        for k in env_multi.split(","):
+            k = k.strip()
+            if k.startswith("gsk_") and k not in keys:
+                keys.append(k)
+
+    keys_json_file = Path.home() / ".config" / "groq" / "keys.json"
+    if keys_json_file.is_file():
+        try:
+            data = json.loads(keys_json_file.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                for k in data:
+                    if isinstance(k, str) and k.startswith("gsk_") and k not in keys:
+                        keys.append(k.strip())
+        except Exception:
+            pass
+
+    for cand in [Path.home() / ".config" / "groq" / "key", Path.home() / ".gemini" / "groq_key"]:
         if cand.is_file():
             try:
-                content = cand.read_text(encoding="utf-8").strip()
-                if content.startswith("gsk_"):
-                    return content
+                c = cand.read_text(encoding="utf-8").strip()
+                if c.startswith("gsk_") and c not in keys:
+                    keys.append(c)
             except Exception:
-                continue
+                pass
 
-    return None
+    return keys
+
+
+def resolve_groq_api_key(api_key: Optional[str] = None) -> Optional[str]:
+    """
+    Resolve primary Groq API key.
+    """
+    keys = resolve_groq_api_keys(api_key)
+    return keys[0] if keys else None
 
 
 def compress_audio_if_needed(
@@ -122,7 +146,7 @@ def run_groq_acoustic_extraction(
     audio_path: Union[str, Path],
     output_json_path: Union[str, Path],
     *,
-    api_key: Optional[str] = None,
+    api_key: Optional[Union[str, List[str]]] = None,
     model: str = DEFAULT_GROQ_MODEL,
     language: str = "en",
     prompt: Optional[str] = None,
@@ -133,12 +157,19 @@ def run_groq_acoustic_extraction(
     """
     Extract word-level acoustic timestamps using Groq Whisper Cloud API.
     Guarantees parity with the standard acoustic artifact schema.
+    Supports multi-key pool rotation on rate limits (429).
     """
-    resolved_key = resolve_groq_api_key(api_key)
-    if not resolved_key:
+    if isinstance(api_key, list):
+        keys_pool = [k for k in api_key if k and str(k).strip()]
+    elif isinstance(api_key, str) and api_key.strip():
+        keys_pool = [api_key.strip()]
+    else:
+        keys_pool = resolve_groq_api_keys()
+
+    if not keys_pool:
         raise ValueError(
             "Groq API key not found. Please provide api_key argument, set GROQ_API_KEY environment variable, "
-            "or save key to ~/.config/groq/key"
+            "or save key to ~/.config/groq/key or ~/.config/groq/keys.json"
         )
 
     src_path = Path(audio_path).resolve()
@@ -152,10 +183,6 @@ def run_groq_acoustic_extraction(
     upload_path, is_temp = compress_audio_if_needed(src_path)
     start_time = time.time()
 
-    headers = {
-        "Authorization": f"Bearer {resolved_key}",
-        "User-Agent": "curl/7.68.0",
-    }
     data = [
         ("model", model),
         ("response_format", "verbose_json"),
@@ -169,8 +196,17 @@ def run_groq_acoustic_extraction(
     http_client = session or requests
 
     last_error = None
+    current_key_idx = 0
+    consecutive_429 = 0
+    total_attempts = max(max_retries, len(keys_pool) * 2)
+
     try:
-        for attempt in range(1, max_retries + 1):
+        for attempt in range(1, total_attempts + 1):
+            active_key = keys_pool[current_key_idx % len(keys_pool)]
+            headers = {
+                "Authorization": f"Bearer {active_key}",
+                "User-Agent": "curl/7.68.0",
+            }
             try:
                 with open(upload_path, "rb") as audio_file:
                     files = {"file": (upload_path.name, audio_file, "audio/mpeg")}
@@ -186,10 +222,21 @@ def run_groq_acoustic_extraction(
                     raw_result = resp.json()
                     break
                 elif resp.status_code == 429:
-                    wait_sec = 2.0 * (2 ** (attempt - 1))
-                    print(f"⚠️ [GROQ 429] Rate limit hit on {src_path.name}. Retrying in {wait_sec:.1f}s (Attempt {attempt}/{max_retries})...", flush=True)
-                    time.sleep(wait_sec)
-                    continue
+                    consecutive_429 += 1
+                    if len(keys_pool) > 1 and consecutive_429 < len(keys_pool):
+                        current_key_idx = (current_key_idx + 1) % len(keys_pool)
+                        next_key_masked = keys_pool[current_key_idx % len(keys_pool)][:10] + "..."
+                        print(f"⚠️ [GROQ 429] Rate limit hit on {src_path.name}. Rotating to next key {next_key_masked} in pool...", flush=True)
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        consecutive_429 = 0
+                        wait_sec = 2.0 * (2 ** min(attempt - 1, 4))
+                        if len(keys_pool) > 1:
+                            current_key_idx = (current_key_idx + 1) % len(keys_pool)
+                        print(f"⚠️ [GROQ 429] Rate limit hit on {src_path.name}. Retrying in {wait_sec:.1f}s (Attempt {attempt}/{total_attempts})...", flush=True)
+                        time.sleep(wait_sec)
+                        continue
                 elif resp.status_code >= 500:
                     wait_sec = 2.0 * attempt
                     print(f"⚠️ [GROQ {resp.status_code}] Server error on {src_path.name}. Retrying in {wait_sec:.1f}s...", flush=True)
@@ -201,14 +248,14 @@ def run_groq_acoustic_extraction(
 
             except (requests.exceptions.RequestException, TimeoutError) as exc:
                 last_error = exc
-                if attempt < max_retries:
+                if attempt < total_attempts:
                     wait_sec = 2.0 * attempt
                     print(f"⚠️ [NETWORK ERROR] {exc} on {src_path.name}. Retrying in {wait_sec:.1f}s...", flush=True)
                     time.sleep(wait_sec)
                     continue
                 raise
         else:
-            raise RuntimeError(f"Failed to transcribe {src_path.name} after {max_retries} attempts. Last error: {last_error}")
+            raise RuntimeError(f"Failed to transcribe {src_path.name} after {total_attempts} attempts. Last error: {last_error}")
 
     finally:
         if is_temp and upload_path.exists():
@@ -295,25 +342,32 @@ def run_groq_acoustic_extraction(
 def transcribe_chapters_parallel_groq(
     chapter_tasks: List[Dict[str, Any]],
     *,
-    api_key: Optional[str] = None,
+    api_key: Optional[Union[str, List[str]]] = None,
     max_workers: int = 5,
     model: str = DEFAULT_GROQ_MODEL,
     language: str = "en",
 ) -> List[Dict[str, Any]]:
     """
     Concurrently transcribe multiple chapters using Groq Whisper.
+    Distributes chapters across the pool of available Groq API keys.
     Each task dict must have:
       - 'audio_path': Path to input audio
       - 'output_json_path': Path for output acoustic words JSON
       - 'label': Optional human readable label (e.g. 'Chapter 01')
     """
-    resolved_key = resolve_groq_api_key(api_key)
-    if not resolved_key:
+    if isinstance(api_key, list):
+        keys_pool = [k for k in api_key if k and str(k).strip()]
+    elif isinstance(api_key, str) and api_key.strip():
+        keys_pool = [api_key.strip()]
+    else:
+        keys_pool = resolve_groq_api_keys()
+
+    if not keys_pool:
         raise ValueError("Cannot run parallel Groq transcription: No API key available.")
 
     results = [None] * len(chapter_tasks)
     workers = max(1, min(max_workers, len(chapter_tasks)))
-    print(f"\n🚀 [CLOUD ACOUSTIC] Launching {workers} concurrent Groq Whisper workers for {len(chapter_tasks)} chapters...", flush=True)
+    print(f"\n🚀 [CLOUD ACOUSTIC] Launching {workers} concurrent Groq Whisper workers for {len(chapter_tasks)} chapters (Key pool size: {len(keys_pool)})...", flush=True)
 
     session = requests.Session()
 
@@ -321,11 +375,12 @@ def transcribe_chapters_parallel_groq(
         audio = task["audio_path"]
         out_json = task["output_json_path"]
         label = task.get("label", Path(audio).name)
-        print(f"  ▶️ [DISPATCH] {label} -> Groq ({model})...", flush=True)
+        worker_keys = keys_pool[idx % len(keys_pool):] + keys_pool[:idx % len(keys_pool)]
+        print(f"  ▶️ [DISPATCH] {label} -> Groq ({model}, key #{idx % len(keys_pool) + 1})...", flush=True)
         res = run_groq_acoustic_extraction(
             audio_path=audio,
             output_json_path=out_json,
-            api_key=resolved_key,
+            api_key=worker_keys,
             model=model,
             language=language,
             session=session,

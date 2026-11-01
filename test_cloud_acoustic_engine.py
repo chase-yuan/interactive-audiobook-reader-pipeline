@@ -137,6 +137,43 @@ class TestCloudAcousticEngine(unittest.TestCase):
                 mock_sleep.assert_called_once()
                 self.assertEqual(len(result["words"]), 1)
 
+    @patch("cloud_acoustic_engine.requests.post")
+    def test_groq_multi_key_rotation_on_429(self, mock_post):
+        # 1st call on key 1: 429, 2nd call on key 2: 200
+        resp_429 = MagicMock()
+        resp_429.status_code = 429
+
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.json.return_value = {
+            "segments": [
+                {
+                    "id": 0, "start": 0.0, "end": 1.0, "text": "Multi-key success",
+                    "words": [{"word": "Multi-key", "start": 0.0, "end": 0.5, "probability": 0.99}],
+                }
+            ]
+        }
+        mock_post.side_effect = [resp_429, resp_200]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            audio_path = Path(tmp_dir) / "test.mp3"
+            audio_path.write_bytes(b"dummy audio data")
+            out_json = Path(tmp_dir) / "test_acoustic_words.json"
+
+            with patch("cloud_acoustic_engine.time.sleep") as mock_sleep:
+                result = run_groq_acoustic_extraction(
+                    audio_path=audio_path,
+                    output_json_path=out_json,
+                    api_key=["gsk_key_1", "gsk_key_2"],
+                )
+                self.assertEqual(mock_post.call_count, 2)
+                # Verify that key was rotated in Authorization header
+                first_call_auth = mock_post.call_args_list[0][1]["headers"]["Authorization"]
+                second_call_auth = mock_post.call_args_list[1][1]["headers"]["Authorization"]
+                self.assertEqual(first_call_auth, "Bearer gsk_key_1")
+                self.assertEqual(second_call_auth, "Bearer gsk_key_2")
+                self.assertEqual(len(result["words"]), 1)
+
     @patch("cloud_acoustic_engine.run_groq_acoustic_extraction")
     def test_transcribe_chapters_parallel_groq(self, mock_single):
         mock_single.return_value = {"words": [{"word": "test"}], "acoustic_profile_version": 2}
