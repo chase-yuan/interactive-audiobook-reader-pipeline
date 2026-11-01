@@ -198,7 +198,7 @@ def run_groq_acoustic_extraction(
     last_error = None
     current_key_idx = 0
     consecutive_429 = 0
-    total_attempts = max(max_retries, len(keys_pool) * 2)
+    total_attempts = max(max_retries, len(keys_pool) * 8)
 
     try:
         for attempt in range(1, total_attempts + 1):
@@ -222,6 +222,28 @@ def run_groq_acoustic_extraction(
                     raw_result = resp.json()
                     break
                 elif resp.status_code == 429:
+                    retry_after_hdr = resp.headers.get("Retry-After")
+                    header_wait = None
+                    if retry_after_hdr:
+                        try:
+                            header_wait = float(retry_after_hdr)
+                        except ValueError:
+                            pass
+
+                    body_msg = ""
+                    try:
+                        err_json = resp.json()
+                        body_msg = err_json.get("error", {}).get("message", "")
+                    except Exception:
+                        pass
+
+                    if header_wait is None and body_msg:
+                        m = re.search(r"try again in (?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?", body_msg)
+                        if m:
+                            minutes = float(m.group(1)) if m.group(1) else 0.0
+                            seconds = float(m.group(2)) if m.group(2) else 0.0
+                            header_wait = minutes * 60 + seconds
+
                     consecutive_429 += 1
                     if len(keys_pool) > 1 and consecutive_429 < len(keys_pool):
                         current_key_idx = (current_key_idx + 1) % len(keys_pool)
@@ -231,10 +253,11 @@ def run_groq_acoustic_extraction(
                         continue
                     else:
                         consecutive_429 = 0
-                        wait_sec = 2.0 * (2 ** min(attempt - 1, 4))
+                        calc_wait = 2.0 * (2 ** min(attempt - 1, 4))
+                        wait_sec = max(calc_wait, header_wait if header_wait is not None else 0.0)
                         if len(keys_pool) > 1:
                             current_key_idx = (current_key_idx + 1) % len(keys_pool)
-                        print(f"⚠️ [GROQ 429] Rate limit hit on {src_path.name}. Retrying in {wait_sec:.1f}s (Attempt {attempt}/{total_attempts})...", flush=True)
+                        print(f"⚠️ [GROQ 429] All keys rate-limited on {src_path.name}. Waiting {wait_sec:.1f}s before retry (Attempt {attempt}/{total_attempts})...", flush=True)
                         time.sleep(wait_sec)
                         continue
                 elif resp.status_code >= 500:
