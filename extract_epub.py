@@ -3,6 +3,8 @@ Module: extract_epub.py
 Description: Unabridged 1-Sentence-1-Card EPUB Sentence Extractor with abbreviation and parenthetical protection.
 """
 
+from __future__ import annotations
+
 import zipfile
 import re
 import json
@@ -19,20 +21,20 @@ ABBR_TITLES = [
 def strip_footnote_residues(text: str) -> str:
     """Strip academic footnote / endnote citation residues from extracted text.
     
-    1. Curly-brace references e.g. {7}, {8}, {114}
+    1. Curly-brace references e.g. {7}, {8}, {114}, {x}, {viii}
     2. Attached bracket footnote citations e.g. 'word[1]', 'end.[23]'
     """
     if not text:
         return ""
-    # Strip curly-brace references: e.g. decade.{7} -> decade., Cunningham{290} -> Cunningham
-    text = re.sub(r'\{[0-9]+\}', '', text)
+    # Strip curly-brace references (both numeric citations {7} and Roman numeral footnotes {x}, {viii})
+    text = re.sub(r'\{[a-zA-Z0-9ivxlcdm]+\}', '', text)
     # Strip bracket footnote numbers attached to words or punctuation: e.g. word[1], 'sentence.[23]'
     text = re.sub(r'(?<=[a-zA-Z0-9\.,!?;:\'\"”’])\[[0-9]+\]', '', text)
     # Collapse multiple spaces
     text = re.sub(r'[ \t]+', ' ', text)
     return text.strip()
 
-def split_into_atomic_sentences(text):
+def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None = None):
     protected = strip_footnote_residues(text)
     # 1. Protect titles, honorifics, and months with trailing dot
     for title in ABBR_TITLES:
@@ -45,8 +47,13 @@ def split_into_atomic_sentences(text):
     # 3. Protect decimal numbers (e.g. 3.14, 10.5)
     protected = re.sub(r"(\d+)\.(\d+)", r"\1__NUM_DOT__\2", protected)
 
-    # 4. Protect common latin and reference shorthand
-    protected = re.sub(r"\b(e\.g|i\.e|vs|etc|al|fig|figs|pp|vol|vols|no|nos|ch|sec|ed|eds|ibid|cf|ca)\.", r"__\1_DOT__", protected, flags=re.IGNORECASE)
+    # 4. Protect common latin and reference shorthand ONLY when not followed by a sentence break
+    protected = re.sub(
+        r"\b(e\.g|i\.e|vs|etc|al|fig|figs|pp|vol|vols|no|nos|ch|sec|ed|eds|ibid|cf|ca)\.(?!\s+(?:[\"\'“‘\(]?[A-Z0-9]|__ABBR_))",
+        r"__\1_DOT__",
+        protected,
+        flags=re.IGNORECASE,
+    )
 
     # 5. Protect a.m./p.m. ONLY when inside a sentence (not followed by a capital letter / abbreviation placeholder)
     protected = re.sub(r"\b(a\.m|p\.m)\.(?!\s+(?:[\"\'“‘\(]?[A-Z0-9]|__ABBR_))", r"__\1_DOT__", protected, flags=re.IGNORECASE)
@@ -68,6 +75,16 @@ def split_into_atomic_sentences(text):
         if not part:
             continue
 
+        # Extract pending substantive footnotes attached to this sentence
+        pending_notes = []
+        def _note_extract(m):
+            fid = m.group(1)
+            if footnote_map and fid in footnote_map:
+                pending_notes.append(footnote_map[fid])
+            return ""
+
+        part = re.sub(r'__ATTACH_NOTE_(\w+)__', _note_extract, part)
+
         # Restore titles
         for title in ABBR_TITLES:
             safe_key = f"__ABBR_{title.replace('.', '_')}__"
@@ -76,7 +93,15 @@ def split_into_atomic_sentences(text):
         part = part.replace("__INITIAL_DOT__", ".")
         part = part.replace("__NUM_DOT__", ".")
         part = re.sub(r"__([a-zA-Z\._]+)_DOT__", lambda m: m.group(1).replace("_", ".") + ".", part)
-        sentences.append(part)
+        part = strip_footnote_residues(part)
+        part = re.sub(r"[ \t]+", " ", part).strip()
+        if part:
+            sentences.append(part)
+
+        for note in pending_notes:
+            for ns in split_into_atomic_sentences(note, footnote_map=None):
+                if ns:
+                    sentences.append(ns)
 
     return sentences
 
@@ -196,7 +221,11 @@ def is_title_text(txt: str) -> bool:
         return False
     if txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction ", "Book ", "Prologue", "Epilogue", "Table ", "Figure ")):
         return True
-    minor_words = {"a", "an", "the", "and", "but", "or", "for", "nor", "on", "in", "at", "to", "from", "by", "with", "of", "off", "out", "as", "into", "over", "up", "down"}
+    minor_words = {
+        "a", "an", "the", "and", "but", "or", "for", "nor", "on", "in", "at",
+        "to", "from", "by", "with", "of", "off", "out", "as", "into", "over",
+        "up", "down", "vs", "versus", "v"
+    }
     cap_count = 0
     significant_count = 0
     for w in words:
@@ -320,6 +349,33 @@ def clean_and_merge_elements(elements):
     return [m for m in merged if m["text"]]
 
 
+def discover_substantive_footnotes(zf: zipfile.ZipFile) -> dict[str, str]:
+    """Discover author substantive footnotes (e.g. marked with Roman numerals {i}, {x}, etc.) from the EPUB."""
+    footnote_map = {}
+    for name in zf.namelist():
+        if not name.endswith((".html", ".xhtml", ".htm")):
+            continue
+        try:
+            content = zf.read(name).decode("utf-8", errors="ignore")
+        except Exception:
+            continue
+        # Find block elements (blockquote, p, div, li)
+        bqs = re.findall(r'<(?:blockquote|p|div|li)[\s\S]*?</(?:blockquote|p|div|li)>', content, flags=re.IGNORECASE)
+        for b in bqs:
+            m_id = re.search(r'id=[\"\'](filepos\d+|fn\w+|note\w+)[\"\']', b, flags=re.IGNORECASE)
+            if not m_id:
+                continue
+            fid = m_id.group(1)
+            clean = re.sub(r'<[^>]+>', ' ', b)
+            m_roman = re.search(r'\{([ivxlcdm]+)\}', clean, flags=re.IGNORECASE)
+            if m_roman:
+                text = re.sub(r'\{[a-z0-9ivxlcdm]+\}', '', clean, flags=re.IGNORECASE)
+                text = re.sub(r'\s+', ' ', text).strip()
+                if text:
+                    footnote_map[fid] = text
+    return footnote_map
+
+
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     if isinstance(chapter_internal_path, (list, tuple)):
         href_specs = list(chapter_internal_path)
@@ -336,6 +392,7 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
     s_idx = 0
     global_elem_idx = 0
     with zipfile.ZipFile(epub_path, 'r') as z:
+        footnote_map = discover_substantive_footnotes(z)
         for spec in href_specs:
             if isinstance(spec, dict):
                 h = spec["href"]
@@ -357,6 +414,21 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                 stop_marker = None
 
             raw_html = z.read(h).decode('utf-8')
+
+            # Attach substantive footnote markers before stripping <sup> elements
+            def _attach_note_repl(match):
+                fid = match.group(1)
+                if fid in footnote_map:
+                    return f" __ATTACH_NOTE_{fid}__ "
+                return " "
+
+            raw_html = re.sub(
+                r'(?:<a\s+id=[\"\'][^\"\']*[\"\']></a>\s*)?<sup[^>]*>(?:<small[^>]*>)?<a[^>]+href=[\"\'][^\"\']*#(filepos\d+|fn\w+|note\w+)[\"\'][^>]*>[\s\S]*?</a>(?:</small>)?</sup>',
+                _attach_note_repl,
+                raw_html,
+                flags=re.IGNORECASE,
+            )
+
             parser = ChapterParser()
             parser.feed(raw_html)
             cleaned_elements = clean_and_merge_elements(parser.elements)
@@ -405,7 +477,7 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                     s_idx += 1
                     global_elem_idx += 1
                 else:
-                    sents = split_into_atomic_sentences(txt)
+                    sents = split_into_atomic_sentences(txt, footnote_map=footnote_map)
                     for s in sents:
                         canonical_items.append({
                             "id": f"s-{s_idx}",
