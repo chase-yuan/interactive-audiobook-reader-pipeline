@@ -921,7 +921,7 @@ function resolveAudioSource(section) {
   return window.location.protocol === 'file:' || !publicSource ? localSource : publicSource;
 }
 
-function reportLibraryProgress(chNum, pct) {
+function reportLibraryProgress(chNum, pct, extra) {
   try {
     const bookId = window.__BOOK_ID__ || (window.location.pathname.split('/').filter(Boolean).pop() || '').replace('.html', '');
     if (!bookId) return;
@@ -929,15 +929,47 @@ function reportLibraryProgress(chNum, pct) {
     const tagText = menuEl ? menuEl.querySelector('.chapter-item-tag')?.textContent?.trim() : null;
     const titleText = menuEl ? menuEl.querySelector('span:not(.chapter-item-tag)')?.textContent?.trim() : null;
     const label = tagText || (chNum === 0 ? 'Preface' : ('Chapter ' + chNum));
+    
+    // Calculate global reading progress across all chapters
+    const chapterItems = Array.from(document.querySelectorAll('.chapter-item'));
+    const totalChapters = Math.max(1, chapterItems.length);
+    let chIdx = chapterItems.findIndex(el => el.id === 'menu-ch-' + chNum);
+    if (chIdx === -1) chIdx = (typeof chNum === 'number') ? Math.max(0, chNum - 1) : 0;
+    
+    const chapterPct = Math.min(100, Math.max(0, Math.round(pct || 0)));
+    const globalPercent = Math.min(100, Math.max(0, Math.round(((chIdx + (chapterPct / 100)) / totalChapters) * 100)));
+    
+    let existing = {};
+    try {
+      existing = JSON.parse(localStorage.getItem('audible_progress_' + bookId) || '{}');
+    } catch(e) {}
+    
+    const completedSet = new Set(Array.isArray(existing.completedChapters) ? existing.completedChapters : []);
+    if (chapterPct >= 95) {
+      completedSet.add(chNum);
+    }
+    
+    const curTime = (extra && typeof extra.currentTime === 'number') ? extra.currentTime : (audio && !Number.isNaN(audio.currentTime) ? audio.currentTime : (existing.currentTime || 0));
+    const sentenceId = (extra && extra.sentenceId) ? extra.sentenceId : (currentPlayingId || existing.sentenceId || null);
+
     const progressData = {
       chapter: typeof chNum === 'number' ? chNum : 0,
       chapterLabel: label,
       chapterTitle: titleText || label,
-      percent: Math.min(100, Math.max(0, Math.round(pct || 0))),
+      percent: globalPercent,
+      chapterPercent: chapterPct,
+      currentTime: Math.round(curTime * 10) / 10,
+      sentenceId: sentenceId,
+      completedChapters: Array.from(completedSet),
       updatedAt: Date.now()
     };
+    
     localStorage.setItem('audible_progress_' + bookId, JSON.stringify(progressData));
-    localStorage.setItem('audible_last_active_book', bookId);
+    
+    // Only update last_active_book if document is visible and focused or on user action
+    if (!document.hidden && (typeof document.hasFocus === 'function' ? document.hasFocus() : true)) {
+      localStorage.setItem('audible_last_active_book', bookId);
+    }
   } catch (e) {}
 }
 
@@ -1114,8 +1146,10 @@ function preloadNextChapterAudio(nextCh) {
 }
 window.preloadNextChapterAudio = preloadNextChapterAudio;
 
-function switchChapter(chNum, autoPlay) {
+function switchChapter(chNum, autoPlay, restoreOpts) {
   setUserSeeking(false);
+  const isRestore = Boolean(restoreOpts && restoreOpts.isRestore);
+  
   // Architectural boundary: Client-side PasskeyGate is an interactive preview guard.
   // In production delivery, chapters are physically chunk-sliced and access-controlled by publisher.py.
   if (chNum > 2 && typeof window.PasskeyGate !== 'undefined' && !window.PasskeyGate.isUnlocked()) {
@@ -1138,7 +1172,7 @@ function switchChapter(chNum, autoPlay) {
   
   document.querySelectorAll('.chapter-item').forEach(el => el.classList.remove('active'));
   if (menuEl) menuEl.classList.add('active');
-  chapterDropdown.classList.remove('open');
+  if (chapterDropdown) chapterDropdown.classList.remove('open');
   hideMarginalia();
   
   document.querySelectorAll('.chapter-section').forEach(sec => {
@@ -1149,34 +1183,64 @@ function switchChapter(chNum, autoPlay) {
       currentActiveWordStart = -1;
       currentActiveWordEnd = -1;
       const audioSrc = resolveAudioSource(sec);
+      const targetTime = (restoreOpts && typeof restoreOpts.targetTime === 'number') ? restoreOpts.targetTime : 0;
+      
       if (audio.getAttribute('src') !== audioSrc) {
         const wasPlaying = autoPlay || !audio.paused;
         audio.src = audioSrc;
-        try { audio.currentTime = 0; } catch(e) {}
         currentPlayingId = null;
         clearActiveWord();
-        if (wasPlaying) {
+        if (targetTime > 0) {
+          const seekOnReady = () => {
+            try { audio.currentTime = targetTime; updateAudioPlayerUI(); } catch(e) {}
+            audio.removeEventListener('loadedmetadata', seekOnReady);
+          };
+          audio.addEventListener('loadedmetadata', seekOnReady);
+        } else {
           try { audio.currentTime = 0; } catch(e) {}
+        }
+        if (wasPlaying) {
           safePlay(audio);
           if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
         }
+      } else if (targetTime > 0 && Math.abs(audio.currentTime - targetTime) > 1.0) {
+        try { audio.currentTime = targetTime; updateAudioPlayerUI(); } catch(e) {}
       } else if (autoPlay && audio.paused) {
         try { audio.currentTime = 0; } catch(e) {}
         safePlay(audio);
         if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
       }
-      const firstSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
-      if (shadowState.phase !== 'idle' || (typeof focusModeActive !== 'undefined' && (focusModeActive || pocketModeActive))) {
-        if (firstSentence) {
-          shadowState.sentence = firstSentence;
+      
+      // Determine target sentence: restore specified ID -> saved last_sentence -> first matched -> first sentence
+      let targetSentence = null;
+      if (restoreOpts && restoreOpts.targetSentenceId) {
+        targetSentence = sec.querySelector('#' + restoreOpts.targetSentenceId);
+      }
+      if (!targetSentence && isRestore) {
+        const savedSentenceId = localStorage.getItem(STORAGE_PREFIX + 'last_sentence_c' + chNum);
+        if (savedSentenceId) {
+          targetSentence = sec.querySelector('#' + savedSentenceId);
+        }
+      }
+      if (!targetSentence) {
+        targetSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
+      }
+
+      if (targetSentence) {
+        sec.querySelectorAll('.sentence-unit.active').forEach(u => {
+          if (u !== targetSentence) u.classList.remove('active', 'card-collapsed');
+        });
+        targetSentence.classList.add('active', 'card-collapsed');
+        currentPlayingId = targetSentence.id;
+        
+        if (shadowState.phase !== 'idle' || (typeof focusModeActive !== 'undefined' && (focusModeActive || pocketModeActive))) {
+          shadowState.sentence = targetSentence;
           shadowState.completed = 0;
-          currentPlayingId = firstSentence.id;
-          firstSentence.classList.add('active', 'card-collapsed');
           if (focusModeActive || pocketModeActive) {
             shadowState.phase = 'playing';
           }
           if (autoPlay) {
-            const start = parseFloat(firstSentence.dataset.start);
+            const start = parseFloat(targetSentence.dataset.start);
             if (Number.isFinite(start)) {
               playSentenceAtTime(start);
             } else {
@@ -1187,25 +1251,55 @@ function switchChapter(chNum, autoPlay) {
           if (typeof updateFocusStatus === 'function') updateFocusStatus();
           if (typeof scheduleFocusDockHide === 'function') scheduleFocusDockHide();
           if (typeof updateFocusPlayBtn === 'function') updateFocusPlayBtn(autoPlay);
+        } else if (autoPlay) {
+          const start = parseFloat(targetSentence.dataset.start);
+          if (Number.isFinite(start)) {
+            playSentenceAtTime(start);
+          } else {
+            safePlay(audio);
+          }
         }
-      } else if (autoPlay && firstSentence) {
-        currentPlayingId = firstSentence.id;
-        firstSentence.classList.add('active', 'card-collapsed');
-        if (autoScrollEnabled && typeof firstSentence.scrollIntoView === 'function') {
-          firstSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        if (autoScrollEnabled && typeof targetSentence.scrollIntoView === 'function') {
+          setTimeout(() => {
+            targetSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, isRestore ? 120 : 30);
         }
       }
     }
   });
+  
   rebuildSentenceTimeIndex();
-  reportLibraryProgress(chNum, 0);
+  
+  if (!isRestore) {
+    reportLibraryProgress(chNum, 0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  
   updateMediaSessionMetadata();
   preloadNextChapterAudio(chNum + 1);
-  
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-switchChapter(activeChapterNum);
+// Reading Archive & Deep-Link Resolution on Cold Start
+const coldUrlParams = new URLSearchParams(window.location.search);
+const coldBookId = window.__BOOK_ID__ || (window.location.pathname.split('/').filter(Boolean).pop() || '').replace('.html', '');
+let coldSavedArchive = {};
+try {
+  coldSavedArchive = JSON.parse(localStorage.getItem('audible_progress_' + coldBookId) || '{}');
+} catch(e) {}
+
+let initialCh = parseInt(coldUrlParams.get('ch') || localStorage.getItem(STORAGE_PREFIX + 'active_ch') || (coldSavedArchive.chapter !== undefined ? coldSavedArchive.chapter : String(window.__INITIAL_CHAPTER__)), 10);
+if (isNaN(initialCh)) initialCh = parseInt(window.__INITIAL_CHAPTER__, 10) || 0;
+activeChapterNum = initialCh;
+
+const initialSentenceId = coldUrlParams.get('s') || coldSavedArchive.sentenceId || localStorage.getItem(STORAGE_PREFIX + 'last_sentence_c' + initialCh) || null;
+const initialTime = parseFloat(coldUrlParams.get('t') || (coldSavedArchive.currentTime !== undefined ? coldSavedArchive.currentTime : (localStorage.getItem(STORAGE_PREFIX + 'audio_time_c' + initialCh) || '0')));
+
+switchChapter(activeChapterNum, false, {
+  isRestore: true,
+  targetSentenceId: initialSentenceId,
+  targetTime: Number.isFinite(initialTime) ? initialTime : 0
+});
 preloadNextChapterAudio(activeChapterNum + 1);
 
 function toggleDrawer(event) {
@@ -1673,7 +1767,19 @@ function handleSentenceClick(event, id, start, end, hasMatch) {
 
   try {
     localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, id);
+    if (audio && !Number.isNaN(audio.currentTime)) {
+      localStorage.setItem(STORAGE_PREFIX + 'audio_time_c' + activeChapterNum, String(audio.currentTime));
+    }
   } catch(e) {}
+
+  const secUnits = activeSec ? activeSec.querySelectorAll('.sentence-unit') : [];
+  const sIndex = secUnits.length ? Array.from(secUnits).indexOf(el) : -1;
+  const sFraction = (secUnits.length && sIndex >= 0) ? ((sIndex / secUnits.length) * 100) : 0;
+  const audioPct = (audio && !audio.paused && audio.duration) ? ((audio.currentTime / audio.duration) * 100) : sFraction;
+  reportLibraryProgress(activeChapterNum, audioPct, {
+    sentenceId: id,
+    currentTime: Number.isFinite(start) ? start : (audio && !Number.isNaN(audio.currentTime) ? audio.currentTime : 0)
+  });
 
   const isMatched = (hasMatch === undefined || hasMatch === null) ? (Number.isFinite(start) && Number.isFinite(end) && end > start && start >= 0) : Boolean(hasMatch);
 
@@ -2650,9 +2756,44 @@ audio.addEventListener('timeupdate', () => {
   const now = Date.now();
   if (now - lastProgressReportTime >= 3000 && !Number.isNaN(audio.currentTime) && audio.duration) {
     lastProgressReportTime = now;
-    reportLibraryProgress(activeChapterNum, (audio.currentTime / audio.duration) * 100);
+    reportLibraryProgress(activeChapterNum, (audio.currentTime / audio.duration) * 100, {
+      currentTime: audio.currentTime,
+      sentenceId: currentPlayingId
+    });
   }
 });
+
+// Silent / Text-Only Reading Scroll Observer
+let scrollSaveTimeout = null;
+window.addEventListener('scroll', () => {
+  if (audio && !audio.paused) return;
+  if (scrollSaveTimeout) clearTimeout(scrollSaveTimeout);
+  scrollSaveTimeout = setTimeout(() => {
+    if (!currentActiveSection) return;
+    const units = currentActiveSection.querySelectorAll('.sentence-unit');
+    if (!units.length) return;
+    const midY = window.innerHeight / 2;
+    let closestUnit = null;
+    let closestDist = Infinity;
+    for (let i = 0; i < units.length; i++) {
+      const rect = units[i].getBoundingClientRect();
+      const dist = Math.abs(rect.top + rect.height / 2 - midY);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestUnit = units[i];
+      }
+    }
+    if (closestUnit && closestUnit.id !== currentPlayingId) {
+      currentPlayingId = closestUnit.id;
+      try {
+        localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, closestUnit.id);
+      } catch(e) {}
+      const sIdx = Array.from(units).indexOf(closestUnit);
+      const textPct = (sIdx / units.length) * 100;
+      reportLibraryProgress(activeChapterNum, textPct, { sentenceId: closestUnit.id });
+    }
+  }, 400);
+}, { passive: true });
 audio.addEventListener('loadedmetadata', () => {
   if (audio && currentPlaybackSpeed) audio.playbackRate = currentPlaybackSpeed;
   updateAudioPlayerUI();
@@ -2710,6 +2851,10 @@ audio.addEventListener('error', (err) => {
   }
 });
 audio.addEventListener('ended', () => {
+  reportLibraryProgress(activeChapterNum, 100, {
+    currentTime: audio.duration || 0,
+    sentenceId: currentPlayingId
+  });
   if (focusModeActive && shadowState.phase === 'idle') {
     showFocusDock();
   }
@@ -2803,7 +2948,12 @@ function syncPlayback() {
           if (activeUnit.id !== currentPlayingId) {
             currentPlayingId = activeUnit.id;
             clearActiveWord();
-            try { localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id); } catch(e) {}
+            try {
+              localStorage.setItem(STORAGE_PREFIX + 'last_sentence_c' + activeChapterNum, activeUnit.id);
+              if (!Number.isNaN(curTime)) {
+                localStorage.setItem(STORAGE_PREFIX + 'audio_time_c' + activeChapterNum, String(curTime));
+              }
+            } catch(e) {}
             
             currentActiveSection.querySelectorAll('.sentence-unit.active').forEach(u => {
               if (u !== activeUnit) u.classList.remove('active', 'card-collapsed');
