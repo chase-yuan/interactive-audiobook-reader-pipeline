@@ -800,11 +800,20 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 if start is not None and previous_end > 0:
                     inter_gap = start - previous_end
                     if inter_gap > max_inter_gap:
-                        errors.append(
-                            f"{label} {item_id}: excessive acoustic void of {inter_gap:.1f}s detected "
-                            f"(previous sentence ended at {previous_end:.1f}s, current starts at {start:.1f}s); "
-                            f"exceeds {max_inter_gap:.0f}s release ceiling"
+                        known_skips = []
+                        if aligned_data:
+                            known_skips.extend(aligned_data[0].get("retake_skip_ranges") or [])
+                        known_skips.extend(ch_expansion.get("retake_skip_ranges") or [])
+                        is_skip_covered = any(
+                            float(r.get("start", 0)) <= start + 2.0 and float(r.get("end", 0)) >= previous_end - 2.0
+                            for r in known_skips
                         )
+                        if not is_skip_covered:
+                            errors.append(
+                                f"{label} {item_id}: excessive acoustic void of {inter_gap:.1f}s detected "
+                                f"(previous sentence ended at {previous_end:.1f}s, current starts at {start:.1f}s); "
+                                f"exceeds {max_inter_gap:.0f}s release ceiling"
+                            )
                 if start is not None:
                     previous_start = start
                 if end is not None:
@@ -868,6 +877,23 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                             f"{min_bilateral_ratio:.0%} threshold (audio has {total_ac_words} words, "
                             f"text only accounts for {total_aligned_words} words)"
                         )
+
+                    # Local speech density / island audit
+                    from dynamic_aligner import detect_unclaimed_acoustic_segments
+                    unclaimed = detect_unclaimed_acoustic_segments(ac_data.get("words", []), aligned_data, min_words=15)
+                    known_skips = list(aligned_data[0].get("retake_skip_ranges") or []) if aligned_data else []
+                    known_skips.extend(ch_expansion.get("retake_skip_ranges") or [])
+                    for u in unclaimed:
+                        if last_end > 0.0 and u["start_time"] >= last_end - 1.5:
+                            continue
+                        is_skip = any(
+                            float(r.get("start", 0)) <= u["start_time"] + 2.0 and float(r.get("end", 0)) >= u["end_time"] - 2.0
+                            for r in known_skips
+                        )
+                        if not is_skip:
+                            diagnostics.append(
+                                f"{label}: unassigned speech island ({u['word_count']} words, {u['duration']}s from {u['start_time']}s to {u['end_time']}s): \"{u['preview']}\""
+                            )
             except (json.JSONDecodeError, KeyError, OSError) as exc:
                 errors.append(f"{label}: failed to parse acoustic words from {acoustic_path.name}: {exc}")
         non_narrated_records = sum(

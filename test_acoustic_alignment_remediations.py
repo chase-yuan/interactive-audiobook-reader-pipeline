@@ -289,6 +289,80 @@ class AcousticAlignmentRemediationTests(unittest.TestCase):
             self.assertTrue(results[1]["has_audio_match"])
             self.assertAlmostEqual(results[1]["start"], 13.0, delta=1.5)
 
+    def test_studio_retake_reconciliation_shifts_to_valid_take(self):
+        """Studio Retake Invariant: When audio contains an unedited false start followed by a retake,
+        sentences must shift to the final take and generate a skip range for the abandoned take."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ac_path = root / "acoustic.json"
+            an_path = root / "analysis.json"
+            out_path = root / "aligned.json"
+
+            # Speaker records S0, then flubs S1 (Take 1 at 10.0s), then re-records S1 (Take 2 at 25.0s),
+            # then smoothly continues into S2 at 35.0s.
+            take1_words = [
+                {"word": "Let", "start": 10.0, "end": 10.3},
+                {"word": "us", "start": 10.3, "end": 10.5},
+                {"word": "consider", "start": 10.5, "end": 11.0},
+                {"word": "the", "start": 11.0, "end": 11.2},
+                {"word": "null", "start": 11.2, "end": 11.6},
+                {"word": "hypothesis", "start": 11.6, "end": 12.5},
+                {"word": "deeply", "start": 12.5, "end": 13.0},
+                {"word": "today", "start": 13.0, "end": 13.5},
+                {"word": "and", "start": 13.5, "end": 13.8},
+                {"word": "tomorrow", "start": 13.8, "end": 14.5},
+                {"word": "in", "start": 14.5, "end": 14.8},
+                {"word": "detail", "start": 14.8, "end": 15.5},
+            ]
+            take2_words = [
+                {"word": "Let", "start": 25.0, "end": 25.3},
+                {"word": "us", "start": 25.3, "end": 25.5},
+                {"word": "consider", "start": 25.5, "end": 26.0},
+                {"word": "the", "start": 26.0, "end": 26.2},
+                {"word": "null", "start": 26.2, "end": 26.6},
+                {"word": "hypothesis", "start": 26.6, "end": 27.5},
+                {"word": "deeply", "start": 27.5, "end": 28.0},
+                {"word": "today", "start": 28.0, "end": 28.5},
+                {"word": "and", "start": 28.5, "end": 28.8},
+                {"word": "tomorrow", "start": 28.8, "end": 29.5},
+                {"word": "in", "start": 29.5, "end": 29.8},
+                {"word": "detail", "start": 29.8, "end": 30.5},
+            ]
+            s2_words = [
+                {"word": "Only", "start": 31.0, "end": 31.4},
+                {"word": "now", "start": 31.4, "end": 31.8},
+                {"word": "we", "start": 31.8, "end": 32.1},
+                {"word": "proceed", "start": 32.1, "end": 32.8},
+                {"word": "forward", "start": 32.8, "end": 33.5},
+            ]
+            ac_words = [
+                {"word": "Beginning", "start": 0.0, "end": 0.8},
+                {"word": "intro", "start": 0.8, "end": 1.5},
+            ] + take1_words + take2_words + s2_words
+
+            ac_path.write_text(json.dumps({"words": ac_words}), encoding="utf-8")
+            an_path.write_text(json.dumps([
+                {"id": "s-0", "text": "Beginning intro."},
+                {"id": "s-1", "text": "Let us consider the null hypothesis deeply today and tomorrow in detail."},
+                {"id": "s-2", "text": "Only now we proceed forward."},
+            ]), encoding="utf-8")
+
+            results = align_sentences_with_audio(str(ac_path), str(an_path), str(out_path))
+            self.assertEqual(len(results), 3)
+            # S1 must be shifted to Take 2 (starting at 25.0s, ending around 30.5s)
+            self.assertAlmostEqual(results[1]["start"], 25.0, delta=0.5)
+            self.assertAlmostEqual(results[1]["end"], 30.5, delta=0.5)
+            # S2 starts smoothly at 31.0s (gap < 1.0s, not 16s!)
+            self.assertAlmostEqual(results[2]["start"], 31.0, delta=0.5)
+            # Retake skip range must be recorded for Take 1 (10.0s to 25.0s)
+            skips = results[0].get("retake_skip_ranges")
+            self.assertTrue(skips, "Expected retake_skip_ranges in alignment results")
+            self.assertAlmostEqual(skips[0]["start"], 10.0, delta=0.5)
+            self.assertAlmostEqual(skips[0]["end"], 25.0, delta=0.5)
+
+            manifest = root / "aligned_retake_manifest.json"
+            self.assertTrue(manifest.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

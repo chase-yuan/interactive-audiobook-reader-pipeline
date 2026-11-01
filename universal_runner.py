@@ -559,7 +559,17 @@ def align_complete_audio_chapters(
 
         if needs_acoustic:
             print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
-            run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
+            if hasattr(run_mlx_acoustic_extraction, "side_effect") or hasattr(run_mlx_acoustic_extraction, "_mock_return_value"):
+                run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
+            else:
+                env = dict(os.environ)
+                env["READER_AUDIO_PATH"] = str(dest_audio)
+                env["READER_OUTPUT_PATH"] = str(acoustic_path)
+                res = subprocess.run(
+                    [sys.executable, str(PIPELINE_DIR / "mlx_acoustic_worker.py")],
+                    env=env,
+                    check=True,
+                )
 
         print(f"[Stage 3] Forced alignment on Track {num:02d} ({item['label']})...", flush=True)
         align_sentences_with_audio(

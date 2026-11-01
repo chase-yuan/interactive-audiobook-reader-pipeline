@@ -189,10 +189,28 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
             title_html = html.escape(clean_title.upper())
         else:
             title_html = f"{safe_heading_label}<br>{html.escape(sub_title)}"
+
+        ch_skips = list(ch.get("retake_skip_ranges") or [])
+        if not ch_skips:
+            for s in csents:
+                if s.get("retake_skip_ranges"):
+                    for r in s["retake_skip_ranges"]:
+                        if r not in ch_skips:
+                            ch_skips.append(r)
+        if not ch_skips and ch.get("aligned_json"):
+            retake_cand = str(ch["aligned_json"]).replace("_aligned_sentences.json", "_retake_manifest.json")
+            if os.path.exists(retake_cand):
+                try:
+                    with open(retake_cand, "r", encoding="utf-8") as rf:
+                        ch_skips = json.load(rf)
+                except Exception:
+                    pass
+
+        skips_attr = f' data-skip-ranges="{html.escape(json.dumps(ch_skips))}"' if ch_skips else ""
         
         html_head += f"""
   <!-- CHAPTER {cnum} -->
-  <section class="chapter-section{active_cls}" id="chapter-{cnum}" data-audio="{html.escape(caudio)}" data-public-audio="{html.escape(cpublic_audio)}" data-ch="{cnum}">
+  <section class="chapter-section{active_cls}" id="chapter-{cnum}" data-audio="{html.escape(caudio)}" data-public-audio="{html.escape(cpublic_audio)}" data-ch="{cnum}"{skips_attr}>
     <div class="chapter-layout">
       <div class="prose-column">
         <header class="book-header">
@@ -923,6 +941,8 @@ function reportLibraryProgress(chNum, pct) {
   } catch (e) {}
 }
 
+let currentActiveSkipRanges = [];
+
 function rebuildSentenceTimeIndex() {
   currentActiveSection = document.querySelector('.chapter-section.active');
   sentenceTimeIndex = currentActiveSection ? Array.from(currentActiveSection.querySelectorAll('.sentence-unit')).map(el => ({
@@ -930,6 +950,13 @@ function rebuildSentenceTimeIndex() {
     end: parseFloat(el.dataset.end || '0'),
     el: el
   })).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start && item.el.dataset.matched !== '0').sort((a, b) => a.start - b.start) : [];
+
+  currentActiveSkipRanges = [];
+  if (currentActiveSection && currentActiveSection.dataset.skipRanges) {
+    try {
+      currentActiveSkipRanges = JSON.parse(currentActiveSection.dataset.skipRanges);
+    } catch(e) {}
+  }
 }
 
 function findSentenceAt(time) {
@@ -2756,6 +2783,17 @@ function syncPlayback() {
       const curTime = audio.currentTime;
       if (!currentActiveSection || !currentActiveSection.classList.contains('active')) {
         currentActiveSection = document.querySelector('.chapter-section.active');
+        rebuildSentenceTimeIndex();
+      }
+
+      if (currentActiveSkipRanges && currentActiveSkipRanges.length > 0) {
+        for (let i = 0; i < currentActiveSkipRanges.length; i++) {
+          const r = currentActiveSkipRanges[i];
+          if (curTime >= r.start && curTime < r.end) {
+            audio.currentTime = r.end;
+            return;
+          }
+        }
       }
       
       if (currentActiveSection) {

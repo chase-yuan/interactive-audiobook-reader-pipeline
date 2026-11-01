@@ -326,6 +326,7 @@ def detect_unclaimed_acoustic_segments(acoustic_words, aligned_results, min_word
     if not acoustic_words:
         return []
     claimed_words = set()
+    matched_ranges = []
     for item in aligned_results:
         if not item.get("has_audio_match"):
             continue
@@ -336,6 +337,23 @@ def detect_unclaimed_acoustic_segments(acoustic_words, aligned_results, min_word
         for span in item.get("word_spans", []):
             if "word_index" in span:
                 claimed_words.add(span["word_index"])
+        st = item.get("raw_start", item.get("start"))
+        et = item.get("raw_end", item.get("end"))
+        if st is not None and et is not None and et > st:
+            matched_ranges.append((float(st), float(et)))
+
+    if matched_ranges:
+        matched_ranges.sort()
+        for idx, w in enumerate(acoustic_words):
+            if idx in claimed_words:
+                continue
+            w_mid = (w.get("start", 0.0) + w.get("end", 0.0)) / 2.0
+            for r_s, r_e in matched_ranges:
+                if r_s - 0.20 <= w_mid <= r_e + 0.20:
+                    claimed_words.add(idx)
+                    break
+                elif r_s - 0.20 > w_mid:
+                    break
 
     unclaimed_segments = []
     curr_segment = []
@@ -372,6 +390,131 @@ def detect_unclaimed_acoustic_segments(acoustic_words, aligned_results, min_word
             "preview": preview,
         })
     return unclaimed_segments
+
+
+def reconcile_studio_retakes(acoustic_words, aligned_results, sentences, ac_tokens, ac_map, ac_map_end):
+    """Detect unedited studio retakes where narrator repeated a passage and publisher left the false start.
+
+    Re-aligns the repeated sentences to the final (valid) take that smoothly connects with downstream sentences,
+    and returns a list of skip ranges for the abandoned false start."""
+    unclaimed = detect_unclaimed_acoustic_segments(acoustic_words, aligned_results, min_words=12)
+    if not unclaimed:
+        return []
+
+    reconciled_skips = []
+
+    for seg in unclaimed:
+        st_idx = seg["start_index"]
+        et_idx = seg["end_index"]
+        seg_words = [acoustic_words[i].get("word", "") for i in range(st_idx, et_idx + 1)]
+        seg_clean = tokenize_clean(" ".join(seg_words))
+        if len(seg_clean) < 8:
+            continue
+
+        seg_start = seg["start_time"]
+        seg_end = seg["end_time"]
+
+        prior_indices = [
+            i for i, s in enumerate(aligned_results)
+            if s.get("has_audio_match") and s.get("end") is not None and s.get("end") <= seg_start + 1.0
+            and s.get("start") is not None and s.get("start") >= seg_start - 120.0
+        ]
+        if not prior_indices:
+            continue
+
+        best_match = None
+        best_ratio = 0.0
+
+        last_k = prior_indices[-1]
+        for start_k in prior_indices:
+            if start_k > last_k:
+                break
+            cand_sentences = aligned_results[start_k : last_k + 1]
+            cand_text = " ".join(s.get("text", "") for s in cand_sentences)
+            cand_clean = tokenize_clean(cand_text)
+
+            if abs(len(cand_clean) - len(seg_clean)) > max(len(cand_clean), len(seg_clean)) * 0.35:
+                continue
+
+            matcher = difflib.SequenceMatcher(None, cand_clean, seg_clean)
+            ratio = matcher.ratio()
+            if ratio >= 0.85 and ratio > best_ratio:
+                best_ratio = ratio
+                best_match = (start_k, last_k, cand_sentences)
+
+        if best_match and best_ratio >= 0.85:
+            start_k, last_k, cand_sentences = best_match
+            old_start = cand_sentences[0]["start"]
+            old_end = cand_sentences[-1]["end"]
+
+            downstream_next = None
+            for fi in range(last_k + 1, len(aligned_results)):
+                if aligned_results[fi].get("has_audio_match") and aligned_results[fi].get("start") is not None:
+                    downstream_next = aligned_results[fi]
+                    break
+
+            if downstream_next is not None:
+                gap_from_take1 = downstream_next["start"] - old_end
+                gap_from_take2 = downstream_next["start"] - seg_end
+                if gap_from_take2 > gap_from_take1 and gap_from_take2 > 5.0:
+                    continue
+
+            print(f"[Studio Retake Reconciled] Detected narrator retake of sentences {start_k}..{last_k} "
+                  f"(ratio={best_ratio:.3f}). Shifting from Take 1 [{old_start:.2f}s - {old_end:.2f}s] "
+                  f"to Take 2 [{seg_start:.2f}s - {seg_end:.2f}s].")
+
+            tok_start_cand = next((i for i, w in enumerate(ac_map) if w >= st_idx), 0)
+            tok_end_cand = next((i for i, w in enumerate(ac_map) if w > et_idx), len(ac_tokens))
+            sub_ac_tokens = ac_tokens[tok_start_cand:tok_end_cand]
+
+            curr_sub_idx = 0
+            for idx in range(start_k, last_k + 1):
+                s = aligned_results[idx]
+                clean_s, source_word_indexes = _source_tokens_with_words(s.get("text", ""))
+                sub_win = sub_ac_tokens[curr_sub_idx:]
+                matcher = difflib.SequenceMatcher(None, clean_s, sub_win, autojunk=False)
+                blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
+                if blocks:
+                    best_b = max(blocks, key=lambda b: b.size)
+                    abs_token_start = tok_start_cand + curr_sub_idx + best_b.b
+                    abs_token_end = abs_token_start + best_b.size - 1
+                    w_s = ac_map[abs_token_start]
+                    w_e = ac_map_end[abs_token_end]
+                    new_st = acoustic_words[w_s]["start"]
+                    new_et = acoustic_words[w_e]["end"]
+
+                    source_to_audio = {offset: (ac_map[abs_token_start + offset], ac_map_end[abs_token_start + offset]) for offset in range(best_b.size)}
+                    raw_words = s.get("text", "").split()
+                    new_spans = _build_word_spans(raw_words, source_word_indexes, source_to_audio, acoustic_words, new_st, new_et)
+                    if new_spans:
+                        new_st = min(new_st, new_spans[0]["start"])
+                        new_et = max(new_et, new_spans[-1]["end"])
+                    new_st = round(new_st, 2)
+                    new_et = round(max(new_st + 0.3, new_et), 2)
+
+                    s["start"] = new_st
+                    s["end"] = new_et
+                    s["raw_start"] = new_st
+                    s["raw_end"] = new_et
+                    s["audio_start"] = new_st
+                    s["audio_end"] = new_et
+                    s["word_start"] = w_s
+                    s["word_end"] = w_e
+                    s["audio_order"] = w_s
+                    s["word_spans"] = new_spans
+                    s["alignment_method"] = "studio_retake_reconciled"
+                    s["alignment_status"] = "validated"
+                    s["alignment_reason"] = "studio_retake_reconciled"
+                    curr_sub_idx += best_b.b + best_b.size
+
+            reconciled_skips.append({
+                "start": round(old_start, 2),
+                "end": round(seg_start, 2),
+                "reason": "abandoned_studio_false_start",
+                "reconciled_sentence_ids": [s["id"] for s in cand_sentences]
+            })
+
+    return reconciled_skips
 
 
 NUM_WORD_TO_DIGIT = {
@@ -1345,6 +1488,8 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "audio_start": s_start,
                 "audio_end": s_end,
                 "audio_order": ms.get("audio_order", ms["word_start"]),
+                "word_start": ms.get("word_start"),
+                "word_end": ms.get("word_end"),
                 "has_audio_match": True,
                 "word_spans": ms_spans,
                 "matched_token_count": ms["matched_token_count"],
@@ -1452,6 +1597,19 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                     cur["word_spans"] = []
                     cur["alignment_status"] = "not-applicable"
                     cur["alignment_reason"] = "non_narrated_text"
+
+    # Reconcile unedited studio retakes and record skip ranges
+    retake_skips = reconcile_studio_retakes(acoustic_words, aligned_results, sentences, ac_tokens, ac_map, ac_map_end)
+    if retake_skips and aligned_results:
+        aligned_results[0]["retake_skip_ranges"] = retake_skips
+        if str(aligned_out_path).endswith("_aligned_sentences.json"):
+            manifest_path = str(aligned_out_path).replace("_aligned_sentences.json", "_retake_manifest.json")
+        else:
+            manifest_path = str(aligned_out_path).replace(".json", "_retake_manifest.json")
+        try:
+            atomic_write_json(manifest_path, retake_skips)
+        except Exception:
+            pass
 
     if audio_path and os.path.exists(audio_path):
         calibrate_aligned_sentences_pcm(aligned_results, audio_path)
