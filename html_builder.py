@@ -1260,10 +1260,16 @@ function switchChapter(chNum, autoPlay, restoreOpts) {
           }
         }
         
-        if (autoScrollEnabled && typeof targetSentence.scrollIntoView === 'function') {
-          setTimeout(() => {
-            targetSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, isRestore ? 120 : 30);
+        if ((isRestore || autoScrollEnabled) && typeof targetSentence.scrollIntoView === 'function') {
+          const doScroll = () => {
+            try { targetSentence.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(e) {}
+          };
+          requestAnimationFrame(() => {
+            doScroll();
+            if (isRestore) {
+              setTimeout(doScroll, 160);
+            }
+          });
         }
       }
     }
@@ -1281,6 +1287,9 @@ function switchChapter(chNum, autoPlay, restoreOpts) {
 }
 
 // Reading Archive & Deep-Link Resolution on Cold Start
+if ('scrollRestoration' in history) {
+  try { history.scrollRestoration = 'manual'; } catch (e) {}
+}
 const coldUrlParams = new URLSearchParams(window.location.search);
 const coldBookId = window.__BOOK_ID__ || (window.location.pathname.split('/').filter(Boolean).pop() || '').replace('.html', '');
 let coldSavedArchive = {};
