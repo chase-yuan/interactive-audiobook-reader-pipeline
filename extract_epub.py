@@ -16,8 +16,24 @@ ABBR_TITLES = [
     "Jan", "Feb", "Mar", "Apr", "Aug", "Sept", "Oct", "Nov", "Dec"
 ]
 
+def strip_footnote_residues(text: str) -> str:
+    """Strip academic footnote / endnote citation residues from extracted text.
+    
+    1. Curly-brace references e.g. {7}, {8}, {114}
+    2. Attached bracket footnote citations e.g. 'word[1]', 'end.[23]'
+    """
+    if not text:
+        return ""
+    # Strip curly-brace references: e.g. decade.{7} -> decade., Cunningham{290} -> Cunningham
+    text = re.sub(r'\{[0-9]+\}', '', text)
+    # Strip bracket footnote numbers attached to words or punctuation: e.g. word[1], 'sentence.[23]'
+    text = re.sub(r'(?<=[a-zA-Z0-9\.,!?;:\'\"”’])\[[0-9]+\]', '', text)
+    # Collapse multiple spaces
+    text = re.sub(r'[ \t]+', ' ', text)
+    return text.strip()
+
 def split_into_atomic_sentences(text):
-    protected = text
+    protected = strip_footnote_residues(text)
     # 1. Protect titles, honorifics, and months with trailing dot
     for title in ABBR_TITLES:
         safe_key = f"__ABBR_{title.replace('.', '_')}__"
@@ -83,13 +99,21 @@ class ChapterParser(HTMLParser):
         if tag in ("table", "thead", "tbody", "tfoot"):
             self.table_depth += 1
 
+        is_footnote_or_noise = (
+            tag in ("sup", "sub")
+            or any(w in cls for w in ["caption", "photocredit", "photo-credit", "illustr", "pagebreak", "footnote", "noteref", "endnote", "fn-ref", "fn_ref"])
+            or elem_id.startswith("page_")
+            or elem_id.startswith("page-")
+            or elem_id.startswith("fn")
+            or elem_id.startswith("footnote")
+            or epub_type in ("pagebreak", "noteref", "footnote", "endnote", "biblioentry")
+            or any(w in epub_type for w in ["footnote", "noteref", "endnote"])
+        )
+
         if (
             self.ignored_tags
             or tag in ["figure", "figcaption"]
-            or any(w in cls for w in ["caption", "photocredit", "photo-credit", "illustr", "pagebreak"])
-            or elem_id.startswith("page_")
-            or elem_id.startswith("page-")
-            or epub_type == "pagebreak"
+            or is_footnote_or_noise
         ):
             self.ignored_tags.append(tag)
             return
@@ -291,7 +315,9 @@ def clean_and_merge_elements(elements):
             curr = next_el
 
     merged.append(curr)
-    return merged
+    for m in merged:
+        m["text"] = strip_footnote_residues(m["text"])
+    return [m for m in merged if m["text"]]
 
 
 def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
