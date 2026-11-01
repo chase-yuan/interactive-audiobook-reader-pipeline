@@ -18,6 +18,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+import html
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -413,13 +414,22 @@ def extract_book_metadata(target: Path | str) -> Dict[str, str]:
         book_title = folder_name.replace("_", " ").strip()
     if not book_author:
         book_author = "Author"
+
+    # Infer subtitle from directory/filename if empty or generic
+    if not book_subtitle and target_path.is_dir():
+        f_name = target_path.name
+        if f_name.lower().startswith(book_title.lower()):
+            rem = f_name[len(book_title):].strip(" -:–—")
+            if rem and len(rem) > 2 and "bilingual" not in rem.lower():
+                book_subtitle = rem
+
     if not book_subtitle:
         book_subtitle = "Bilingual Synchronized Reader"
 
     return {
-        "title": book_title,
-        "subtitle": book_subtitle,
-        "author": book_author,
+        "title": html.unescape(book_title).strip(),
+        "subtitle": html.unescape(book_subtitle).strip(),
+        "author": html.unescape(book_author).strip(),
     }
 
 

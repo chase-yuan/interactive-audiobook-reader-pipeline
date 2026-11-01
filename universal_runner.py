@@ -205,12 +205,20 @@ def setup_book_directory(
         except Exception as exc:
             print(f"[Warning] Failed to extract cover '{cover_member}': {exc}", file=sys.stderr)
 
-    # Write audio_content_profile.json
+    # Write audio_content_profile.json (preserving existing author_audio_expansions if present)
     profile_path = book_dir / "audio_content_profile.json"
-    atomic_write_json(profile_path, {
+    profile_payload = {
         "schema_version": 1,
         "audio_content_mode": mode
-    })
+    }
+    if profile_path.exists():
+        try:
+            existing_prof = json.loads(profile_path.read_text(encoding="utf-8"))
+            if isinstance(existing_prof, dict) and "author_audio_expansions" in existing_prof:
+                profile_payload["author_audio_expansions"] = existing_prof["author_audio_expansions"]
+        except Exception:
+            pass
+    atomic_write_json(profile_path, profile_payload)
 
     # Write chapter_metadata.json if not present
     metadata_path = book_dir / "chapter_metadata.json"
@@ -782,7 +790,12 @@ def build_reader_pipeline(
     elif metadata_file.is_file():
         try:
             m_data = json.loads(metadata_file.read_text(encoding="utf-8"))
-            existing_rows = m_data.get("chapters", [])
+            if isinstance(m_data, dict):
+                existing_rows = m_data.get("chapters", [])
+            elif isinstance(m_data, list):
+                existing_rows = m_data
+            else:
+                existing_rows = []
             href_by_title = {ch.get("title", "").strip().lower(): ch["href"] for ch in raw_chapters}
             href_by_idx = {i: ch["href"] for i, ch in enumerate(raw_chapters)}
             chapters_meta = []
