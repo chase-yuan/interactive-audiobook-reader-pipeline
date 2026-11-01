@@ -247,7 +247,6 @@ body {
 
 .nav-bar {
   max-width: var(--max-content-width);
-  overflow: hidden;
   box-sizing: border-box;
   margin: 0 auto;
   padding: var(--space-sm) var(--space-2xl);
