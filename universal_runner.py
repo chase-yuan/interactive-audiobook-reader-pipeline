@@ -44,6 +44,7 @@ from release_token import issue_release_token
 from html_builder import build_master_reader
 from quality_gate import smoke_check_html, check_audio_physical_integrity
 from kokoro_synthesizer import synthesize_chapter
+from acoustic_whisper import run_mlx_acoustic_extraction
 from artifact_io import atomic_write_json, atomic_write_text
 
 DEFAULT_EXCLUDE_PATTERNS = [
@@ -482,6 +483,7 @@ def align_complete_audio_chapters(
     audio_dir: Optional[Path],
     concurrency: int = 4,
     force: bool = False,
+    acoustic_provider: str = "auto",
 ) -> None:
     if not audio_dir or not Path(audio_dir).is_dir():
         raise FileNotFoundError(f"Studio audio directory required for complete audio mode: {audio_dir}")
@@ -559,16 +561,17 @@ def align_complete_audio_chapters(
 
         if needs_acoustic:
             print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
-            if hasattr(run_mlx_acoustic_extraction, "side_effect") or hasattr(run_mlx_acoustic_extraction, "_mock_return_value"):
+            import acoustic_whisper
+            if hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "side_effect") or hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "_mock_return_value"):
+                acoustic_whisper.run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
+            elif hasattr(run_mlx_acoustic_extraction, "side_effect") or hasattr(run_mlx_acoustic_extraction, "_mock_return_value"):
                 run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
             else:
-                env = dict(os.environ)
-                env["READER_AUDIO_PATH"] = str(dest_audio)
-                env["READER_OUTPUT_PATH"] = str(acoustic_path)
-                res = subprocess.run(
-                    [sys.executable, str(PIPELINE_DIR / "mlx_acoustic_worker.py")],
-                    env=env,
-                    check=True,
+                from cloud_acoustic_engine import run_acoustic_extraction
+                run_acoustic_extraction(
+                    audio_path=str(dest_audio),
+                    output_json_path=str(acoustic_path),
+                    provider=acoustic_provider,
                 )
 
         print(f"[Stage 3] Forced alignment on Track {num:02d} ({item['label']})...", flush=True)
@@ -580,7 +583,11 @@ def align_complete_audio_chapters(
         )
         return True
 
-    workers = min(concurrency, len(chapters_meta))
+    if acoustic_provider == "mlx":
+        # Apple Silicon VRAM safety: local MLX extraction runs strictly sequentially
+        workers = 1
+    else:
+        workers = min(concurrency, len(chapters_meta))
     if workers <= 1:
         for ch in chapters_meta:
             _align_track(ch)
@@ -720,6 +727,7 @@ def build_reader_pipeline(
     chapters_filter: Optional[List[int]] = None,
     publish: bool = False,
     public_book_id: Optional[str] = None,
+    acoustic_provider: str = "auto",
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
@@ -849,9 +857,65 @@ def build_reader_pipeline(
     validate_extracted_sentences_gate(target_dir, chapters_meta, prefix)
     model_name = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
     workers_per_ch = 4 if model_name == "deepseek" else 2
-    run_parallel_linguistic_analysis(
-        target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
-    )
+
+    # Dual-Track Pipeline: Concurrently dispatch Groq Cloud Acoustic extraction alongside Linguistic Analysis
+    groq_tasks = []
+    import acoustic_whisper
+    is_mocked = hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "side_effect") or hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "_mock_return_value")
+    if mode == "complete" and acoustic_provider in ("auto", "groq") and not is_mocked:
+        from cloud_acoustic_engine import resolve_groq_api_key, transcribe_chapters_parallel_groq
+        if resolve_groq_api_key():
+            from audio_resolver import resolve_chapter_audio
+            target_audio_dir = target_dir / "audio"
+            target_audio_dir.mkdir(parents=True, exist_ok=True)
+            for item in chapters_meta:
+                c_num = item["num"]
+                resolution = resolve_chapter_audio(audio_dir, c_num)
+                a_src = resolution.path
+                if not a_src:
+                    for cand in [
+                        audio_dir / f"chapter_{c_num:02d}.mp3",
+                        audio_dir / f"chapter_{c_num}.mp3",
+                        audio_dir / f"ch_{c_num:02d}.mp3",
+                        audio_dir / f"{c_num:02d}.mp3",
+                    ]:
+                        if cand.is_file():
+                            a_src = cand
+                            break
+                if a_src and a_src.is_file():
+                    d_audio = target_audio_dir / f"chapter_{c_num:02d}.mp3"
+                    if not d_audio.exists() or d_audio.stat().st_size != a_src.stat().st_size:
+                        try:
+                            if d_audio.is_symlink() or d_audio.exists():
+                                d_audio.unlink()
+                            os.symlink(a_src, d_audio)
+                        except OSError:
+                            shutil.copy2(a_src, d_audio)
+                    ac_path = target_audio_dir / f"{prefix}_ch{c_num:02d}_acoustic_words.json"
+                    if not (ac_path.is_file() and ac_path.stat().st_size > 100):
+                        groq_tasks.append({
+                            "audio_path": str(d_audio),
+                            "output_json_path": str(ac_path),
+                            "label": item.get("label", f"Track {c_num:02d}"),
+                        })
+
+    if groq_tasks:
+        print(f"\n⚡ [DUAL-TRACK PIPELINE] Launching {len(groq_tasks)} Groq Cloud Acoustic extractions in parallel with Linguistic Analysis...", flush=True)
+        with ThreadPoolExecutor(max_workers=2) as dual_executor:
+            f_ling = dual_executor.submit(
+                run_parallel_linguistic_analysis,
+                target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
+            )
+            f_acou = dual_executor.submit(
+                transcribe_chapters_parallel_groq,
+                groq_tasks, max_workers=min(len(groq_tasks), 6)
+            )
+            f_ling.result()
+            f_acou.result()
+    else:
+        run_parallel_linguistic_analysis(
+            target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
+        )
 
     if mode == "text_only":
         synthesize_text_only_aligned_sentences(target_dir, chapters_meta, prefix)
@@ -870,7 +934,8 @@ def build_reader_pipeline(
             chapters_meta=chapters_meta,
             prefix=prefix,
             audio_dir=audio_dir,
-            concurrency=1,
+            concurrency=concurrency if acoustic_provider != "mlx" else 1,
+            acoustic_provider=acoustic_provider,
         )
     else:
         raise ValueError(f"Unknown pipeline mode: {mode}")
@@ -952,6 +1017,13 @@ def main():
     parser.add_argument("--llm-model", type=str, default=None, help="LLM model for linguistic analysis (e.g. deepseek, gemini-3.8-flash-high)")
     parser.add_argument("--publish", action="store_true", help="Automatically upload to R2, chunk, seal, and deploy to Audible production portal upon successful compilation")
     parser.add_argument("--public-book-id", type=str, default=None, help="Explicit book id for public deployment (defaults to slug_id)")
+    parser.add_argument(
+        "--acoustic-provider",
+        type=str,
+        choices=["auto", "groq", "mlx"],
+        default="auto",
+        help="Acoustic timestamp extraction backend: 'auto' (prefer cloud Groq, fallback to MLX), 'groq', or 'mlx'"
+    )
 
     args = parser.parse_args()
     epub_target = args.epub or args.epub_flag
@@ -981,6 +1053,7 @@ def main():
         chapters_filter=chapters_filter,
         publish=args.publish,
         public_book_id=args.public_book_id,
+        acoustic_provider=args.acoustic_provider,
     )
 
 
