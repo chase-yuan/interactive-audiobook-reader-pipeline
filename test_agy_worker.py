@@ -336,6 +336,57 @@ class AgyLinguisticWorkerTests(unittest.TestCase):
             self.assertEqual(ret, 0)
             self.assertEqual(json.loads(output_path.read_text()), [])
 
+    @patch("subprocess.run")
+    def test_batch_cache_collision_prevention_across_chapters(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            batch_ch1 = [{"id": "s-1", "text": "Supply and demand in microeconomics."}]
+            batch_ch2 = [{"id": "s-1", "text": "National debt in macroeconomics."}]
+
+            # Fake response generator that mirrors input text
+            def fake_run(cmd, **kwargs):
+                prompt = cmd[-1]
+                if "Supply and demand" in prompt:
+                    txt = "Supply and demand in microeconomics."
+                    trans = "微观经济学中的供求关系。"
+                else:
+                    txt = "National debt in macroeconomics."
+                    trans = "宏观经济学中的国家债务。"
+                payload = [{"id": "s-1", "text": txt, "trans": trans, "vocab": []}]
+                return MagicMock(returncode=0, stdout=json.dumps(payload), stderr="")
+
+            mock_run.side_effect = fake_run
+
+            res_ch1 = process_canonical_sentences(batch_ch1, "Prompt", tmp_path, chunk_size=1)
+            res_ch2 = process_canonical_sentences(batch_ch2, "Prompt", tmp_path, chunk_size=1)
+
+            cache_files = list((tmp_path / ".linguistic_batch_cache").glob("cache_s-1_s-1_1_*.json"))
+            # Both batches must have distinct content-hashed cache files!
+            self.assertEqual(len(cache_files), 2)
+            self.assertEqual(res_ch1[0]["trans"], "微观经济学中的供求关系。")
+            self.assertEqual(res_ch2[0]["trans"], "宏观经济学中的国家债务。")
+
+    @patch("subprocess.run")
+    def test_fast_timeout_circuit_breaker_retries_and_recovers(self, mock_run):
+        # First call times out, second call succeeds
+        mock_success = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"id": "s-1", "text": "Testing timeout recovery.", "trans": "测试超时恢复。", "vocab": []}]),
+            stderr="",
+        )
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(cmd=["agy"], timeout=120),
+            mock_success,
+        ]
+
+        canonical = [{"id": "s-1", "text": "Testing timeout recovery."}]
+        with tempfile.TemporaryDirectory() as tmp:
+            res = process_canonical_sentences(canonical, "Prompt", Path(tmp), timeout=120, max_batch_attempts=2)
+            self.assertEqual(len(res), 1)
+            self.assertEqual(res[0]["trans"], "测试超时恢复。")
+            # Verified mock_run was called twice (first timed out, second succeeded)
+            self.assertEqual(mock_run.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

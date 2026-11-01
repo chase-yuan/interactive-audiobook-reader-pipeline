@@ -342,7 +342,7 @@ def process_linguistics_track(
             base_prompt=base_prompt,
             cwd=book_dir,
             chunk_size=40,
-            timeout=3600,
+            timeout=int(os.getenv("READER_BATCH_TIMEOUT", "120")),
             max_batch_attempts=5,
             max_workers=max_workers_per_chapter,
         )

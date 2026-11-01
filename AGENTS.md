@@ -65,4 +65,29 @@
    - 杜绝强迫用户长按等待（如长按 1.5s 退出等高阻力交互）。
    - 操作必须符合直觉：单触即退、单击步进（如 `1×` $\rightarrow$ `3×` $\rightarrow$ `5×` 循环切）、记忆偏好（如中英文显隐状态通过 `localStorage` 自动持久化）。
 
+---
+
+## 4. Autonomous Supervisor & Anti-Hang Protocol (自主不间断巡检与防死锁规范)
+
+> [!IMPORTANT]
+> **拒绝“离席休眠”与被动等待（Zero-Abandonment Invariant）**：
+> 流水线在执行长耗时任务（如语言学分析、Whisper 强制对齐、全书构建）时，严禁输出一段“预计 20 分钟后完成”然后主动结束对话 Turn 将控制权交还给用户。这会导致 Agent 彻底进入被动休眠，进程发生网络死锁或挂起时无人看守，迫使用户反复手动催问进度。
+
+### 4.1 Anti-Hang & Watchdog Invariants (防挂起四大铁律)
+1. **SP1 (Strict Fast-Fail Timeouts & Circuit Breakers · 短超时快速熔断)**:
+   - 严禁对任何单批次网络请求或外部 CLI 子进程设置无限制或超长超时（如禁止 `timeout=3600` 或 `--print-timeout 1h`）。
+   - 单批次请求超时阈值严格限定在 **120 秒** 以内。超时必须触发熔断（`TimeoutExpired`），捕获并立即自动切换至备选模型（fallback model）或重试，绝不在卡死套接字上空转。
+2. **SP2 (Collision-Proof Checkpoint Caching · 防碰撞内容签名缓存)**:
+   - 批次断点缓存必须绑定句子内容的 SHA-256 哈希签名（`cache_{first_id}_{last_id}_{len}_{content_hash}.json`）。
+   - 严禁仅使用局部自增 ID（如 `s-0`）作为全书级缓存键，杜绝多章节并发时互相踩踏或脏读缓存。
+3. **SP3 (Continuous Supervisor Watchdog · 主动看门狗守护)**:
+   - 当任务运行时间超过单个工具同步等待上限（WaitMsBeforeAsync）转为后台任务时，Agent **严禁直接结束 Turn**。
+   - Agent 必须使用 `schedule` 注册定时唤醒（如 60~90s 心跳定时器）或通过工具循环主动巡检任务心跳与产物生成。
+   - 若发现任务进程 CPU 为 0% 且日志在 2 个巡检周期内无变化，看门狗必须主动 `kill` 僵死子进程并自动重启重试。
+4. **SP4 (Single-Runner Orchestration · 单一入口全流程贯通)**:
+   - 严禁将处理拆解为“先跑这几个章节的脚本 -> 停下来汇报 -> 等用户命令 -> 再跑对齐 -> 停下来汇报 -> 再上架”。
+   - 必须通过统一协调入口（如 `pipeline.py` 或统一编排脚本）全自动连续流转：
+     `抽取/对齐 ➔ 语言学解析 ➔ 校验门禁 ➔ 切片构建 ➔ R2同步 ➔ 生产部署 ➔ 边缘验证 ➔ 输出卡密`。
+
+
 
