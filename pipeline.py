@@ -301,15 +301,16 @@ def _auto_discover_and_build(book_dir, book_title=None, book_subtitle="Bilingual
         needs_align = False
         if has_analysis and has_acoustic:
             needs_align = force_realign or not os.path.exists(aligned_path)
-            previous = previous_chapters.get(ch_num, {})
-            if any(previous.get(key) != value for key, value in (
-                ("canonical_sha256", canonical_sha256),
-                ("analysis_sha256", analysis_sha256),
-                ("acoustic_sha256", acoustic_sha256),
-                ("audio_sha256", audio_sha256),
-            )):
-                needs_align = True
-            if not needs_align:
+            previous = previous_chapters.get(ch_num)
+            if not needs_align and previous:
+                if any(previous.get(key) != value for key, value in (
+                    ("canonical_sha256", canonical_sha256),
+                    ("analysis_sha256", analysis_sha256),
+                    ("acoustic_sha256", acoustic_sha256),
+                    ("audio_sha256", audio_sha256),
+                )):
+                    needs_align = True
+            if not needs_align and os.path.exists(aligned_path):
                 if os.path.getmtime(acoustic_path) > os.path.getmtime(aligned_path) or os.path.getmtime(analysis_path) > os.path.getmtime(aligned_path):
                     needs_align = True
                     
