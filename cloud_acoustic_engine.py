@@ -106,6 +106,21 @@ def compress_audio_if_needed(
         return src, False
 
     # Need compression/transcoding
+    target_bitrate = bitrate
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(src)],
+            capture_output=True, text=True, check=True
+        )
+        dur = float(probe.stdout.strip())
+        if dur > 0:
+            max_kbps = int((max_bytes * 8 * 0.85) / dur / 1000)
+            nominal_kbps = int(bitrate.rstrip("kK")) if bitrate.rstrip("kK").isdigit() else 32
+            chosen_kbps = max(16, min(nominal_kbps, max_kbps))
+            target_bitrate = f"{chosen_kbps}k"
+    except Exception:
+        pass
+
     tmp_fd, tmp_path_str = tempfile.mkstemp(prefix="groq_whisper_", suffix=".mp3")
     os.close(tmp_fd)
     tmp_path = Path(tmp_path_str)
@@ -121,7 +136,7 @@ def compress_audio_if_needed(
         "-ar",
         str(sample_rate),
         "-b:a",
-        bitrate,
+        target_bitrate,
         str(tmp_path),
     ]
 

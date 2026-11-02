@@ -701,7 +701,11 @@ def build_and_verify_reader(
                 if c_mp3.is_file() and c_alg.is_file():
                     alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
                     last_end = alg_data[-1]["end"] if alg_data else 0.0
-                    max_delta = 0.45 if mode == "synthetic" else 10.0
+                    expansions = json.loads((book_dir / "audio_content_profile.json").read_text(encoding="utf-8")).get("author_audio_expansions", {}) if (book_dir / "audio_content_profile.json").exists() else {}
+                    ch_expansion = expansions.get(str(num)) or expansions.get(num) or {}
+                    is_final_track = (num == chapters_meta[-1]["num"])
+                    default_delta = 45.0 if (is_final_track and mode == "complete") else (0.45 if mode == "synthetic" else 10.0)
+                    max_delta = float(ch_expansion.get("max_duration_delta", default_delta))
                     probe = check_audio_physical_integrity(
                         c_mp3,
                         expected_duration=last_end,

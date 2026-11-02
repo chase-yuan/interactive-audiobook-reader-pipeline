@@ -85,11 +85,20 @@ def _toc_titles(zf: zipfile.ZipFile, opf_dir: PurePosixPath, manifest: Dict[str,
     nav_item = next((item for item in manifest.values() if "nav" in item.get("properties", "").split()), None)
     if nav_item:
         root = ET.fromstring(zf.read(str(opf_dir / nav_item["href"])))
-        for element in root.iter():
-            if _local(element.tag) != "a" or not element.get("href"):
-                continue
-            href = element.get("href", "").split("#", 1)[0]
-            result[str(PurePosixPath(nav_item["href"]).parent / href)] = _xml_text(element)
+        is_ncx = _local(root.tag) == "ncx" or any(_local(el.tag) == "navPoint" for el in root.iter())
+        if is_ncx:
+            for nav_point in (el for el in root.iter() if _local(el.tag) == "navPoint"):
+                content = next((el for el in nav_point.iter() if _local(el.tag) == "content"), None)
+                label = next((el for el in nav_point.iter() if _local(el.tag) == "text"), None)
+                if content is not None and content.get("src") and label is not None:
+                    href = content.get("src", "").split("#", 1)[0]
+                    result.setdefault(str(PurePosixPath(nav_item["href"]).parent / href), _xml_text(label))
+        else:
+            for element in root.iter():
+                if _local(element.tag) != "a" or not element.get("href"):
+                    continue
+                href = element.get("href", "").split("#", 1)[0]
+                result[str(PurePosixPath(nav_item["href"]).parent / href)] = _xml_text(element)
     ncx_item = next((item for item in manifest.values() if item.get("media_type") == "application/x-dtbncx+xml"), None)
     if ncx_item:
         root = ET.fromstring(zf.read(str(opf_dir / ncx_item["href"])))

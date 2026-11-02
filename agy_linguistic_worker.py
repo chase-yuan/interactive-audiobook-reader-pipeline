@@ -227,9 +227,10 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
 
     default_model = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
     fallback_models = [default_model]
-    for alt in ("gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium"):
-        if alt not in fallback_models:
-            fallback_models.append(alt)
+    if default_model != "deepseek":
+        for alt in ("gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium"):
+            if alt not in fallback_models:
+                fallback_models.append(alt)
 
     print_timeout = f"{max(int(timeout), 30)}s" if timeout < 120 else f"{int(timeout // 60)}m"
     if timeout % 60 != 0 and timeout >= 120:

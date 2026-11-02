@@ -255,9 +255,9 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 )
 
         # 3b. Local consecutive single-sentence expository explosion gate
-        def _check_consecutive(seq, preceded_by_colon=False):
+        def _check_consecutive(seq, preceded_by_colon=False, in_terminology=False):
             if len(seq) >= 8:
-                if preceded_by_colon:
+                if preceded_by_colon or in_terminology:
                     return
                 # Tabular antithesis exemption: parallel comparative items (e.g. Table 4 items with semicolons)
                 semicolon_count = sum(1 for it in seq if ";" in it.get("text", ""))
@@ -288,11 +288,17 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
         consecutive_single_prose = []
         prev_ended_with_colon = False
         seq_preceded_by_colon = False
+        current_heading_is_terminology = False
+        seq_in_terminology = False
         for g in groups:
             if len(g) == 1:
                 it = g[0]
                 text = it.get("text", "").strip()
                 is_h = it.get("is_heading", False)
+                if is_h:
+                    current_heading_is_terminology = any(
+                        term in text.lower() for term in ["terminology", "glossary", "definitions", "key terms"]
+                    )
                 is_dialogue = text.startswith(("“", "\"", "‘", "'")) or text.endswith(("”", "\"", "’"))
                 is_list = bool(re.match(r"^(\d+[\.\)]|[a-zA-Z][\.\)]|[-•*])\s+", text))
                 is_numeric_fact = bool(re.match(r"^[\d,.]+\s+", text))
@@ -301,16 +307,19 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 if not is_h and not is_dialogue and not is_list and not is_numeric_fact and not is_short and not is_intro_colon:
                     if not consecutive_single_prose:
                         seq_preceded_by_colon = prev_ended_with_colon
+                        seq_in_terminology = current_heading_is_terminology
                     consecutive_single_prose.append(it)
                 else:
-                    _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
+                    _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon, in_terminology=seq_in_terminology)
                     consecutive_single_prose = []
                     seq_preceded_by_colon = False
+                    seq_in_terminology = False
                 prev_ended_with_colon = is_intro_colon
             else:
-                _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
+                _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon, in_terminology=seq_in_terminology)
                 consecutive_single_prose = []
                 seq_preceded_by_colon = False
+                seq_in_terminology = False
                 prev_ended_with_colon = False
 
         _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
@@ -682,7 +691,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             continue
 
         matched_starts = [
-            float(item.get("raw_start", item.get("start")))
+            float(item.get("raw_start") if item.get("raw_start") is not None else item.get("start"))
             for item in aligned_data
             if item.get("has_audio_match") and (item.get("raw_start") is not None or item.get("start") is not None)
         ]

@@ -1584,19 +1584,48 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                             w["start"] = s_r
                             w["end"] = e_r
             elif cur["start"] >= nxt["start"]:
-                cur_tokens = cur.get("matched_token_count", 0)
-                nxt_tokens = nxt.get("matched_token_count", 0)
-                if cur_tokens <= 3 and nxt_tokens > cur_tokens:
-                    cur["has_audio_match"] = False
-                    cur["start"] = None
-                    cur["end"] = None
-                    cur["audio_start"] = None
-                    cur["audio_end"] = None
-                    cur["raw_start"] = None
-                    cur["raw_end"] = None
-                    cur["word_spans"] = []
-                    cur["alignment_status"] = "not-applicable"
-                    cur["alignment_reason"] = "non_narrated_text"
+                # If acoustic word indices are strictly ordered, this is sub-second Whisper timestamp jitter between adjacent utterances
+                if (
+                    cur.get("word_start") is not None
+                    and nxt.get("word_start") is not None
+                    and cur["word_start"] < nxt["word_start"]
+                ):
+                    mid_s = round(min(cur["start"], nxt["start"]), 2)
+                    cur_dur = max(0.3, round(cur["end"] - cur["start"], 2))
+                    cur["start"] = mid_s
+                    cur["end"] = round(mid_s + cur_dur, 2)
+                    nxt["start"] = round(cur["end"] + 0.01, 2)
+                    if cur.get("audio_start") is not None:
+                        cur["audio_start"] = cur["start"]
+                        cur["audio_end"] = cur["end"]
+                    if cur.get("raw_start") is not None:
+                        cur["raw_start"] = cur["start"]
+                        cur["raw_end"] = cur["end"]
+                    if cur.get("word_spans"):
+                        cur["word_spans"][0]["start"] = cur["start"]
+                        cur["word_spans"][-1]["end"] = cur["end"]
+                    if nxt.get("audio_start") is not None:
+                        nxt["audio_start"] = nxt["start"]
+                    if nxt.get("raw_start") is not None:
+                        nxt["raw_start"] = nxt["start"]
+                    if nxt.get("word_spans") and nxt["word_spans"][0].get("start") is not None:
+                        nxt["word_spans"][0]["start"] = max(nxt["word_spans"][0]["start"], nxt["start"])
+                        if nxt["word_spans"][0].get("end") is not None and nxt["word_spans"][0]["end"] <= nxt["word_spans"][0]["start"]:
+                            nxt["word_spans"][0]["end"] = round(nxt["word_spans"][0]["start"] + 0.1, 2)
+                else:
+                    cur_tokens = cur.get("matched_token_count", 0)
+                    nxt_tokens = nxt.get("matched_token_count", 0)
+                    if cur_tokens <= 3 and nxt_tokens > cur_tokens:
+                        cur["has_audio_match"] = False
+                        cur["start"] = None
+                        cur["end"] = None
+                        cur["audio_start"] = None
+                        cur["audio_end"] = None
+                        cur["raw_start"] = None
+                        cur["raw_end"] = None
+                        cur["word_spans"] = []
+                        cur["alignment_status"] = "not-applicable"
+                        cur["alignment_reason"] = "non_narrated_text"
 
     # Reconcile unedited studio retakes and record skip ranges
     retake_skips = reconcile_studio_retakes(acoustic_words, aligned_results, sentences, ac_tokens, ac_map, ac_map_end)

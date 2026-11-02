@@ -183,7 +183,19 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         disp_part = rf"|\b(?:Chapter\s+)?{re.escape(disp_num)}(?!\d)\s*[\.\:—–-]\s*" if disp_num else ""
         prefix_pattern = rf"^(?:{re.escape(ch['label'])}\s*[:—–-]?\s*{disp_part})"
         sub_title = re.sub(prefix_pattern, "", clean_title, flags=re.IGNORECASE).strip()
-        if not sub_title or len(sub_title) <= 2 or clean_title.upper() == ch_heading_label or clean_title.upper() == f"CHAPTER {cnum}":
+        norm_label = re.sub(r"^(?:THE|A|AN)\s+", "", safe_heading_label.upper())
+        norm_sub = re.sub(r"^(?:THE|A|AN)\s+", "", html.escape(sub_title).upper())
+        is_generic_num = not sub_title or bool(re.match(r"^(?:chapter|part|track)?\s*\d*$", sub_title, re.IGNORECASE))
+        norm_label = re.sub(r"^(?:THE|A|AN)\s+", "", safe_heading_label.upper())
+        norm_sub = re.sub(r"^(?:THE|A|AN)\s+", "", html.escape(sub_title).upper())
+        if is_generic_num:
+            title_html = f"CHAPTER {disp_num}" if disp_num else (safe_heading_label or html.escape(clean_title))
+        elif norm_label == norm_sub:
+            if disp_num and ch.get("role") == "chapter":
+                title_html = f"CHAPTER {disp_num}<br>{html.escape(sub_title)}"
+            else:
+                title_html = html.escape(sub_title)
+        elif clean_title.upper() == ch_heading_label or clean_title.upper() == f"CHAPTER {cnum}":
             title_html = safe_heading_label
         elif safe_heading_label in clean_title.upper() and len(sub_title) < 4:
             title_html = html.escape(clean_title.upper())
