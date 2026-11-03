@@ -265,6 +265,10 @@ def is_heading_element(el: dict) -> bool:
     if re.match(r"^(Talk|Speech|Lecture|Chapter|Part|Section|Rule|Principle)\s+\d+\b", txt, re.IGNORECASE) and len(txt.split()) <= 25:
         return True
 
+    # Purely decorative typographical divider or symbol ornament (e.g. "•", "***", "---", "◆")
+    if not re.search(r"[a-zA-Z0-9\u4e00-\u9fa5]", txt):
+        return True
+
     return is_title_text(txt)
 
 
