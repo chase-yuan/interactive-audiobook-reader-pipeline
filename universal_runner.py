@@ -343,7 +343,7 @@ def process_linguistics_track(
             cwd=book_dir,
             chunk_size=40,
             timeout=int(os.getenv("READER_BATCH_TIMEOUT", "120")),
-            max_batch_attempts=5,
+            max_batch_attempts=8,
             max_workers=max_workers_per_chapter,
         )
         atomic_write_json(ana_path, analyzed_data)
@@ -700,7 +700,8 @@ def build_and_verify_reader(
                 c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
                 if c_mp3.is_file() and c_alg.is_file():
                     alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
-                    last_end = alg_data[-1]["end"] if alg_data else 0.0
+                    valid_ends = [s["end"] for s in alg_data if s.get("end") is not None]
+                    last_end = valid_ends[-1] if valid_ends else 0.0
                     expansions = json.loads((book_dir / "audio_content_profile.json").read_text(encoding="utf-8")).get("author_audio_expansions", {}) if (book_dir / "audio_content_profile.json").exists() else {}
                     ch_expansion = expansions.get(str(num)) or expansions.get(num) or {}
                     is_final_track = (num == chapters_meta[-1]["num"])
@@ -746,11 +747,11 @@ def build_reader_pipeline(
     if not epub_path.is_file():
         raise FileNotFoundError(f"EPUB file not found: {epub_path}")
 
-    # Configure linguistic LLM provider
+    # Configure linguistic LLM provider (Defaults strictly to zero-cost native Gemini)
     if llm_model:
         os.environ["READER_AGY_MODEL"] = llm_model
-    elif os.getenv("DEEPSEEK_API_KEY") and not os.getenv("READER_AGY_MODEL"):
-        os.environ["READER_AGY_MODEL"] = "deepseek"
+    elif not os.getenv("READER_AGY_MODEL"):
+        os.environ["READER_AGY_MODEL"] = "gemini-3.8-flash-high"
 
     # Mode determination
     if auto_voice:

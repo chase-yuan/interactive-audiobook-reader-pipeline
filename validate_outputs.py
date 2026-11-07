@@ -128,10 +128,10 @@ def check_sentence_orthography(
             if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
                 issues.append("Sentence starts with lowercase continuation letter")
 
-        # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers)
+        # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers attached to words)
         # Exclude list items / table cells which often legitimately contain single nouns / terms
         if not is_list_item:
-            clean_word = re.sub(r"\d+$", "", text_s)
+            clean_word = re.sub(r"(?<=[a-zA-Z])\d{1,3}$", "", text_s)
             words = clean_word.split()
             is_attribution = clean_word.startswith(("—", "–", "-"))
             is_divider = bool(re.match(r"^[\*\s—–\-•#\+]+$", clean_word))

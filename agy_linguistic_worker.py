@@ -256,7 +256,8 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                 if completed.returncode != 0:
                     last_error = (completed.stderr or completed.stdout or "agy failed")[-4000:]
                     is_quota = "RESOURCE_EXHAUSTED" in last_error or "429" in last_error
-                    wait_sec = 10 if is_quota else min(2 * attempt, 10)
+                    import random
+                    wait_sec = (12 + random.uniform(2, 6)) if is_quota else min(2 * attempt, 10)
                     time.sleep(wait_sec)
                     continue
                 raw_output = completed.stdout
