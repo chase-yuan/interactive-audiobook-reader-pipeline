@@ -20,7 +20,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None
 
 from artifact_io import atomic_write_json
 
@@ -210,6 +213,8 @@ def run_groq_acoustic_extraction(
         data.append(("prompt", prompt))
 
     http_client = session or requests
+    if http_client is None:
+        raise ImportError("The 'requests' package is required for Groq Cloud acoustic extraction. Please install it via 'pip install requests'.")
 
     last_error = None
     current_key_idx = 0
