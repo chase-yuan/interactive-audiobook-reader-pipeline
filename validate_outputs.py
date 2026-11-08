@@ -128,10 +128,10 @@ def check_sentence_orthography(
             if re.match(r"^\s*[\"“‘'(\[]*[a-z]", text_s):
                 issues.append("Sentence starts with lowercase continuation letter")
 
-        # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers)
+        # 3. Orphan single word without terminal punctuation (stripping trailing footnote numbers attached to words)
         # Exclude list items / table cells which often legitimately contain single nouns / terms
         if not is_list_item:
-            clean_word = re.sub(r"\d+$", "", text_s)
+            clean_word = re.sub(r"(?<=[a-zA-Z])\d{1,3}$", "", text_s)
             words = clean_word.split()
             is_attribution = clean_word.startswith(("—", "–", "-"))
             is_divider = bool(re.match(r"^[\*\s—–\-•#\+]+$", clean_word))
@@ -255,9 +255,9 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 )
 
         # 3b. Local consecutive single-sentence expository explosion gate
-        def _check_consecutive(seq, preceded_by_colon=False):
+        def _check_consecutive(seq, preceded_by_colon=False, in_terminology=False):
             if len(seq) >= 8:
-                if preceded_by_colon:
+                if preceded_by_colon or in_terminology:
                     return
                 # Tabular antithesis exemption: parallel comparative items (e.g. Table 4 items with semicolons)
                 semicolon_count = sum(1 for it in seq if ";" in it.get("text", ""))
@@ -288,11 +288,17 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
         consecutive_single_prose = []
         prev_ended_with_colon = False
         seq_preceded_by_colon = False
+        current_heading_is_terminology = False
+        seq_in_terminology = False
         for g in groups:
             if len(g) == 1:
                 it = g[0]
                 text = it.get("text", "").strip()
                 is_h = it.get("is_heading", False)
+                if is_h:
+                    current_heading_is_terminology = any(
+                        term in text.lower() for term in ["terminology", "glossary", "definitions", "key terms"]
+                    )
                 is_dialogue = text.startswith(("“", "\"", "‘", "'")) or text.endswith(("”", "\"", "’"))
                 is_list = bool(re.match(r"^(\d+[\.\)]|[a-zA-Z][\.\)]|[-•*])\s+", text))
                 is_numeric_fact = bool(re.match(r"^[\d,.]+\s+", text))
@@ -301,16 +307,19 @@ def check_typography_integrity(items: list[dict], chapter_num: int = None) -> li
                 if not is_h and not is_dialogue and not is_list and not is_numeric_fact and not is_short and not is_intro_colon:
                     if not consecutive_single_prose:
                         seq_preceded_by_colon = prev_ended_with_colon
+                        seq_in_terminology = current_heading_is_terminology
                     consecutive_single_prose.append(it)
                 else:
-                    _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
+                    _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon, in_terminology=seq_in_terminology)
                     consecutive_single_prose = []
                     seq_preceded_by_colon = False
+                    seq_in_terminology = False
                 prev_ended_with_colon = is_intro_colon
             else:
-                _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
+                _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon, in_terminology=seq_in_terminology)
                 consecutive_single_prose = []
                 seq_preceded_by_colon = False
+                seq_in_terminology = False
                 prev_ended_with_colon = False
 
         _check_consecutive(consecutive_single_prose, preceded_by_colon=seq_preceded_by_colon)
@@ -682,7 +691,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
             continue
 
         matched_starts = [
-            float(item.get("raw_start", item.get("start")))
+            float(item.get("raw_start") if item.get("raw_start") is not None else item.get("start"))
             for item in aligned_data
             if item.get("has_audio_match") and (item.get("raw_start") is not None or item.get("start") is not None)
         ]
@@ -800,11 +809,20 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                 if start is not None and previous_end > 0:
                     inter_gap = start - previous_end
                     if inter_gap > max_inter_gap:
-                        errors.append(
-                            f"{label} {item_id}: excessive acoustic void of {inter_gap:.1f}s detected "
-                            f"(previous sentence ended at {previous_end:.1f}s, current starts at {start:.1f}s); "
-                            f"exceeds {max_inter_gap:.0f}s release ceiling"
+                        known_skips = []
+                        if aligned_data:
+                            known_skips.extend(aligned_data[0].get("retake_skip_ranges") or [])
+                        known_skips.extend(ch_expansion.get("retake_skip_ranges") or [])
+                        is_skip_covered = any(
+                            float(r.get("start", 0)) <= start + 2.0 and float(r.get("end", 0)) >= previous_end - 2.0
+                            for r in known_skips
                         )
+                        if not is_skip_covered:
+                            errors.append(
+                                f"{label} {item_id}: excessive acoustic void of {inter_gap:.1f}s detected "
+                                f"(previous sentence ended at {previous_end:.1f}s, current starts at {start:.1f}s); "
+                                f"exceeds {max_inter_gap:.0f}s release ceiling"
+                            )
                 if start is not None:
                     previous_start = start
                 if end is not None:
@@ -868,6 +886,23 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                             f"{min_bilateral_ratio:.0%} threshold (audio has {total_ac_words} words, "
                             f"text only accounts for {total_aligned_words} words)"
                         )
+
+                    # Local speech density / island audit
+                    from dynamic_aligner import detect_unclaimed_acoustic_segments
+                    unclaimed = detect_unclaimed_acoustic_segments(ac_data.get("words", []), aligned_data, min_words=15)
+                    known_skips = list(aligned_data[0].get("retake_skip_ranges") or []) if aligned_data else []
+                    known_skips.extend(ch_expansion.get("retake_skip_ranges") or [])
+                    for u in unclaimed:
+                        if last_end > 0.0 and u["start_time"] >= last_end - 1.5:
+                            continue
+                        is_skip = any(
+                            float(r.get("start", 0)) <= u["start_time"] + 2.0 and float(r.get("end", 0)) >= u["end_time"] - 2.0
+                            for r in known_skips
+                        )
+                        if not is_skip:
+                            diagnostics.append(
+                                f"{label}: unassigned speech island ({u['word_count']} words, {u['duration']}s from {u['start_time']}s to {u['end_time']}s): \"{u['preview']}\""
+                            )
             except (json.JSONDecodeError, KeyError, OSError) as exc:
                 errors.append(f"{label}: failed to parse acoustic words from {acoustic_path.name}: {exc}")
         non_narrated_records = sum(

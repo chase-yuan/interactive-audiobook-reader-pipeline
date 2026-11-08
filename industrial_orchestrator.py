@@ -212,8 +212,9 @@ def _run_worker(stage: str, row: Dict, command: List[str], state: Dict, state_pa
         record["status"] = f"{stage}_running"
         _event(state, "worker_started", stage=stage, chapter=chapter, attempt=attempt)
         _save_state(state_path, state)
+        worker_timeout = int(os.getenv("READER_WORKER_TIMEOUT", "1800"))
         try:
-            completed = subprocess.run(command, cwd=str(Path.cwd()), env=env, text=True, capture_output=True, timeout=86400)
+            completed = subprocess.run(command, cwd=str(Path.cwd()), env=env, text=True, capture_output=True, timeout=worker_timeout)
         except (OSError, subprocess.TimeoutExpired) as exc:
             completed = None
             error = f"{type(exc).__name__}: {exc}"

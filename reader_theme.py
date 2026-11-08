@@ -247,6 +247,7 @@ body {
 
 .nav-bar {
   max-width: var(--max-content-width);
+  box-sizing: border-box;
   margin: 0 auto;
   padding: var(--space-sm) var(--space-2xl);
   display: flex;
@@ -257,6 +258,8 @@ body {
 .chapter-nav-wrapper {
   position: relative;
   display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .chapter-btn {
@@ -273,11 +276,20 @@ body {
   font-weight: 500;
   cursor: pointer;
   max-width: 100%;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   box-shadow: var(--shadow-subtle);
   transition: all var(--transition-base);
+}
+
+.chapter-btn > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  display: inline-block;
 }
 
 .chapter-btn:hover {

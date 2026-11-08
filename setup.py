@@ -42,9 +42,13 @@ setup(
         "deployment_preflight",
         "release_cli",
         "universal_runner",
+        "cloud_acoustic_engine",
+        "sentence_metrics",
     ],
     python_requires=">=3.9",
-    install_requires=[],
+    install_requires=[
+        "requests>=2.25.0",
+    ],
     extras_require={
         "acoustic": ["mlx-whisper"], "whisperx": ["whisperx"],
         "deployment": ["boto3>=1.34", "Pillow>=10"],

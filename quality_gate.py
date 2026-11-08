@@ -35,13 +35,24 @@ REQUIRED_FUNCTIONS = (
 
 
 def _check_temporal_integrity(content: str) -> list:
-    """Audit compiled HTML for sentence timeline overlaps and duplicate word timestamps."""
+    """Audit compiled HTML for sentence timeline overlaps, excessive unreconciled voids, and duplicate word timestamps."""
     errors = []
-    chapter_blocks = re.findall(r'<section\b[^>]*class="chapter-section[^>]*data-ch="(\d+)"[^>]*>(.*?)</section>', content, re.DOTALL)
+    chapter_blocks = re.findall(r'<section\b([^>]*class="chapter-section[^>]*)>(.*?)</section>', content, re.DOTALL)
     word_re = re.compile(r'<span class="w"[^>]*?data-s="([^"]+)"[^>]*?data-e="([^"]+)"[^>]*?(?:data-timing-source="([^"]+)")?[^>]*?>([^<]*)</span>')
     sent_re = re.compile(r'<(?:div|span) class="sentence-unit"[^>]*?id="([^"]+)"[^>]*?data-start="([^"]+)"[^>]*?data-end="([^"]+)"[^>]*?data-matched="([^"]+)"', re.DOTALL)
 
-    for ch_num, ch_content in chapter_blocks:
+    for tag_attrs, ch_content in chapter_blocks:
+        m_ch = re.search(r'data-ch="(\d+)"', tag_attrs)
+        ch_num = m_ch.group(1) if m_ch else "1"
+        m_skips = re.search(r'data-skip-ranges="([^"]+)"', tag_attrs)
+        ch_skips = []
+        if m_skips:
+            try:
+                import html as html_lib
+                ch_skips = json.loads(html_lib.unescape(m_skips.group(1)))
+            except Exception:
+                pass
+
         units = re.split(r'<(?:div|span) class="sentence-unit"', ch_content)
         prev_end = None
         for u in units[1:]:
@@ -62,6 +73,13 @@ def _check_temporal_integrity(content: str) -> list:
             if not is_reordered:
                 if prev_end is not None and start < (prev_end - 0.05):
                     errors.append(f"Ch {ch_num} {uid}: sentence overlap (starts at {start:.2f}s before previous ended at {prev_end:.2f}s)")
+                elif prev_end is not None and (start - prev_end) > 20.0:
+                    is_covered = any(
+                        float(r.get("start", 0)) <= (start + 2.0) and float(r.get("end", 0)) >= (prev_end - 2.0)
+                        for r in ch_skips
+                    )
+                    if not is_covered:
+                        errors.append(f"Ch {ch_num} {uid}: unhandled excessive gap of {start - prev_end:.2f}s between sentences without skip-range reconciliation")
                 prev_end = max(prev_end or 0.0, end)
 
             # Check for adjacent duplicate word timestamps on observed words

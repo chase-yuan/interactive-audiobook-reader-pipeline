@@ -98,6 +98,51 @@ function toggleChineseLock() {{}}
             self.assertEqual(result["status"], "failed")
             self.assertTrue(any("sentence overlap" in err for err in result["errors"]))
 
+    def test_unhandled_excessive_gap_fails_smoke_check(self):
+        # Sentence 1 ends at 5.0, Sentence 2 starts at 30.0 (gap 25.0s > 20.0s)
+        body = """
+<section class="chapter-section active" data-ch="1">
+  <div class="sentence-unit" id="c1-s-1" data-start="0.0" data-end="5.0" data-matched="1">
+    <div class="sentence-text">
+      <span class="w" data-s="0.0" data-e="5.0" data-timing-source="observed">First</span>
+    </div>
+  </div>
+  <div class="sentence-unit" id="c1-s-2" data-start="30.0" data-end="35.0" data-matched="1">
+    <div class="sentence-text">
+      <span class="w" data-s="30.0" data-e="35.0" data-timing-source="observed">Second</span>
+    </div>
+  </div>
+</section>
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reader.html"
+            path.write_text(self._create_minimal_html(body), encoding="utf-8")
+            result = smoke_check_html(path, expected_chapters=1)
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(any("unhandled excessive gap" in err for err in result["errors"]))
+
+    def test_reconciled_excessive_gap_with_skip_ranges_passes_smoke_check(self):
+        # Sentence 1 ends at 5.0, Sentence 2 starts at 30.0, but section has data-skip-ranges covering the void
+        body = """
+<section class="chapter-section active" data-ch="1" data-skip-ranges="[{&quot;start&quot;: 5.0, &quot;end&quot;: 30.0, &quot;reason&quot;: &quot;studio_retake&quot;}]">
+  <div class="sentence-unit" id="c1-s-1" data-start="0.0" data-end="5.0" data-matched="1">
+    <div class="sentence-text">
+      <span class="w" data-s="0.0" data-e="5.0" data-timing-source="observed">First</span>
+    </div>
+  </div>
+  <div class="sentence-unit" id="c1-s-2" data-start="30.0" data-end="35.0" data-matched="1">
+    <div class="sentence-text">
+      <span class="w" data-s="30.0" data-e="35.0" data-timing-source="observed">Second</span>
+    </div>
+  </div>
+</section>
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reader.html"
+            path.write_text(self._create_minimal_html(body), encoding="utf-8")
+            result = smoke_check_html(path, expected_chapters=1)
+            self.assertEqual(result["status"], "passed", result["errors"])
+
     def test_duplicate_word_timestamps_fail_smoke_check(self):
         # Two adjacent observed words with identical start timestamps
         body = """

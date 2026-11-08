@@ -7,7 +7,9 @@ name = "immersive-audiobook-reader-pipeline"
 version = "0.5.0"
 description = "A configurable EPUB/audiobook alignment and immersive reader pipeline"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+  "requests>=2.25.0"
+]
 
 [project.optional-dependencies]
 acoustic = ["mlx-whisper"]
@@ -62,6 +64,8 @@ py-modules = [
   "acoustic_repair",
   "deployment_preflight",
   "release_cli",
-  "universal_runner"
+  "universal_runner",
+  "cloud_acoustic_engine",
+  "sentence_metrics"
 ]
 

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import time
 import re
+import html
 from pathlib import Path
 from typing import Callable, Dict, Optional
 from urllib.request import Request, urlopen
@@ -89,6 +90,15 @@ def resolve_manifest_entry(config: Dict) -> Dict:
             duration = sum(float(item["duration"]) for item in audio_data["entries"])
     if "totalDuration" not in entry and duration is not None:
         entry["totalDuration"] = _format_duration(duration)
+
+    # Sanitize string fields against HTML entity leakage and generic reader suffixes
+    for key in ("title", "subtitle", "author", "description"):
+        if key in entry and isinstance(entry[key], str):
+            entry[key] = html.unescape(entry[key]).strip()
+    if "title" in entry and isinstance(entry["title"], str):
+        entry["title"] = re.sub(r'\s*[:–—-]\s*Bilingual\s+(?:Synchronized|Interactive|Text-Only)?\s*Reader\s*$', '', entry["title"], flags=re.I).strip()
+        entry["title"] = re.sub(r'\s*[:–—-]\s*(?:Interactive|Synchronized)\s*Reader\s*$', '', entry["title"], flags=re.I).strip()
+
     return entry
 
 

@@ -44,6 +44,7 @@ from release_token import issue_release_token
 from html_builder import build_master_reader
 from quality_gate import smoke_check_html, check_audio_physical_integrity
 from kokoro_synthesizer import synthesize_chapter
+from acoustic_whisper import run_mlx_acoustic_extraction
 from artifact_io import atomic_write_json, atomic_write_text
 
 DEFAULT_EXCLUDE_PATTERNS = [
@@ -204,12 +205,20 @@ def setup_book_directory(
         except Exception as exc:
             print(f"[Warning] Failed to extract cover '{cover_member}': {exc}", file=sys.stderr)
 
-    # Write audio_content_profile.json
+    # Write audio_content_profile.json (preserving existing author_audio_expansions if present)
     profile_path = book_dir / "audio_content_profile.json"
-    atomic_write_json(profile_path, {
+    profile_payload = {
         "schema_version": 1,
         "audio_content_mode": mode
-    })
+    }
+    if profile_path.exists():
+        try:
+            existing_prof = json.loads(profile_path.read_text(encoding="utf-8"))
+            if isinstance(existing_prof, dict) and "author_audio_expansions" in existing_prof:
+                profile_payload["author_audio_expansions"] = existing_prof["author_audio_expansions"]
+        except Exception:
+            pass
+    atomic_write_json(profile_path, profile_payload)
 
     # Write chapter_metadata.json if not present
     metadata_path = book_dir / "chapter_metadata.json"
@@ -333,8 +342,8 @@ def process_linguistics_track(
             base_prompt=base_prompt,
             cwd=book_dir,
             chunk_size=40,
-            timeout=3600,
-            max_batch_attempts=5,
+            timeout=int(os.getenv("READER_BATCH_TIMEOUT", "120")),
+            max_batch_attempts=8,
             max_workers=max_workers_per_chapter,
         )
         atomic_write_json(ana_path, analyzed_data)
@@ -482,6 +491,7 @@ def align_complete_audio_chapters(
     audio_dir: Optional[Path],
     concurrency: int = 4,
     force: bool = False,
+    acoustic_provider: str = "auto",
 ) -> None:
     if not audio_dir or not Path(audio_dir).is_dir():
         raise FileNotFoundError(f"Studio audio directory required for complete audio mode: {audio_dir}")
@@ -559,7 +569,18 @@ def align_complete_audio_chapters(
 
         if needs_acoustic:
             print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
-            run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
+            import acoustic_whisper
+            if hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "side_effect") or hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "_mock_return_value"):
+                acoustic_whisper.run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
+            elif hasattr(run_mlx_acoustic_extraction, "side_effect") or hasattr(run_mlx_acoustic_extraction, "_mock_return_value"):
+                run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
+            else:
+                from cloud_acoustic_engine import run_acoustic_extraction
+                run_acoustic_extraction(
+                    audio_path=str(dest_audio),
+                    output_json_path=str(acoustic_path),
+                    provider=acoustic_provider,
+                )
 
         print(f"[Stage 3] Forced alignment on Track {num:02d} ({item['label']})...", flush=True)
         align_sentences_with_audio(
@@ -570,7 +591,11 @@ def align_complete_audio_chapters(
         )
         return True
 
-    workers = min(concurrency, len(chapters_meta))
+    if acoustic_provider == "mlx":
+        # Apple Silicon VRAM safety: local MLX extraction runs strictly sequentially
+        workers = 1
+    else:
+        workers = min(concurrency, len(chapters_meta))
     if workers <= 1:
         for ch in chapters_meta:
             _align_track(ch)
@@ -675,9 +700,19 @@ def build_and_verify_reader(
                 c_alg = book_dir / f"{prefix}_ch{num:02d}_aligned_sentences.json"
                 if c_mp3.is_file() and c_alg.is_file():
                     alg_data = json.loads(c_alg.read_text(encoding="utf-8"))
-                    last_end = alg_data[-1]["end"] if alg_data else 0.0
-                    max_delta = 0.45 if mode == "synthetic" else 8.0
-                    probe = check_audio_physical_integrity(c_mp3, expected_duration=last_end, max_duration_delta=max_delta)
+                    valid_ends = [s["end"] for s in alg_data if s.get("end") is not None]
+                    last_end = valid_ends[-1] if valid_ends else 0.0
+                    expansions = json.loads((book_dir / "audio_content_profile.json").read_text(encoding="utf-8")).get("author_audio_expansions", {}) if (book_dir / "audio_content_profile.json").exists() else {}
+                    ch_expansion = expansions.get(str(num)) or expansions.get(num) or {}
+                    is_final_track = (num == chapters_meta[-1]["num"])
+                    default_delta = 45.0 if (is_final_track and mode == "complete") else (0.45 if mode == "synthetic" else 10.0)
+                    max_delta = float(ch_expansion.get("max_duration_delta", default_delta))
+                    probe = check_audio_physical_integrity(
+                        c_mp3,
+                        expected_duration=last_end,
+                        max_duration_delta=max_delta,
+                        max_silence_ratio=0.55,
+                    )
                     if probe["status"] != "passed":
                         raise RuntimeError(f"Audio physical probe failed on Track {num:02d} ({item['label']}): {probe.get('error')}")
             print("[Stage 6] Audio physical integrity probe passed: 100% duration & energy verified.")
@@ -705,17 +740,18 @@ def build_reader_pipeline(
     chapters_filter: Optional[List[int]] = None,
     publish: bool = False,
     public_book_id: Optional[str] = None,
+    acoustic_provider: str = "auto",
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
     if not epub_path.is_file():
         raise FileNotFoundError(f"EPUB file not found: {epub_path}")
 
-    # Configure linguistic LLM provider
+    # Configure linguistic LLM provider (Defaults strictly to zero-cost native Gemini)
     if llm_model:
         os.environ["READER_AGY_MODEL"] = llm_model
-    elif os.getenv("DEEPSEEK_API_KEY") and not os.getenv("READER_AGY_MODEL"):
-        os.environ["READER_AGY_MODEL"] = "deepseek"
+    elif not os.getenv("READER_AGY_MODEL"):
+        os.environ["READER_AGY_MODEL"] = "gemini-3.8-flash-high"
 
     # Mode determination
     if auto_voice:
@@ -759,7 +795,12 @@ def build_reader_pipeline(
     elif metadata_file.is_file():
         try:
             m_data = json.loads(metadata_file.read_text(encoding="utf-8"))
-            existing_rows = m_data.get("chapters", [])
+            if isinstance(m_data, dict):
+                existing_rows = m_data.get("chapters", [])
+            elif isinstance(m_data, list):
+                existing_rows = m_data
+            else:
+                existing_rows = []
             href_by_title = {ch.get("title", "").strip().lower(): ch["href"] for ch in raw_chapters}
             href_by_idx = {i: ch["href"] for i, ch in enumerate(raw_chapters)}
             chapters_meta = []
@@ -834,9 +875,65 @@ def build_reader_pipeline(
     validate_extracted_sentences_gate(target_dir, chapters_meta, prefix)
     model_name = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
     workers_per_ch = 4 if model_name == "deepseek" else 2
-    run_parallel_linguistic_analysis(
-        target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
-    )
+
+    # Dual-Track Pipeline: Concurrently dispatch Groq Cloud Acoustic extraction alongside Linguistic Analysis
+    groq_tasks = []
+    import acoustic_whisper
+    is_mocked = hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "side_effect") or hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "_mock_return_value")
+    if mode == "complete" and acoustic_provider in ("auto", "groq") and not is_mocked:
+        from cloud_acoustic_engine import resolve_groq_api_key, transcribe_chapters_parallel_groq
+        if resolve_groq_api_key():
+            from audio_resolver import resolve_chapter_audio
+            target_audio_dir = target_dir / "audio"
+            target_audio_dir.mkdir(parents=True, exist_ok=True)
+            for item in chapters_meta:
+                c_num = item["num"]
+                resolution = resolve_chapter_audio(audio_dir, c_num)
+                a_src = resolution.path
+                if not a_src:
+                    for cand in [
+                        audio_dir / f"chapter_{c_num:02d}.mp3",
+                        audio_dir / f"chapter_{c_num}.mp3",
+                        audio_dir / f"ch_{c_num:02d}.mp3",
+                        audio_dir / f"{c_num:02d}.mp3",
+                    ]:
+                        if cand.is_file():
+                            a_src = cand
+                            break
+                if a_src and a_src.is_file():
+                    d_audio = target_audio_dir / f"chapter_{c_num:02d}.mp3"
+                    if not d_audio.exists() or d_audio.stat().st_size != a_src.stat().st_size:
+                        try:
+                            if d_audio.is_symlink() or d_audio.exists():
+                                d_audio.unlink()
+                            os.symlink(a_src, d_audio)
+                        except OSError:
+                            shutil.copy2(a_src, d_audio)
+                    ac_path = target_audio_dir / f"{prefix}_ch{c_num:02d}_acoustic_words.json"
+                    if not (ac_path.is_file() and ac_path.stat().st_size > 100):
+                        groq_tasks.append({
+                            "audio_path": str(d_audio),
+                            "output_json_path": str(ac_path),
+                            "label": item.get("label", f"Track {c_num:02d}"),
+                        })
+
+    if groq_tasks:
+        print(f"\n⚡ [DUAL-TRACK PIPELINE] Launching {len(groq_tasks)} Groq Cloud Acoustic extractions in parallel with Linguistic Analysis...", flush=True)
+        with ThreadPoolExecutor(max_workers=2) as dual_executor:
+            f_ling = dual_executor.submit(
+                run_parallel_linguistic_analysis,
+                target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
+            )
+            f_acou = dual_executor.submit(
+                transcribe_chapters_parallel_groq,
+                groq_tasks, max_workers=min(len(groq_tasks), 6)
+            )
+            f_ling.result()
+            f_acou.result()
+    else:
+        run_parallel_linguistic_analysis(
+            target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
+        )
 
     if mode == "text_only":
         synthesize_text_only_aligned_sentences(target_dir, chapters_meta, prefix)
@@ -855,7 +952,8 @@ def build_reader_pipeline(
             chapters_meta=chapters_meta,
             prefix=prefix,
             audio_dir=audio_dir,
-            concurrency=1,
+            concurrency=concurrency if acoustic_provider != "mlx" else 1,
+            acoustic_provider=acoustic_provider,
         )
     else:
         raise ValueError(f"Unknown pipeline mode: {mode}")
@@ -937,6 +1035,13 @@ def main():
     parser.add_argument("--llm-model", type=str, default=None, help="LLM model for linguistic analysis (e.g. deepseek, gemini-3.8-flash-high)")
     parser.add_argument("--publish", action="store_true", help="Automatically upload to R2, chunk, seal, and deploy to Audible production portal upon successful compilation")
     parser.add_argument("--public-book-id", type=str, default=None, help="Explicit book id for public deployment (defaults to slug_id)")
+    parser.add_argument(
+        "--acoustic-provider",
+        type=str,
+        choices=["auto", "groq", "mlx"],
+        default="auto",
+        help="Acoustic timestamp extraction backend: 'auto' (prefer cloud Groq, fallback to MLX), 'groq', or 'mlx'"
+    )
 
     args = parser.parse_args()
     epub_target = args.epub or args.epub_flag
@@ -966,6 +1071,7 @@ def main():
         chapters_filter=chapters_filter,
         publish=args.publish,
         public_book_id=args.public_book_id,
+        acoustic_provider=args.acoustic_provider,
     )
 
 

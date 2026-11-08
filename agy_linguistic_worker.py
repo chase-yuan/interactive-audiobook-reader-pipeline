@@ -6,12 +6,15 @@ The worker returns only the contract JSON and never edits the source book.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -197,11 +200,17 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
     cache_dir.mkdir(exist_ok=True)
     first_id = batch[0].get("id", f"idx{batch_idx}")
     last_id = batch[-1].get("id", f"idx{batch_idx}")
-    cache_file = cache_dir / f"cache_{first_id}_{last_id}_{len(batch)}.json"
 
-    if cache_file.is_file() and cache_file.stat().st_size > 10:
+    # Content signature prevents cache key collisions across chapters with identical sentence IDs (e.g. s-0 to s-34)
+    content_sig = json.dumps([item.get("id", "") + ":" + item.get("text", "") for item in batch], ensure_ascii=False)
+    content_hash = hashlib.sha256(content_sig.encode("utf-8")).hexdigest()[:12]
+    cache_file = cache_dir / f"cache_{first_id}_{last_id}_{len(batch)}_{content_hash}.json"
+    legacy_cache_file = cache_dir / f"cache_{first_id}_{last_id}_{len(batch)}.json"
+
+    target_cache = cache_file if cache_file.is_file() else (legacy_cache_file if legacy_cache_file.is_file() else None)
+    if target_cache and target_cache.stat().st_size > 10:
         try:
-            cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
+            cached_data = json.loads(target_cache.read_text(encoding="utf-8"))
             verify_analysis(cached_data, batch)
             merged_cached = []
             for idx, c_item in enumerate(cached_data):
@@ -218,9 +227,14 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
 
     default_model = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
     fallback_models = [default_model]
-    for alt in ("gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium"):
-        if alt not in fallback_models:
-            fallback_models.append(alt)
+    if default_model != "deepseek":
+        for alt in ("gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium"):
+            if alt not in fallback_models:
+                fallback_models.append(alt)
+
+    print_timeout = f"{max(int(timeout), 30)}s" if timeout < 120 else f"{int(timeout // 60)}m"
+    if timeout % 60 != 0 and timeout >= 120:
+        print_timeout = f"{timeout}s"
 
     for attempt in range(1, max_batch_attempts + 1):
         model_name = fallback_models[(attempt - 1) % len(fallback_models)]
@@ -233,7 +247,7 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                 raw_output = _call_deepseek_batch(prompt, timeout=timeout)
             else:
                 completed = subprocess.run(
-                    base_cmd + ["--output-format", "text", "--print-timeout", "1h", "--print", prompt],
+                    base_cmd + ["--output-format", "text", "--print-timeout", print_timeout, "--print", prompt],
                     cwd=str(cwd),
                     text=True,
                     capture_output=True,
@@ -242,7 +256,8 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                 if completed.returncode != 0:
                     last_error = (completed.stderr or completed.stdout or "agy failed")[-4000:]
                     is_quota = "RESOURCE_EXHAUSTED" in last_error or "429" in last_error
-                    wait_sec = 10 if is_quota else min(2 * attempt, 10)
+                    import random
+                    wait_sec = (12 + random.uniform(2, 6)) if is_quota else min(2 * attempt, 10)
                     time.sleep(wait_sec)
                     continue
                 raw_output = completed.stdout
@@ -268,7 +283,7 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                         sub_raw = _call_deepseek_batch(sub_prompt, timeout=timeout)
                     else:
                         sub_completed = subprocess.run(
-                            base_cmd + ["--output-format", "text", "--print-timeout", "1h", "--print", sub_prompt],
+                            base_cmd + ["--output-format", "text", "--print-timeout", print_timeout, "--print", sub_prompt],
                             cwd=str(cwd),
                             text=True,
                             capture_output=True,
@@ -308,6 +323,11 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
             except Exception:
                 pass
             return ordered_batch
+        except subprocess.TimeoutExpired:
+            last_error = f"agy timed out after {timeout}s on batch {batch_idx + 1} (model {model_name})"
+            sys.stderr.write(f"⚠️ [AGY_WORKER] {last_error}, failing fast to next model/retry...\n")
+            time.sleep(2)
+            continue
         except Exception as exc:
             last_error = str(exc)
             time.sleep(2)
@@ -322,7 +342,7 @@ def process_canonical_sentences(
     base_prompt: str,
     cwd: Path,
     chunk_size: int = CHUNK_SIZE,
-    timeout: int = 3700,
+    timeout: int = 120,
     max_batch_attempts: int = 3,
     max_workers: int = 1,
 ) -> list[dict]:
@@ -359,11 +379,13 @@ def main(environ: dict[str, str] | None = None) -> int:
         raise RuntimeError(f"canonical data at {canonical_path} must be a JSON list")
 
     base_prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    timeout = int(env.get("READER_BATCH_TIMEOUT", "120"))
 
     analyzed_data = process_canonical_sentences(
         canonical_data=canonical_data,
         base_prompt=base_prompt,
         cwd=canonical_path.parent,
+        timeout=timeout,
         max_workers=int(env.get("READER_LINGUISTIC_MAX_WORKERS", "1")),
     )
 

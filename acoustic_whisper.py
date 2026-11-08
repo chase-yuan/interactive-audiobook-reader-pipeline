@@ -44,7 +44,7 @@ def run_mlx_acoustic_extraction(
     call_options = {k: v for k, v in options.items() if v is not None}
     with _MLX_DEVICE_LOCK:
         result = transcribe_fn(
-            audio_path,
+            str(audio_path),
             path_or_hf_repo=model_name,
             word_timestamps=True,
             verbose=False,

@@ -393,6 +393,91 @@ class UniversalRunnerTests(unittest.TestCase):
             self.assertTrue(rep["release_ready"])
             self.assertEqual(rep["audio_content_mode"], "complete")
 
+    @patch("universal_runner.check_audio_physical_integrity", return_value={"status": "passed", "audio_duration": 10.0, "delta": 0.0})
+    @patch("universal_runner.process_canonical_sentences")
+    @patch("cloud_acoustic_engine.resolve_groq_api_key", return_value="gsk_mock_dual_track_key")
+    @patch("cloud_acoustic_engine.transcribe_chapters_parallel_groq")
+    @patch("dynamic_aligner.align_sentences_with_audio")
+    def test_dual_track_groq_acoustic_parallel_dispatch(
+        self, mock_align, mock_groq_parallel, mock_key, mock_linguistics, mock_audio_probe
+    ):
+        def fake_groq_parallel(tasks, **kwargs):
+            for t in tasks:
+                p = Path(t["output_json_path"])
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(json.dumps({"words": [{"word": "w", "start": 0.0, "end": 1.0}] * 30, "acoustic_profile_version": 2}), encoding="utf-8")
+            return [{"words": []}] * len(tasks)
+        mock_groq_parallel.side_effect = fake_groq_parallel
+        def fake_ling(canonical_data=None, **kw):
+            return [
+                {"id": c["id"], "elem_idx": 0, "tag": "p", "text": c["text"], "trans": "t", "vocab": [], "is_heading": False}
+                for c in (canonical_data or [])
+            ]
+        mock_linguistics.side_effect = fake_ling
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            epub_path = root / "sample.epub"
+            book_dir = root / "output_book"
+            audio_dir = root / "source_audio"
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            _create_mock_epub(epub_path)
+
+            for idx in range(3):
+                (audio_dir / f"chapter_{idx:02d}.mp3").write_bytes(b"ID3" + b"\x00" * 100)
+
+            # Pre-create mock aligned sentences so build_and_verify_reader succeeds
+            def fake_align(ac_json, an_json, al_json, audio_path=None):
+                ana = json.loads(Path(an_json).read_text(encoding="utf-8"))
+                aligned = []
+                cur_t = 0.0
+                total_items = len(ana)
+                words_per_item = 120 // total_items
+                for idx, item in enumerate(ana):
+                    words = [f"word{w}" for w in range(idx * words_per_item, (idx + 1) * words_per_item)]
+                    spans = [{"word": w, "start": cur_t + i * 0.5, "end": cur_t + (i + 1) * 0.5} for i, w in enumerate(words)]
+                    end_t = cur_t + len(words) * 0.5
+                    aligned.append({
+                        "id": item["id"],
+                        "elem_idx": item.get("elem_idx", 0),
+                        "tag": item.get("tag", "p"),
+                        "text": " ".join(words),
+                        "trans": item.get("trans", ""),
+                        "vocab": [],
+                        "is_heading": item.get("is_heading", False),
+                        "start": round(cur_t, 2),
+                        "end": round(end_t, 2),
+                        "raw_start": round(cur_t, 2),
+                        "raw_end": round(end_t, 2),
+                        "has_audio_match": True,
+                        "alignment_status": "validated",
+                        "matched_token_count": len(words),
+                        "source_token_count": len(words),
+                        "word_spans": spans,
+                        "match_ratio": 1.0,
+                        "alignment_method": "mock_studio_align",
+                        "fallback_used": False,
+                    })
+                    cur_t = end_t
+                Path(al_json).parent.mkdir(parents=True, exist_ok=True)
+                Path(al_json).write_text(json.dumps(aligned), encoding="utf-8")
+
+            mock_align.side_effect = fake_align
+
+            out_html = build_reader_pipeline(
+                epub_path=epub_path,
+                book_dir=book_dir,
+                audio_dir=audio_dir,
+                concurrency=2,
+                min_chars=50,
+                open_in_browser=False,
+                acoustic_provider="groq",
+            )
+
+            # Assert that transcribe_chapters_parallel_groq was called with all 3 chapters
+            mock_groq_parallel.assert_called_once()
+            tasks = mock_groq_parallel.call_args[0][0]
+            self.assertEqual(len(tasks), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
