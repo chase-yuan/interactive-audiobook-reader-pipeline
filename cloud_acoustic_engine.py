@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -242,7 +243,7 @@ def run_groq_acoustic_extraction(
                     if retry_after_hdr:
                         try:
                             header_wait = float(retry_after_hdr)
-                        except ValueError:
+                        except (ValueError, TypeError):
                             pass
 
                     body_msg = ""
@@ -282,7 +283,8 @@ def run_groq_acoustic_extraction(
                     continue
                 else:
                     error_text = resp.text[:500]
-                    raise RuntimeError(f"Groq API returned HTTP {resp.status_code}: {error_text}")
+                    clean_error = re.sub(r"gsk_[a-zA-Z0-9]+", "gsk_***", error_text)
+                    raise RuntimeError(f"Groq API returned HTTP {resp.status_code}: {clean_error}")
 
             except (requests.exceptions.RequestException, TimeoutError) as exc:
                 last_error = exc

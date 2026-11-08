@@ -186,8 +186,6 @@ def build_master_reader(book_title, book_subtitle, book_author, chapters_config,
         norm_label = re.sub(r"^(?:THE|A|AN)\s+", "", safe_heading_label.upper())
         norm_sub = re.sub(r"^(?:THE|A|AN)\s+", "", html.escape(sub_title).upper())
         is_generic_num = not sub_title or bool(re.match(r"^(?:chapter|part|track)?\s*\d*$", sub_title, re.IGNORECASE))
-        norm_label = re.sub(r"^(?:THE|A|AN)\s+", "", safe_heading_label.upper())
-        norm_sub = re.sub(r"^(?:THE|A|AN)\s+", "", html.escape(sub_title).upper())
         if is_generic_num:
             title_html = f"CHAPTER {disp_num}" if disp_num else (safe_heading_label or html.escape(clean_title))
         elif norm_label == norm_sub:
