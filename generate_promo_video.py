@@ -100,11 +100,12 @@ def record_reader_video(
             ],
         )
 
-        # 9:16 vertical video recording (standard mobile resolution)
+        # Exact 9:16 vertical full-bleed mobile viewport matching recording canvas
         context = browser.new_context(
-            viewport={"width": 430, "height": 932},
+            viewport={"width": 720, "height": 1280},
             record_video_dir=str(video_dir),
             record_video_size={"width": 720, "height": 1280},
+            device_scale_factor=1.0,
         )
 
         page = context.new_page()
@@ -114,45 +115,36 @@ def record_reader_video(
             try {{
                 localStorage.setItem('audible_theme', '{theme}');
                 localStorage.setItem('audible_reader_theme', '{theme}');
+                localStorage.setItem('reader_the-psychology-of-money_theme', '{theme}');
             }} catch(e) {{}}
         """)
 
         url = f"http://127.0.0.1:{server_port}/{html_name}"
         page.goto(url, wait_until="networkidle")
 
-        # Inject timing probe to capture exact second when playback triggers
-        page.evaluate("""
-            window.__reader_playback_start = null;
-            const audio = document.getElementById('audioTrack');
-            if (audio) {
-                audio.addEventListener('playing', () => {
-                    if (window.__reader_playback_start === null) {
-                        window.__reader_playback_start = performance.now();
-                    }
-                }, { once: true });
-            }
-        """)
-
-        time.sleep(1.0)  # Brief visual breath
-
-        # Click the target sentence to start playback and tracking
+        # Target sentence element
         target_selector = f"#{start_sentence_id}"
-        page.wait_for_selector(target_selector, state="visible", timeout=10000)
+        page.wait_for_selector(target_selector, state="visible", timeout=15000)
         
-        # Scroll target sentence into clean view and click
-        sentence_el = page.locator(target_selector)
-        sentence_el.scroll_into_view_if_needed()
-        time.sleep(0.5)
+        # Scroll target sentence cleanly into center view
+        page.evaluate(f"""() => {{
+            const el = document.getElementById('{start_sentence_id}');
+            if (el) el.scrollIntoView({{ block: 'center', inline: 'nearest' }});
+        }}""")
+        page.wait_for_timeout(800)
 
-        start_time_mark = time.time()
-        sentence_el.locator(".sentence-text").click()
+        # Trigger playback via JavaScript click directly on sentence text
+        page.evaluate(f"""() => {{
+            const el = document.getElementById('{start_sentence_id}');
+            const st = (el && el.querySelector('.sentence-text')) || el;
+            if (st) st.click();
+        }}""")
 
-        # Wait for duration of the promo
-        time.sleep(duration + 1.0)
+        # Wait while continuously pumping Playwright's event loop to guarantee smooth 25fps video rendering
+        end_time = time.time() + duration
+        while time.time() < end_time:
+            page.wait_for_timeout(100)
 
-        # Probe when playback visually started
-        play_perf_time = page.evaluate("window.__reader_playback_start")
-        
         context.close()
         browser.close()
 
@@ -163,8 +155,18 @@ def record_reader_video(
 
     raw_video = webm_files[0]
     
-    # Calculate offset in video: 1.0s wait + 0.5s scroll + ~0.2s click reaction
-    video_offset = 1.65
+    # Measure total WebM duration to calculate exact video offset from click
+    probe_cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(raw_video),
+    ]
+    probe_res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    total_dur = float(probe_res.stdout.strip())
+    video_offset = max(0.0, total_dur - duration)
+
     return raw_video, video_offset
 
 
@@ -182,19 +184,19 @@ def mux_video_and_audio(
     cmd = [
         "ffmpeg",
         "-y",
-        "-ss", f"{video_offset:.2f}",
-        "-t", f"{duration:.2f}",
+        "-ss", f"{video_offset:.3f}",
         "-i", str(raw_video),
-        "-ss", f"{audio_start:.2f}",
-        "-t", f"{duration:.2f}",
+        "-ss", f"{audio_start:.3f}",
         "-i", str(audio_path),
+        "-t", f"{duration:.3f}",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
         "-c:v", "libx264",
         "-preset", "fast",
-        "-crf", "22",
+        "-crf", "20",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "192k",
-        "-shortest",
         str(output_path),
     ]
 
@@ -279,9 +281,10 @@ def main():
     parser.add_argument("--start", type=str, default="c1-s-0", help="Sentence ID to start playback from (default: c1-s-0)")
     parser.add_argument("--duration", type=float, default=16.0, help="Video duration in seconds (default: 16.0)")
     parser.add_argument("--theme", type=str, default="sepia", choices=["sepia", "light", "dark", "night"], help="Reader theme")
+    parser.add_argument("--open", action="store_true", help="Automatically pop open video in player after generation")
 
     args = parser.parse_args()
-    generate_promo_video(
+    out = generate_promo_video(
         book_dir=args.book_dir,
         html_path=args.html,
         output_path=args.output,
@@ -289,6 +292,8 @@ def main():
         duration=args.duration,
         theme=args.theme,
     )
+    if args.open:
+        subprocess.run(["open", str(out)])
 
 
 if __name__ == "__main__":
