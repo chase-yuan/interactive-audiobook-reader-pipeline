@@ -44,6 +44,9 @@ def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None =
     # 2. Protect single capital initials (e.g. "J. Elon Haldeman", "W. E. B. Du Bois", "J. K. Rowling")
     protected = re.sub(r"\b([A-Z])\.", r"\1__INITIAL_DOT__", protected)
 
+    # 2.5. Protect enumeration prefixes (e.g. "1. ", "2. ", "a. ", "b. ", "10. ") at start of text or after whitespace/grouping
+    protected = re.sub(r"(^|[\s\(\[\{])(\d{1,2}|[a-zA-Z])\.(?=\s+[\"\'“‘\(]?[A-Z0-9])", r"\1\2__ENUM_DOT__", protected)
+
     # 3. Protect decimal numbers (e.g. 3.14, 10.5)
     protected = re.sub(r"(\d+)\.(\d+)", r"\1__NUM_DOT__\2", protected)
 
@@ -91,6 +94,7 @@ def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None =
             part = part.replace(safe_key, f"{title}.")
 
         part = part.replace("__INITIAL_DOT__", ".")
+        part = part.replace("__ENUM_DOT__", ".")
         part = part.replace("__NUM_DOT__", ".")
         part = re.sub(r"__([a-zA-Z\._]+)_DOT__", lambda m: m.group(1).replace("_", ".") + ".", part)
         part = strip_footnote_residues(part)

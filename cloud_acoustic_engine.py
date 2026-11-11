@@ -422,23 +422,30 @@ def transcribe_chapters_parallel_groq(
         label = task.get("label", Path(audio).name)
         worker_keys = keys_pool[idx % len(keys_pool):] + keys_pool[:idx % len(keys_pool)]
         print(f"  ▶️ [DISPATCH] {label} -> Groq ({model}, key #{idx % len(keys_pool) + 1})...", flush=True)
-        res = run_groq_acoustic_extraction(
-            audio_path=audio,
-            output_json_path=out_json,
-            api_key=worker_keys,
-            model=model,
-            language=language,
-            session=session,
-        )
-        return idx, res
+        try:
+            res = run_groq_acoustic_extraction(
+                audio_path=audio,
+                output_json_path=out_json,
+                api_key=worker_keys,
+                model=model,
+                language=language,
+                session=session,
+            )
+            return idx, res
+        except Exception as exc:
+            print(f"⚠️ [CLOUD ACOUSTIC WARNING] Chapter {label} failed in cloud pre-fetch: {exc}", flush=True)
+            return idx, None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_worker, i, t): t for i, t in enumerate(chapter_tasks)}
         for future in as_completed(futures):
-            idx, res = future.result()
-            results[idx] = res
+            try:
+                idx, res = future.result()
+                results[idx] = res
+            except Exception as exc:
+                print(f"⚠️ [CLOUD ACOUSTIC WARNING] Future execution error: {exc}", flush=True)
 
-    print(f"🏆 [CLOUD ACOUSTIC] All {len(chapter_tasks)} chapters successfully transcribed in cloud.\n", flush=True)
+    print(f"🏆 [CLOUD ACOUSTIC] Cloud acoustic batch completed ({len(chapter_tasks)} tasks processed).\n", flush=True)
     return results
 
 

@@ -166,7 +166,14 @@ def discover_epub_chapters(
         chars = ch.get("text_chars", 0)
 
         # Check explicit exclude patterns against href and title
-        if any(exc in href_lower or exc in title_lower for exc in excludes):
+        def _match_pattern(pat: str) -> bool:
+            if pat in href_lower:
+                return True
+            if len(pat) <= 4:
+                return bool(re.search(r"\b" + re.escape(pat) + r"\b", title_lower))
+            return pat in title_lower
+
+        if any(_match_pattern(exc) for exc in excludes):
             continue
 
         # Check minimal text threshold
@@ -929,7 +936,10 @@ def build_reader_pipeline(
                 groq_tasks, max_workers=min(len(groq_tasks), 6)
             )
             f_ling.result()
-            f_acou.result()
+            try:
+                f_acou.result()
+            except Exception as e:
+                print(f"⚠️ [DUAL-TRACK WARNING] Cloud acoustic pre-fetch encountered issues: {e}. Stage 3 will handle any missing extractions.", flush=True)
     else:
         run_parallel_linguistic_analysis(
             target_dir, chapters_meta, prefix, concurrency=concurrency, max_workers_per_chapter=workers_per_ch
