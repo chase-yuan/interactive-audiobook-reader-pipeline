@@ -122,6 +122,114 @@ def record_reader_video(
         url = f"http://127.0.0.1:{server_port}/{html_name}"
         page.goto(url, wait_until="networkidle")
 
+        # Inject realistic iOS touch cursor and ripple engine
+        page.evaluate("""() => {
+            const style = document.createElement('style');
+            style.innerHTML = `
+                #promo-cursor {
+                    position: fixed;
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 50%;
+                    background: rgba(255, 255, 255, 0.72);
+                    border: 2.5px solid rgba(0, 0, 0, 0.35);
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.32);
+                    pointer-events: none;
+                    z-index: 2147483647;
+                    transform: translate(-50%, -50%) scale(1);
+                    transition: transform 0.15s ease-out, background 0.15s ease-out, opacity 0.3s ease;
+                    opacity: 0;
+                }
+                #promo-cursor.active { opacity: 1; }
+                #promo-cursor.clicking {
+                    transform: translate(-50%, -50%) scale(0.72);
+                    background: rgba(255, 180, 0, 0.95);
+                    border-color: rgba(255, 255, 255, 0.95);
+                }
+                .promo-ripple {
+                    position: fixed;
+                    border-radius: 50%;
+                    border: 3.5px solid rgba(255, 170, 0, 0.88);
+                    pointer-events: none;
+                    z-index: 2147483646;
+                    animation: promo-ripple-anim 0.55s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+                }
+                @keyframes promo-ripple-anim {
+                    0% { width: 14px; height: 14px; opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+                    100% { width: 90px; height: 90px; opacity: 0; transform: translate(-50%, -50%) scale(1.4); }
+                }
+            `;
+            document.head.appendChild(style);
+
+            const cursor = document.createElement('div');
+            cursor.id = 'promo-cursor';
+            document.body.appendChild(cursor);
+
+            window.__touchTo = function(x, y, durationMs = 500) {
+                return new Promise(resolve => {
+                    const c = document.getElementById('promo-cursor');
+                    c.classList.add('active');
+                    const startX = c._curX !== undefined ? c._curX : (window.innerWidth / 2);
+                    const startY = c._curY !== undefined ? c._curY : (window.innerHeight + 80);
+                    const startTime = performance.now();
+                    
+                    function frame(now) {
+                        const elapsed = now - startTime;
+                        const p = Math.min(1, elapsed / durationMs);
+                        const ease = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+                        const cx = startX + (x - startX) * ease;
+                        const cy = startY + (y - startY) * ease;
+                        c.style.left = cx + 'px';
+                        c.style.top = cy + 'px';
+                        c._curX = cx;
+                        c._curY = cy;
+                        if (p < 1) {
+                            requestAnimationFrame(frame);
+                        } else {
+                            resolve();
+                        }
+                    }
+                    requestAnimationFrame(frame);
+                });
+            };
+
+            window.__touchClick = function() {
+                return new Promise(resolve => {
+                    const c = document.getElementById('promo-cursor');
+                    const x = c._curX || 0;
+                    const y = c._curY || 0;
+                    c.classList.add('clicking');
+                    const rip = document.createElement('div');
+                    rip.className = 'promo-ripple';
+                    rip.style.left = x + 'px';
+                    rip.style.top = y + 'px';
+                    document.body.appendChild(rip);
+                    setTimeout(() => rip.remove(), 600);
+                    setTimeout(() => {
+                        c.classList.remove('clicking');
+                        resolve();
+                    }, 150);
+                });
+            };
+
+            window.__touchElementAndClick = async function(selector, moveMs = 600) {
+                const el = document.querySelector(selector);
+                if (!el) return false;
+                const r = el.getBoundingClientRect();
+                const cx = r.left + r.width / 2;
+                const cy = r.top + r.height / 2;
+                await window.__touchTo(cx, cy, moveMs);
+                await window.__touchClick();
+                el.click();
+                return true;
+            };
+
+            window.__hideCursor = function() {
+                const c = document.getElementById('promo-cursor');
+                if (c) c.classList.remove('active');
+            };
+        }""")
+
         # Target sentence element
         target_selector = f"#{start_sentence_id}"
         page.wait_for_selector(target_selector, state="visible", timeout=15000)
@@ -131,17 +239,50 @@ def record_reader_video(
             const el = document.getElementById('{start_sentence_id}');
             if (el) el.scrollIntoView({{ block: 'center', inline: 'nearest' }});
         }}""")
-        page.wait_for_timeout(800)
+        page.wait_for_timeout(1000)
 
-        # Trigger playback via JavaScript click directly on sentence text
-        page.evaluate(f"""() => {{
-            const el = document.getElementById('{start_sentence_id}');
-            const st = (el && el.querySelector('.sentence-text')) || el;
-            if (st) st.click();
-        }}""")
+        # Choreographed Feature Demonstration Routine (~58-60s)
+        # Act 1: Gliding to sentence and triggering Tap-to-Read
+        page.evaluate(f"window.__touchElementAndClick('#{start_sentence_id} .sentence-text', 800)")
+        start_playback_time = time.time()
 
-        # Wait while continuously pumping Playwright's event loop to guarantee smooth 25fps video rendering
-        end_time = time.time() + duration
+        # Act 2: Pure audio-text acoustic karaoke tracking (12s)
+        while time.time() - start_playback_time < 12.0:
+            page.wait_for_timeout(100)
+
+        # Act 3: Expand bottom Menu preference drawer
+        page.evaluate("window.__touchElementAndClick('#drawerToggleBtn', 700)")
+        page.wait_for_timeout(1500)
+
+        # Act 4: Multi-theme demonstration (Dark, Night, Sepia)
+        page.evaluate("window.__touchElementAndClick('.theme-dot-dark', 600)")
+        page.wait_for_timeout(3500)
+
+        page.evaluate("window.__touchElementAndClick('.theme-dot-night', 600)")
+        page.wait_for_timeout(3000)
+
+        page.evaluate("window.__touchElementAndClick('.theme-dot-sepia', 600)")
+        page.wait_for_timeout(1500)
+        page.evaluate("window.__touchElementAndClick('#drawerToggleBtn', 500)")
+        page.wait_for_timeout(2000)
+
+        # Act 5: 24 Chapters Table of Contents navigation
+        page.evaluate("window.__touchElementAndClick('#chapterSelectBtn', 700)")
+        page.wait_for_timeout(4000)
+        page.evaluate("window.__touchElementAndClick('#chapterSelectBtn', 500)")
+        page.wait_for_timeout(2000)
+
+        # Act 6: Immersive Focus / Shadowing Mode
+        page.evaluate("window.__touchElementAndClick('#drawerToggleBtn', 500)")
+        page.wait_for_timeout(1000)
+        page.evaluate("window.__touchElementAndClick('#focusModeBtn', 600)")
+        page.wait_for_timeout(4500)
+        page.evaluate("window.__touchElementAndClick('#focusExitBtn', 600)")
+        page.wait_for_timeout(2000)
+
+        # Act 7: Grand Finale flow until target duration
+        page.evaluate("window.__hideCursor()")
+        end_time = start_playback_time + duration
         while time.time() < end_time:
             page.wait_for_timeout(100)
 
@@ -178,9 +319,10 @@ def mux_video_and_audio(
     duration: float,
     output_path: Path,
 ) -> Path:
-    """Use ffmpeg to accurately slice audio, trim video, and mux into MP4."""
+    """Use ffmpeg to accurately slice audio, trim video, and mux into production-ready MP4."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Production Apple QuickTime / Mobile HD compatibility flags
     cmd = [
         "ffmpeg",
         "-y",
@@ -195,6 +337,12 @@ def mux_video_and_audio(
         "-preset", "fast",
         "-crf", "20",
         "-pix_fmt", "yuv420p",
+        "-profile:v", "high",
+        "-level", "4.1",
+        "-movflags", "+faststart",
+        "-colorspace", "bt709",
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
         "-c:a", "aac",
         "-b:a", "192k",
         str(output_path),
@@ -212,7 +360,7 @@ def generate_promo_video(
     html_path: Path | None = None,
     output_path: Path | None = None,
     start_sentence_id: str = "c1-s-0",
-    duration: float = 16.0,
+    duration: float = 58.0,
     theme: str = "sepia",
 ) -> Path:
     book_dir = book_dir.resolve()
@@ -279,7 +427,7 @@ def main():
     parser.add_argument("--html", type=Path, default=None, help="Explicit reader HTML file path")
     parser.add_argument("--output", type=Path, default=None, help="Output MP4 file path")
     parser.add_argument("--start", type=str, default="c1-s-0", help="Sentence ID to start playback from (default: c1-s-0)")
-    parser.add_argument("--duration", type=float, default=16.0, help="Video duration in seconds (default: 16.0)")
+    parser.add_argument("--duration", type=float, default=58.0, help="Video duration in seconds (default: 58.0)")
     parser.add_argument("--theme", type=str, default="sepia", choices=["sepia", "light", "dark", "night"], help="Reader theme")
     parser.add_argument("--open", action="store_true", help="Automatically pop open video in player after generation")
 
@@ -293,7 +441,9 @@ def main():
         theme=args.theme,
     )
     if args.open:
-        subprocess.run(["open", str(out)])
+        subprocess.run(["open", "-a", "QuickTime Player", str(out)])
+        time.sleep(0.5)
+        subprocess.run(["osascript", "-e", 'tell application "QuickTime Player" to play front document'])
 
 
 if __name__ == "__main__":
