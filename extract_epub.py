@@ -370,9 +370,9 @@ def clean_and_merge_elements(elements):
         is_too_long = len(curr_txt.split()) >= 40 or len(curr_txt) >= 280
 
         # Cross-element continuation allows lowercase continuations across block boundaries,
-        # bounded by a safety ceiling (max 60 words / 450 chars) to prevent runaway sentence bloat.
-        is_continuation_ceiling = len(curr_txt.split()) >= 60 or len(curr_txt) >= 450
-        is_cross_element_continuation = next_starts_lower and (not curr_has_terminal or curr_txt.endswith(":")) and not is_continuation_ceiling
+        # bounded by a safety ceiling (max 300 words / 2000 chars) to prevent runaway sentence bloat in unpunctuated lists.
+        is_continuation_ceiling = len(curr_txt.split()) >= 300 or len(curr_txt) >= 2000
+        is_cross_element_continuation = next_starts_lower and not is_continuation_ceiling
 
         if is_cross_element_continuation or ((next_starts_lower or (not curr_has_terminal and not is_title)) and not is_too_long):
             curr["text"] = curr_txt + " " + next_txt
