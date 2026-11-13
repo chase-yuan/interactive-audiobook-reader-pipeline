@@ -987,20 +987,22 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                     cid = c_item.get("id")
                     if cid:
                         canonical_meta[cid] = c_item
-        except Exception:
-            pass
+        except Exception as exc:
+            sys.stderr.write(f"⚠️ [ALIGNER WARNING] Failed to load canonical metadata from {canonical_json_path}: {exc}\n")
 
     for s in sentences:
         cid = s.get("id")
         if cid in canonical_meta:
             c = canonical_meta[cid]
-            if s.get("elem_idx") is None and c.get("elem_idx") is not None:
+            if c.get("elem_idx") is not None:
                 s["elem_idx"] = c.get("elem_idx")
-            if "is_heading" not in s and "is_heading" in c:
+            if "is_heading" in c:
                 s["is_heading"] = c.get("is_heading")
-            if "is_tabular" not in s and "is_tabular" in c:
+            if "is_tabular" in c:
                 s["is_tabular"] = c.get("is_tabular")
-            if "tag" not in s and "tag" in c:
+            if "is_footnote" in c:
+                s["is_footnote"] = c.get("is_footnote")
+            if "tag" in c:
                 s["tag"] = c.get("tag")
         
     acoustic_words = acoustic_data.get("words", [])
@@ -1275,7 +1277,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
             and not _has_nearby_exact_audio(clean_s, acoustic_words, ac_tokens, ac_map, following[0])
         ):
             inferred_non_narrated.add(s_idx)
-        is_unanchored_ambiguous_short = len(clean_s) <= 2 and not previous and not following and len(candidates) > 1
+        is_unanchored_ambiguous_short = (len(clean_s) <= 2 and not previous and not following and len(candidates) > 1) or (bool(s.get("is_tabular")) and len(clean_s) <= 3)
 
         if len(candidates) >= 1 and not is_unanchored_ambiguous_short:
             cand_idx = candidates[0]
@@ -1299,7 +1301,7 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
                 "match_ratio": 1.0, "alignment_method": "contextual_short_exact_match",
                 "fallback_used": False,
             }
-        elif len(clean_s) == 1 and (previous or following):
+        elif len(clean_s) == 1 and (previous or following) and not s.get("is_tabular"):
             # Single token spelling variance match (e.g. Cecelia vs Cecilia, Mollie vs Molly)
             fuzzy_cand = [
                 i for i, t in enumerate(sub_tokens)
@@ -1392,7 +1394,8 @@ def align_sentences_with_audio(acoustic_json_path, analysis_json_path, aligned_o
         if s_idx in matched_sentences:
             continue
         source_tokens = tokenize_clean(sentence.get("text", ""))
-        is_actor_omitted_attribution = len(source_tokens) <= 6 and any(v in source_tokens for v in SPEECH_ATTRIBUTION_VERBS)
+        is_actor_dialogue = bool(re.match(r"^[A-Z]{2,}\s*:\s*", sentence.get("text", "")))
+        is_actor_omitted_attribution = (len(source_tokens) <= 6 and any(v in source_tokens for v in SPEECH_ATTRIBUTION_VERBS)) or (is_actor_dialogue and len(source_tokens) <= 6)
         if is_actor_omitted_attribution and (s_idx > 0 and (s_idx - 1) in matched_sentences):
             prev_ms = matched_sentences[s_idx - 1]
             next_ms = matched_sentences[s_idx + 1] if (s_idx + 1) in matched_sentences else None

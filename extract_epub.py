@@ -34,7 +34,21 @@ def strip_footnote_residues(text: str) -> str:
     text = re.sub(r'[ \t]+', ' ', text)
     return text.strip()
 
-def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None = None):
+
+def is_print_instruction_noise(text: str) -> bool:
+    """
+    Detect non-narrated print-only survey prompts, layout bracket instructions,
+    or survey choice percentage indicators.
+    e.g. '(The percentage of people choosing each option is shown in brackets.)'
+    """
+    clean = text.strip()
+    return bool(re.match(
+        r"^\s*[\(\[]\s*(?:the\s+)?(?:percentage|proportion|number|results?|fractions?|options?)\b.*[\)\]]$",
+        clean,
+        re.IGNORECASE,
+    ))
+
+def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None = None, return_metadata: bool = False):
     protected = strip_footnote_residues(text)
     # 1. Protect titles, honorifics, and months with trailing dot
     for title in ABBR_TITLES:
@@ -62,7 +76,7 @@ def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None =
     protected = re.sub(r"\b(a\.m|p\.m)\.(?!\s+(?:[\"\'“‘\(]?[A-Z0-9]|__ABBR_))", r"__\1_DOT__", protected, flags=re.IGNORECASE)
 
     # Split pattern for terminal punctuation + quotes/parens + space + (capital OR abbreviation placeholder)
-    pattern = re.compile(r"([.!?]+[\"\'”’\)]*)\s+(?=[\"\'“‘\(]?(?:[A-Z0-9]|__ABBR_))")
+    pattern = re.compile(r"((?:__ATTACH_NOTE_[\w-]+__\s*)?[.!?]+[\"\'”’\)]*(?:\s*__ATTACH_NOTE_[\w-]+__)?)\s+(?=[\"\'“‘\(]?(?:[A-Z0-9]|__ABBR_))")
     tokens = pattern.split(protected)
     sentences = []
 
@@ -86,7 +100,7 @@ def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None =
                 pending_notes.append(footnote_map[fid])
             return ""
 
-        part = re.sub(r'__ATTACH_NOTE_(\w+)__', _note_extract, part)
+        part = re.sub(r'__ATTACH_NOTE_([\w-]+)__', _note_extract, part)
 
         # Restore titles
         for title in ABBR_TITLES:
@@ -99,13 +113,18 @@ def split_into_atomic_sentences(text: str, footnote_map: dict[str, str] | None =
         part = re.sub(r"__([a-zA-Z\._]+)_DOT__", lambda m: m.group(1).replace("_", ".") + ".", part)
         part = strip_footnote_residues(part)
         part = re.sub(r"[ \t]+", " ", part).strip()
+
+        # Omit print survey instruction text
+        if is_print_instruction_noise(part):
+            part = ""
+
         if part:
-            sentences.append(part)
+            sentences.append({"text": part, "is_footnote": False} if return_metadata else part)
 
         for note in pending_notes:
-            for ns in split_into_atomic_sentences(note, footnote_map=None):
+            for ns in split_into_atomic_sentences(note, footnote_map=None, return_metadata=False):
                 if ns:
-                    sentences.append(ns)
+                    sentences.append({"text": ns, "is_footnote": True} if return_metadata else ns)
 
     return sentences
 
@@ -130,11 +149,13 @@ class ChapterParser(HTMLParser):
 
         is_footnote_or_noise = (
             tag in ("sup", "sub")
+            or any(w in cls.split() or w == cls for w in ["caption", "photocredit", "photo-credit", "illustr", "pagebreak", "footnote", "noteref", "endnote", "fn-ref", "fn_ref", "fn"])
             or any(w in cls for w in ["caption", "photocredit", "photo-credit", "illustr", "pagebreak", "footnote", "noteref", "endnote", "fn-ref", "fn_ref"])
             or elem_id.startswith("page_")
             or elem_id.startswith("page-")
             or elem_id.startswith("fn")
             or elem_id.startswith("footnote")
+            or elem_id.startswith("ft-")
             or epub_type in ("pagebreak", "noteref", "footnote", "endnote", "biblioentry")
             or any(w in epub_type for w in ["footnote", "noteref", "endnote"])
         )
@@ -257,16 +278,19 @@ def is_heading_element(el: dict) -> bool:
 
     cls = el.get("class", "").lower()
     classes = set(cls.split())
-    heading_patterns = {"h", "h1", "h2", "h3", "h4", "h5", "h6", "cn", "fm-co1", "title", "chapter-title", "heading", "subheading", "section-title", "part-title", "unit-title", "book-title"}
+    heading_patterns = {"h", "h1", "h2", "h3", "h4", "h5", "h6", "cn", "ct", "pn", "pt", "partnum", "parttitle", "fm-co1", "title", "chapter-title", "heading", "subheading", "section-title", "part-title", "unit-title", "book-title"}
     has_heading_class = bool(classes & heading_patterns or any(p in cls for p in ["chapter-head", "chap-title", "section-head", "subhead"]))
 
     txt = el.get("text", "").strip()
+    if re.match(r"^[IVXLCDM]+\.?$", txt):
+        return True
+
     is_short = len(txt.split()) <= 18 and not re.search(r"[.!?…].*[.!?…]", txt)
     if is_short and has_heading_class:
         return True
 
-    # Detect speech, lecture, or numbered section headings e.g. "Talk 11: ...", "Rule 3: ...", "Principle 5: ..."
-    if re.match(r"^(Talk|Speech|Lecture|Chapter|Part|Section|Rule|Principle)\s+\d+\b", txt, re.IGNORECASE) and len(txt.split()) <= 25:
+    # Detect speech, lecture, or numbered section headings e.g. "Talk 11: ...", "Rule 3: ...", "Figure 6", "Table 2"
+    if re.match(r"^(Talk|Speech|Lecture|Chapter|Part|Section|Rule|Principle|Figure|Table)\s+\d+\b", txt, re.IGNORECASE) and len(txt.split()) <= 25:
         return True
 
     # Purely decorative typographical divider or symbol ornament (e.g. "•", "***", "---", "◆")
@@ -363,7 +387,7 @@ def clean_and_merge_elements(elements):
 
 
 def discover_substantive_footnotes(zf: zipfile.ZipFile) -> dict[str, str]:
-    """Discover author substantive footnotes (e.g. marked with Roman numerals {i}, {x}, etc.) from the EPUB."""
+    """Discover author substantive footnotes (e.g. marked with Roman numerals {i}, {x}, or standard EPUB footnotes) from the EPUB."""
     footnote_map = {}
     for name in zf.namelist():
         if not name.endswith((".html", ".xhtml", ".htm")):
@@ -375,7 +399,9 @@ def discover_substantive_footnotes(zf: zipfile.ZipFile) -> dict[str, str]:
         # Find block elements (blockquote, p, div, li)
         bqs = re.findall(r'<(?:blockquote|p|div|li)[\s\S]*?</(?:blockquote|p|div|li)>', content, flags=re.IGNORECASE)
         for b in bqs:
-            m_id = re.search(r'id=[\"\'](filepos\d+|fn\w+|note\w+)[\"\']', b, flags=re.IGNORECASE)
+            m_id = re.search(r'id=[\"\'](filepos\d+|fn\w+|note\w+|ft-[^\"\']+|footnote[^\"\']+)[\"\']', b, flags=re.IGNORECASE)
+            if not m_id:
+                m_id = re.search(r'<a[^>]+id=[\"\'](filepos\d+|fn\w+|note\w+|ft-[^\"\']+|footnote[^\"\']+)[\"\']', b, flags=re.IGNORECASE)
             if not m_id:
                 continue
             fid = m_id.group(1)
@@ -386,6 +412,17 @@ def discover_substantive_footnotes(zf: zipfile.ZipFile) -> dict[str, str]:
                 text = re.sub(r'\s+', ' ', text).strip()
                 if text:
                     footnote_map[fid] = text
+            elif 'class="fn"' in b or "class='fn'" in b or 'class="footnote"' in b or "class='footnote'" in b:
+                clean = re.sub(r'^[\s*†‡§¶#\d._-]+', '', clean).strip()
+                clean = re.sub(r'\s+', ' ', clean).strip()
+                if clean:
+                    sents = [
+                        s.strip() for s in split_into_atomic_sentences(clean)
+                        if s.strip() and not re.match(r"^[\(\[]?(?:see|cf\.?|ibid\.?|a list of laureates|https?://|this (?:topic|design|issue) is)\b", s.strip(), re.IGNORECASE)
+                    ]
+                    clean = " ".join(sents).strip()
+                    if clean:
+                        footnote_map[fid] = clean
     return footnote_map
 
 
@@ -436,7 +473,7 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                 return " "
 
             raw_html = re.sub(
-                r'(?:<a\s+id=[\"\'][^\"\']*[\"\']></a>\s*)?<sup[^>]*>(?:<small[^>]*>)?<a[^>]+href=[\"\'][^\"\']*#(filepos\d+|fn\w+|note\w+)[\"\'][^>]*>[\s\S]*?</a>(?:</small>)?</sup>',
+                r'(?:<a\s+id=[\"\'][^\"\']*[\"\']></a>\s*)?(?:<sup[^>]*>)?(?:<small[^>]*>)?<a[^>]+href=[\"\'][^\"\']*#(filepos\d+|fn\w+|note\w+|ft-[^\"\']+|footnote[^\"\']+)[\"\'][^>]*>[\s\S]*?</a>(?:</small>)?(?:</sup>)?',
                 _attach_note_repl,
                 raw_html,
                 flags=re.IGNORECASE,
@@ -475,6 +512,9 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                 if is_publisher_promo_element(el):
                     continue
 
+                if not re.search(r"[a-zA-Z]", txt):
+                    continue
+
                 is_h = is_heading_element(el)
                 
                 is_tabular = bool(el.get("is_tabular")) or bool(re.search(r"Click (?:here )?for a larger image of this (?:table|chart|figure)", txt, re.IGNORECASE))
@@ -490,15 +530,18 @@ def extract_chapter_from_epub(epub_path, chapter_internal_path, out_json_path):
                     s_idx += 1
                     global_elem_idx += 1
                 else:
-                    sents = split_into_atomic_sentences(txt, footnote_map=footnote_map)
-                    for s in sents:
+                    sents = split_into_atomic_sentences(txt, footnote_map=footnote_map, return_metadata=True)
+                    for item in sents:
+                        s_text = item["text"] if isinstance(item, dict) else item
+                        is_fn = item.get("is_footnote", False) if isinstance(item, dict) else False
                         canonical_items.append({
                             "id": f"s-{s_idx}",
                             "elem_idx": global_elem_idx,
                             "tag": tag,
-                            "text": s,
+                            "text": s_text,
                             "is_heading": False,
-                            "is_tabular": is_tabular
+                            "is_tabular": is_tabular,
+                            "is_footnote": is_fn,
                         })
                         s_idx += 1
                     global_elem_idx += 1

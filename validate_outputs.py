@@ -29,6 +29,23 @@ MAX_NON_NARRATED_CHAPTER_RATIO = 0.20
 MAX_NON_NARRATED_CHAPTER_COUNT = 60
 
 
+ANALYSIS_ALLOWED_FIELDS = {
+    "id",
+    "text",
+    "trans",
+    "vocab",
+    "is_heading",
+    "elem_idx",
+    "tag",
+    "is_tabular",
+    "is_footnote",
+    "is_print_only",
+    "is_back_matter",
+    "editorial_omission",
+    "is_dialogue",
+}
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -567,7 +584,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     errors.append(f"{label}: analysis record count mismatch")
                 if [item.get("id") for item in analysis_data] != ids:
                     errors.append(f"{label}: analysis IDs/order differ from canonical source")
-                allowed_keys = {"id", "text", "trans", "vocab", "is_heading", "elem_idx", "tag", "is_tabular"}
+                allowed_keys = ANALYSIS_ALLOWED_FIELDS
                 for item in analysis_data:
                     item_id = item.get("id", "<unknown>")
                     if not isinstance(item.get("trans"), str) or not item.get("trans", "").strip():
@@ -937,6 +954,7 @@ def validate(book_dir: Path, report_path=None, *, require_provenance=False, allo
                     item.get("editorial_omission")
                     or item.get("is_print_only")
                     or item.get("is_back_matter")
+                    or item.get("is_footnote")
                     or (item.get("non_narrated_evidence") or {}).get("basis") in {"publisher_back_matter", "structural_tabular"}
                     or (number, item_id) in accepted_exceptions
                 )

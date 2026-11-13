@@ -226,11 +226,13 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
     last_error = ""
 
     default_model = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
-    fallback_models = [default_model]
-    if default_model != "deepseek":
-        for alt in ("gemini-3.8-flash-high", "gemini-3.7-flash-high", "gemini-3.8-flash-medium", "gpt-oss-120b-medium"):
-            if alt not in fallback_models:
-                fallback_models.append(alt)
+    env_fallbacks = os.getenv("READER_AGY_FALLBACK_MODELS", "").strip()
+    if env_fallbacks:
+        fallback_models = [m.strip() for m in env_fallbacks.split(",") if m.strip()]
+        if default_model not in fallback_models:
+            fallback_models.insert(0, default_model)
+    else:
+        fallback_models = [default_model]
 
     print_timeout = f"{max(int(timeout), 30)}s" if timeout < 120 else f"{int(timeout // 60)}m"
     if timeout % 60 != 0 and timeout >= 120:
@@ -257,7 +259,9 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
                     last_error = (completed.stderr or completed.stdout or "agy failed")[-4000:]
                     is_quota = "RESOURCE_EXHAUSTED" in last_error or "429" in last_error
                     import random
-                    wait_sec = (12 + random.uniform(2, 6)) if is_quota else min(2 * attempt, 10)
+                    wait_sec = (5 + random.uniform(1, 3)) if is_quota else min(2 * attempt, 6)
+                    if is_quota:
+                        sys.stderr.write(f"⚠️ [AGY_WORKER] Rate limit / quota exhausted on batch {batch_idx + 1} (model {model_name}). Backing off {wait_sec:.1f}s...\n")
                     time.sleep(wait_sec)
                     continue
                 raw_output = completed.stdout
@@ -325,8 +329,8 @@ def _process_single_batch(batch_idx: int, batch: list[dict], base_prompt: str, t
             return ordered_batch
         except subprocess.TimeoutExpired:
             last_error = f"agy timed out after {timeout}s on batch {batch_idx + 1} (model {model_name})"
-            sys.stderr.write(f"⚠️ [AGY_WORKER] {last_error}, failing fast to next model/retry...\n")
-            time.sleep(2)
+            sys.stderr.write(f"⚠️ [AGY_WORKER] {last_error}\n")
+            time.sleep(1)
             continue
         except Exception as exc:
             last_error = str(exc)
@@ -343,7 +347,7 @@ def process_canonical_sentences(
     cwd: Path,
     chunk_size: int = CHUNK_SIZE,
     timeout: int = 120,
-    max_batch_attempts: int = 3,
+    max_batch_attempts: int = 2,
     max_workers: int = 1,
 ) -> list[dict]:
     chunks = chunk_sentences(canonical_data, chunk_size=chunk_size)

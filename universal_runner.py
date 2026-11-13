@@ -344,13 +344,14 @@ def process_linguistics_track(
     print(f"[Linguistic] Processing Track {num:02d} ({len(can_data)} sentences: {label})...", flush=True)
     t0 = time.time()
     try:
+        max_batch_attempts = int(os.getenv("READER_MAX_BATCH_ATTEMPTS", "2"))
         analyzed_data = process_canonical_sentences(
             canonical_data=can_data,
             base_prompt=base_prompt,
             cwd=book_dir,
             chunk_size=40,
             timeout=int(os.getenv("READER_BATCH_TIMEOUT", "120")),
-            max_batch_attempts=8,
+            max_batch_attempts=max_batch_attempts,
             max_workers=max_workers_per_chapter,
         )
         atomic_write_json(ana_path, analyzed_data)
@@ -385,14 +386,18 @@ def run_parallel_linguistic_analysis(
             ): item
             for item in chapters_meta
         }
+        failed_tracks = []
         try:
             for f in as_completed(futures):
                 item = futures[f]
                 ok = f.result()
                 if not ok:
-                    raise RuntimeError(f"Linguistic analysis failed on track {item['num']:02d} ({item['label']})")
+                    failed_tracks.append((item, "analysis failure"))
+            if failed_tracks:
+                err_summary = "; ".join(f"Track {it['num']:02d} ({it['label']})" for it, _ in failed_tracks)
+                raise RuntimeError(f"Linguistic analysis failed on {len(failed_tracks)} track(s): {err_summary}")
         except Exception:
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown(wait=True, cancel_futures=True)
             raise
     print("[Stage 2] High-throughput linguistic analysis completed.")
 
@@ -576,10 +581,8 @@ def align_complete_audio_chapters(
 
         if needs_acoustic:
             print(f"[Stage 3] Extracting acoustic words for Track {num:02d} ({item['label']})...", flush=True)
-            import acoustic_whisper
-            if hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "side_effect") or hasattr(acoustic_whisper.run_mlx_acoustic_extraction, "_mock_return_value"):
-                acoustic_whisper.run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
-            elif hasattr(run_mlx_acoustic_extraction, "side_effect") or hasattr(run_mlx_acoustic_extraction, "_mock_return_value"):
+            if acoustic_provider == "mlx":
+                from acoustic_whisper import run_mlx_acoustic_extraction
                 run_mlx_acoustic_extraction(str(dest_audio), str(acoustic_path))
             else:
                 from cloud_acoustic_engine import run_acoustic_extraction
@@ -609,11 +612,19 @@ def align_complete_audio_chapters(
     else:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(_align_track, ch): ch for ch in chapters_meta}
+            failed_tracks = []
             try:
                 for f in as_completed(futures):
-                    f.result()
+                    ch = futures[f]
+                    try:
+                        f.result()
+                    except Exception as exc:
+                        failed_tracks.append((ch, str(exc)))
+                if failed_tracks:
+                    err_summary = "; ".join(f"Track {c['num']:02d}: {reason}" for c, reason in failed_tracks)
+                    raise RuntimeError(f"Forced alignment failed on {len(failed_tracks)} track(s): {err_summary}")
             except Exception:
-                executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=True, cancel_futures=True)
                 raise
 
     print("[Stage 3] Studio audio forced alignment completed across all tracks.", flush=True)
@@ -1008,7 +1019,7 @@ def build_reader_pipeline(
             raise SystemExit(1)
         print(f"[UNIVERSAL RUNNER -> AUTO-PUBLISH] Finished! '{book_id}' is live and verified on production.")
 
-    if open_in_browser and not publish:
+    if open_in_browser and not publish and os.getenv("CI") != "true" and os.getenv("READER_HEADLESS") != "true":
         try:
             if sys.platform == "darwin":
                 subprocess.run(["open", str(out_html)], check=False)
