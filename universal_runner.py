@@ -44,6 +44,7 @@ from release_token import issue_release_token
 from html_builder import build_master_reader
 from quality_gate import smoke_check_html, check_audio_physical_integrity
 from kokoro_synthesizer import synthesize_chapter
+import edge_synthesizer
 from acoustic_whisper import run_mlx_acoustic_extraction
 from artifact_io import atomic_write_json, atomic_write_text
 
@@ -258,11 +259,20 @@ def extract_chapters_sentences(
     chapters_meta: List[Dict[str, Any]],
     prefix: str,
     force: bool = False,
+    stop_marker: Optional[str] = None,
 ) -> None:
     print(f"\n=== [Stage 1: EPUB Sentence Extraction ({len(chapters_meta)} tracks)] ===", flush=True)
     for item in chapters_meta:
         num = item["num"]
         hrefs = item.get("hrefs") or ([item["href"]] if item.get("href") else [])
+        if stop_marker:
+            modified_hrefs = []
+            for h in hrefs:
+                if isinstance(h, str) and "::stop=" not in h:
+                    modified_hrefs.append(f"{h}::stop={stop_marker}")
+                else:
+                    modified_hrefs.append(h)
+            hrefs = modified_hrefs
         can_path = book_dir / f"{prefix}_ch{num:02d}_canonical_sentences.json"
         if not force and can_path.is_file() and can_path.stat().st_size > 50:
             continue
@@ -446,10 +456,17 @@ def synthesize_synthetic_voice_chapters(
     voice: str = "am_adam",
     speed: float = 1.0,
     concurrency: int = 3,
+    tts_engine: str = "auto",
 ) -> None:
-    print(f"\n=== [Stage 3: Kokoro Neural Voice Synthesis (voice={voice}, speed={speed}x)] ===", flush=True)
+    use_edge = (tts_engine == "edge") or (
+        tts_engine == "auto" and (voice.startswith("en-") or voice.startswith("zh-") or "Neural" in voice)
+    )
+    engine_name = "Edge Neural TTS" if use_edge else "Kokoro Neural Voice"
+    print(f"\n=== [Stage 3: {engine_name} Synthesis (voice={voice}, speed={speed}x)] ===", flush=True)
     audio_dir = book_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
+
+    synth_fn = edge_synthesizer.synthesize_chapter if use_edge else synthesize_chapter
 
     def _synth_track(item: Dict[str, Any]) -> bool:
         num = item["num"]
@@ -466,7 +483,7 @@ def synthesize_synthetic_voice_chapters(
         t0 = time.time()
         print(f"[TTS] Synthesizing Track {num:02d} ({label})...", flush=True)
         try:
-            synthesize_chapter(
+            synth_fn(
                 canonical_path=can_path,
                 analysis_path=ana_path,
                 aligned_output_path=alg_path,
@@ -493,7 +510,7 @@ def synthesize_synthetic_voice_chapters(
             executor.shutdown(wait=False, cancel_futures=True)
             raise
 
-    print("[Stage 3] Kokoro neural voice synthesis completed.")
+    print(f"[Stage 3] {engine_name} synthesis completed.")
 
 
 def align_complete_audio_chapters(
@@ -759,6 +776,8 @@ def build_reader_pipeline(
     publish: bool = False,
     public_book_id: Optional[str] = None,
     acoustic_provider: str = "auto",
+    tts_engine: str = "auto",
+    stop_marker: Optional[str] = None,
 ) -> Path:
     t_start = time.time()
     epub_path = epub_path.expanduser().resolve()
@@ -889,7 +908,7 @@ def build_reader_pipeline(
     print(f"Concurrency:     {concurrency} parallel workers\n")
 
     setup_book_directory(target_dir, epub_path, chapters_meta, cover_member, mode=mode)
-    extract_chapters_sentences(target_dir, epub_path, chapters_meta, prefix, force=force_extract)
+    extract_chapters_sentences(target_dir, epub_path, chapters_meta, prefix, force=force_extract, stop_marker=stop_marker)
     validate_extracted_sentences_gate(target_dir, chapters_meta, prefix)
     model_name = os.getenv("READER_AGY_MODEL", "gemini-3.8-flash-high")
     workers_per_ch = 4 if model_name == "deepseek" else 2
@@ -966,6 +985,7 @@ def build_reader_pipeline(
             voice=auto_voice,
             speed=voice_speed,
             concurrency=min(concurrency, 4),
+            tts_engine=tts_engine,
         )
     elif mode == "complete":
         align_complete_audio_chapters(
@@ -1063,6 +1083,19 @@ def main():
         default="auto",
         help="Acoustic timestamp extraction backend: 'auto' (prefer cloud Groq, fallback to MLX), 'groq', or 'mlx'"
     )
+    parser.add_argument(
+        "--tts-engine",
+        type=str,
+        choices=["auto", "kokoro", "edge"],
+        default="auto",
+        help="TTS synthesis engine ('auto', 'edge', or 'kokoro')"
+    )
+    parser.add_argument(
+        "--stop-marker",
+        type=str,
+        default=None,
+        help="Stop section marker to exclude textbook exercises (e.g. 'Applications')"
+    )
 
     args = parser.parse_args()
     epub_target = args.epub or args.epub_flag
@@ -1093,6 +1126,8 @@ def main():
         publish=args.publish,
         public_book_id=args.public_book_id,
         acoustic_provider=args.acoustic_provider,
+        tts_engine=args.tts_engine,
+        stop_marker=args.stop_marker,
     )
 
 
