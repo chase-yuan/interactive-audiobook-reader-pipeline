@@ -319,34 +319,6 @@ body.typing-mode-active .sentence-unit .w {{
   transition: color 0.2s ease;
 }}
 
-/* Live Sentence Acoustic Progress Line (2.5px Hairline at Bottom of Prose Column, Zero Text Clutter) */
-.typing-acoustic-progress-bar {{
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: var(--dock-max-width, 676px);
-  height: 2.5px;
-  background: rgba(148, 163, 184, 0.15);
-  z-index: 10001;
-  pointer-events: none;
-  border-radius: 2px 2px 0 0;
-  overflow: hidden;
-  display: none;
-}}
-body.typing-mode-active .typing-acoustic-progress-bar {{
-  display: block;
-}}
-.typing-acoustic-fill {{
-  height: 100%;
-  width: 0%;
-  background: var(--accent, #3b82f6);
-  box-shadow: 0 0 8px var(--accent, #3b82f6);
-  border-radius: 2px;
-  transition: width 0.08s linear;
-}}
-
 /* Hidden Input for Mobile / Tablet Virtual Keyboard */
 .twc-hidden-input {{
   position: fixed;
@@ -491,11 +463,6 @@ body.typing-mode-active .typing-acoustic-progress-bar {{
 
 <!-- Top Chapter Progress Bar -->
 <div id="typingChapterProgressBar"></div>
-
-<!-- Live Sentence Acoustic Progress Line (2.5px Hairline at Bottom of Prose Column, Zero Jitter) -->
-<div id="typingAcousticProgressBar" class="typing-acoustic-progress-bar">
-  <div id="typingAcousticFill" class="typing-acoustic-fill"></div>
-</div>
 
 <!-- Virtual Keyboard Input Bridge (Mobile/iPad Seamless Soft-Keyboard Summon) -->
 <input type="text" id="typingHiddenInput" class="twc-hidden-input" autocomplete="off" autocapitalize="none" spellcheck="false" autocorrect="off" aria-hidden="true" tabindex="-1">
@@ -745,24 +712,6 @@ body.typing-mode-active .typing-acoustic-progress-bar {{
         hideMarginalia();
       }}
     }}
-  }}
-
-  // Live Acoustic Progress Line (Synchronized with audio.currentTime without touching text)
-  function updateAcousticProgress() {{
-    if (window.__TYPING_MODE__ === 'off' || !activeSentenceEl || !audio) return;
-    const start = parseFloat(activeSentenceEl.dataset.start);
-    const end = parseFloat(activeSentenceEl.dataset.end);
-    if (isNaN(start) || isNaN(end) || end <= start) return;
-
-    const cur = audio.currentTime;
-    let pct = 0;
-    if (cur >= start && cur <= end) {{
-      pct = ((cur - start) / (end - start)) * 100;
-    }} else if (cur > end) {{
-      pct = 100;
-    }}
-    const fill = document.getElementById('typingAcousticFill');
-    if (fill) fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
   }}
 
   // =========================================================================
@@ -1051,8 +1000,6 @@ body.typing-mode-active .typing-acoustic-progress-bar {{
     inWordCharIdx = 0;
     waitingForSpace = false;
     consecutiveErrors = 0;
-    const fill = document.getElementById('typingAcousticFill');
-    if (fill) fill.style.width = '0%';
     ensureValidClozeIndex();
     saveSentenceState(activeSentenceEl.id);
     projectDocumentTypingState();
@@ -1113,8 +1060,6 @@ body.typing-mode-active .typing-acoustic-progress-bar {{
         }}
       }}
       if (progressBar) progressBar.style.width = '0%';
-      const fill = document.getElementById('typingAcousticFill');
-      if (fill) fill.style.width = '0%';
       if (typeof closeChapterCompleteModal === 'function') closeChapterCompleteModal();
       
       // Restore clean reader DOM
@@ -1254,9 +1199,6 @@ body.typing-mode-active .typing-acoustic-progress-bar {{
 
     consecutiveErrors = 0;
     if (!startTime) startTime = performance.now();
-
-    const fill = document.getElementById('typingAcousticFill');
-    if (fill) fill.style.width = '0%';
 
     projectDocumentTypingState();
     window.playActiveSentenceOnce();
@@ -1971,7 +1913,6 @@ body.typing-mode-active .typing-acoustic-progress-bar {{
   if (audio) {{
     audio.addEventListener('timeupdate', () => {{
       if (window.__TYPING_MODE__ !== 'off' && activeSentenceEl) {{
-        updateAcousticProgress();
         const end = parseFloat(activeSentenceEl.dataset.end);
         if (!isNaN(end) && audio.currentTime >= end) {{
           const rep = (typeof shadowState !== 'undefined' && shadowState.repetitions) ? shadowState.repetitions : 1;
@@ -1979,8 +1920,6 @@ body.typing-mode-active .typing-acoustic-progress-bar {{
             shadowState.completed = (shadowState.completed || 0) + 1;
             const start = parseFloat(activeSentenceEl.dataset.start);
             if (!isNaN(start)) {{
-              const fill = document.getElementById('typingAcousticFill');
-              if (fill) fill.style.width = '0%';
               audio.currentTime = start;
               audio.play().catch(() => {{}});
               return;
