@@ -50,6 +50,19 @@ def test_synthesize_chapter_edge():
         assert aligned_data[0]["has_audio_match"] is True
         assert aligned_data[1]["has_audio_match"] is True
         assert len(aligned_data[1]["word_spans"]) > 5
+
+        # Grill finding 6: Strict silence trimming and monotonic word span assertions
+        assert aligned_data[0]["end"] < 1.2, f"Heading silence was not trimmed: end={aligned_data[0]['end']}"
+        for s in aligned_data:
+            spans = s.get("word_spans", [])
+            for i in range(len(spans) - 1):
+                assert spans[i]["end"] <= spans[i+1]["start"] + 0.001, (
+                    f"Overlapping word spans detected: {spans[i]} vs {spans[i+1]}"
+                )
+            if spans:
+                assert abs(spans[-1]["end"] - s["end"]) < 0.05, (
+                    f"Sentence end mismatch with final word: span_end={spans[-1]['end']} vs sent_end={s['end']}"
+                )
         print("\n[OK] Edge-TTS Synthesizer Adapter physically verified!")
 
 if __name__ == "__main__":

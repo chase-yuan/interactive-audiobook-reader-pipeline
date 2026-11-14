@@ -253,6 +253,13 @@ def is_title_text(txt: str) -> bool:
         "to", "from", "by", "with", "of", "off", "out", "as", "into", "over",
         "up", "down", "vs", "versus", "v"
     }
+    _SENTENCE_STARTERS = {
+        "however", "therefore", "moreover", "furthermore", "meanwhile",
+        "nevertheless", "instead", "consequently", "thus", "if", "when",
+        "although"
+    }
+    if len(words) == 1 and words[0].lower() in _SENTENCE_STARTERS:
+        return False
     cap_count = 0
     significant_count = 0
     for w in words:
@@ -371,11 +378,17 @@ def clean_and_merge_elements(elements):
 
         curr_has_terminal = bool(re.search(r"[.!?…”\"’)]$", curr_txt))
 
+        # Hard ceiling on soft-wrap merges to prevent mega-sentence bloat in unpunctuated lists/tables
+        is_too_long = len(curr_txt.split()) >= 40 or len(curr_txt) >= 280
+
         # Cross-element continuation allows lowercase continuations across block boundaries,
-        # bounded by a safety ceiling (max 300 words / 2000 chars) to prevent runaway sentence bloat in unpunctuated lists.
+        # bounded by a safety ceiling (max 300 words / 2000 chars) to prevent runaway sentence bloat.
         is_continuation_ceiling = len(curr_txt.split()) >= 300 or len(curr_txt) >= 2000
 
-        if (next_starts_lower or (not curr_has_terminal and not is_title)) and not is_continuation_ceiling:
+        is_lowercase_continuation = next_starts_lower and not is_continuation_ceiling
+        is_soft_wrap = (not curr_has_terminal and not is_title) and not is_too_long
+
+        if is_lowercase_continuation or is_soft_wrap:
             curr["text"] = curr_txt + " " + next_txt
         else:
             merged.append(curr)

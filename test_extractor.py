@@ -86,6 +86,18 @@ class SentenceBoundaryTests(unittest.TestCase):
         self.assertTrue(is_title_text("Costs vs. Expenditures"))
         self.assertTrue(is_title_text("Benefits vs. Net Benefits"))
 
+    def test_is_title_text_single_word_starters_rejected(self):
+        from extract_epub import is_title_text
+        starters = [
+            "However", "Therefore", "Moreover", "Furthermore", "Meanwhile",
+            "Nevertheless", "Instead", "Consequently", "Thus", "If", "When", "Although"
+        ]
+        for s in starters:
+            self.assertFalse(is_title_text(s), f"Single-word starter '{s}' should not be classified as title")
+        # Multi-word valid headings should still pass
+        self.assertTrue(is_title_text("However People Decide"))
+        self.assertTrue(is_title_text("If Thoughts Could Kill"))
+
 
 if __name__ == "__main__":
     unittest.main()
