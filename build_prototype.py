@@ -378,11 +378,13 @@ body.typing-mode-active .sentence-unit .w {{
   width: 90%;
   text-align: center;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
-  transform: scale(0.95);
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }}
 .typing-complete-overlay.visible .typing-complete-card {{
-  transform: scale(1);
+  opacity: 1;
+  transform: translateY(0);
 }}
 .tc-badge {{
   display: inline-block;
@@ -2101,40 +2103,13 @@ body.typing-mode-active .sentence-unit .w {{
 </script>
 """
 
-default_source = '/Users/lindy/Vault/Audible/books/misbehaving/index.html'
-source_path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('BOOK_INDEX_PATH', default_source)
-default_target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
-target_dir = sys.argv[2] if len(sys.argv) > 2 else os.environ.get('OUTPUT_DIR', default_target_dir)
-os.makedirs(target_dir, exist_ok=True)
-target_path = os.path.join(target_dir, 'prototype-typing-reader.html')
-
 def safe_replace(name: str, src: str, target: str, replacement: str) -> str:
     if target not in src:
         logging.warning(f"Target pattern '{name}' not found for replacement; template structure may have evolved.")
         return src
     return src.replace(target, replacement)
 
-with open(source_path, 'r', encoding='utf-8') as f:
-    content = f.read()
-
-# Fix passkey gate path
-content = safe_replace("passkey_gate", content, '../../assets/js/passkey-gate.js', 'https://audiblelibrary.online/assets/js/passkey-gate.js')
-
-# Enable infinite loop '∞' in reader repeat logic
-content = safe_replace(
-    "main_rep_levels",
-    content,
-    'const MAIN_REP_LEVELS = [1, 2, 3];',
-    'const MAIN_REP_LEVELS = [1, 2, 3, Infinity];'
-)
-content = safe_replace(
-    "focus_rep_levels",
-    content,
-    'const FOCUS_REP_LEVELS = [1, 2, 3];',
-    'const FOCUS_REP_LEVELS = [1, 2, 3, Infinity];'
-)
-
-# Fix setMainRepetitions to handle Infinity and not parseInt into NaN/1
+# Target pattern definitions for reader injection
 target_set_rep = """function setMainRepetitions(n) {
   const nextRep = Math.max(1, parseInt(n, 10) || 1);
   shadowState.repetitions = nextRep;
@@ -2147,6 +2122,7 @@ target_set_rep = """function setMainRepetitions(n) {
   if (focusRepBtn) {
     focusRepBtn.textContent = `${nextRep}×`;
   }"""
+
 replacement_set_rep = """function setMainRepetitions(n) {
   const nextRep = (n === Infinity || n === 'Infinity' || n === '∞') ? Infinity : Math.max(1, parseInt(n, 10) || 1);
   shadowState.repetitions = nextRep;
@@ -2159,9 +2135,7 @@ replacement_set_rep = """function setMainRepetitions(n) {
   if (focusRepBtn) {
     focusRepBtn.textContent = (nextRep === Infinity) ? '∞' : `${nextRep}×`;
   }"""
-content = safe_replace("set_rep", content, target_set_rep, replacement_set_rep)
 
-# Upgrade renderRepeatBtn to support '∞' badge
 target_render_rep = """function renderRepeatBtn(rep) {
   const repBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (!repBtn) return;
@@ -2173,6 +2147,7 @@ target_render_rep = """function renderRepeatBtn(rep) {
     repBtn.classList.remove('active');
   }
 }"""
+
 replacement_render_rep = """function renderRepeatBtn(rep) {
   const repBtn = document.getElementById('repeatBtn') || document.getElementById('shadowBtn');
   if (!repBtn) return;
@@ -2187,9 +2162,7 @@ replacement_render_rep = """function renderRepeatBtn(rep) {
   }
   if (typeof updateHudLoopBtn === 'function') updateHudLoopBtn();
 }"""
-content = safe_replace("render_rep", content, target_render_rep, replacement_render_rep)
 
-# Upgrade updateFocusStatus to display '∞' properly
 target_focus_status = """function updateFocusStatus() {
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) {
@@ -2211,6 +2184,7 @@ target_focus_status = """function updateFocusStatus() {
   }
   updateFocusPlayBtn();
 }"""
+
 replacement_focus_status = """function updateFocusStatus() {
   const repBtn = document.getElementById('focusRepBtn');
   if (repBtn) {
@@ -2236,18 +2210,13 @@ replacement_focus_status = """function updateFocusStatus() {
   }
   updateFocusPlayBtn();
 }"""
-content = safe_replace("focus_status", content, target_focus_status, replacement_focus_status)
 
-# Inject 'Typing' mode chip into the control drawer right next to Focus mode button!
 target_chip_group = '<button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>'
 replacement_chip_group = (
     '<button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>\n'
     '          <button class="dock-chip" id="typingModeBtn" onclick="toggleTypingMode()" aria-label="Typing practice mode (Shortcut: K)">Typing</button>'
 )
 
-content = safe_replace("chip_group", content, target_chip_group, replacement_chip_group)
-
-# Synchronize Shortcuts Modal (Reading & Practice Dual Mode Reference)
 target_shortcuts = """    <div class="shortcuts-table">
       <div class="shortcut-item"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
       <div class="shortcut-item"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
@@ -2282,15 +2251,51 @@ replacement_shortcuts = """    <div class="shortcuts-table">
       <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Exit Typing Mode</span></div>
     </div>"""
 
-content = safe_replace("shortcuts_table", content, target_shortcuts, replacement_shortcuts)
+def inject_typing_mode_to_html(content: str, *, remote_passkey_gate: bool = False) -> str:
+    """Inject the complete interactive typing practice engine into an existing reader HTML."""
+    if remote_passkey_gate:
+        content = safe_replace("passkey_gate", content, '../../assets/js/passkey-gate.js', 'https://audiblelibrary.online/assets/js/passkey-gate.js')
 
-idx = content.rfind('</body>')
-if idx != -1:
-    new_content = content[:idx] + proto_code + content[idx:]
-else:
-    new_content = content + proto_code
+    # Enable infinite loop '∞' in reader repeat logic
+    content = safe_replace(
+        "main_rep_levels",
+        content,
+        'const MAIN_REP_LEVELS = [1, 2, 3];',
+        'const MAIN_REP_LEVELS = [1, 2, 3, Infinity];'
+    )
+    content = safe_replace(
+        "focus_rep_levels",
+        content,
+        'const FOCUS_REP_LEVELS = [1, 2, 3];',
+        'const FOCUS_REP_LEVELS = [1, 2, 3, Infinity];'
+    )
 
-with open(target_path, 'w', encoding='utf-8') as f:
-    f.write(new_content)
+    content = safe_replace("set_rep", content, target_set_rep, replacement_set_rep)
+    content = safe_replace("render_rep", content, target_render_rep, replacement_render_rep)
+    content = safe_replace("focus_status", content, target_focus_status, replacement_focus_status)
+    content = safe_replace("chip_group", content, target_chip_group, replacement_chip_group)
+    content = safe_replace("shortcuts_table", content, target_shortcuts, replacement_shortcuts)
 
-print(f"Re-compiled prototype V16 (Grill Hardened O(1) Fast Engine): {target_path}")
+    idx = content.rfind('</body>')
+    if idx != -1:
+        return content[:idx] + proto_code + content[idx:]
+    else:
+        return content + proto_code
+
+if __name__ == '__main__':
+    default_source = '/Users/lindy/Vault/Audible/books/misbehaving/index.html'
+    source_path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('BOOK_INDEX_PATH', default_source)
+    default_target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+    target_dir = sys.argv[2] if len(sys.argv) > 2 else os.environ.get('OUTPUT_DIR', default_target_dir)
+    os.makedirs(target_dir, exist_ok=True)
+    target_path = os.path.join(target_dir, 'prototype-typing-reader.html')
+
+    with open(source_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    new_content = inject_typing_mode_to_html(content, remote_passkey_gate=True)
+
+    with open(target_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+
+    print(f"Re-compiled prototype V16 (Grill Hardened O(1) Fast Engine): {target_path}")

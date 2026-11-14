@@ -121,6 +121,29 @@ class TestTypingPrototype(unittest.TestCase):
         """Verify mobile bridge seeds zero-width space for reliable iOS virtual backspace."""
         self.assertIn("\\u200B", self.html_content)
 
+    def test_apply_book_typing_lifecycle(self):
+        """Verify apply_book_typing.py performs atomic backup, injection, and AST validation."""
+        import tempfile
+        from apply_book_typing import apply_typing_to_book
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_html = os.path.join(tmpdir, "index.html")
+            source_file = "/Users/lindy/Vault/Audible/books/misbehaving/index.html"
+            with open(source_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            with open(test_html, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            # Test first injection
+            res = apply_typing_to_book(tmpdir)
+            self.assertEqual(res["status"], "SUCCESS")
+            self.assertTrue(os.path.isfile(test_html + ".bak"))
+            self.assertTrue(res["file_size_bytes"] > 200_000)
+
+            # Test idempotency (second injection should detect ALREADY_UPGRADED)
+            res2 = apply_typing_to_book(tmpdir)
+            self.assertEqual(res2["status"], "ALREADY_UPGRADED")
+
 
 if __name__ == "__main__":
     unittest.main()
