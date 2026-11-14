@@ -1193,8 +1193,36 @@ function switchChapter(chNum, autoPlay, restoreOpts) {
       currentActiveWordStart = -1;
       currentActiveWordEnd = -1;
       const audioSrc = resolveAudioSource(sec);
-      const targetTime = (restoreOpts && typeof restoreOpts.targetTime === 'number') ? restoreOpts.targetTime : 0;
       
+      // Determine target sentence: restore specified ID -> saved last_sentence -> first matched -> first sentence
+      let targetSentence = null;
+      if (restoreOpts && restoreOpts.targetSentenceId) {
+        targetSentence = sec.querySelector('#' + restoreOpts.targetSentenceId);
+      }
+      if (!targetSentence && isRestore) {
+        const savedSentenceId = localStorage.getItem(STORAGE_PREFIX + 'last_sentence_c' + chNum);
+        if (savedSentenceId) {
+          targetSentence = sec.querySelector('#' + savedSentenceId);
+        }
+      }
+      if (!targetSentence) {
+        targetSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
+      }
+
+      let rawTargetTime = (restoreOpts && typeof restoreOpts.targetTime === 'number') ? restoreOpts.targetTime : 0;
+      let targetTime = rawTargetTime;
+      if (targetSentence) {
+        const sStart = parseFloat(targetSentence.dataset.start);
+        const sEnd = parseFloat(targetSentence.dataset.end);
+        if (Number.isFinite(sStart) && sStart >= 0) {
+          // If restore explicitly designated a sentence, or if rawTargetTime falls outside targetSentence bounds,
+          // snap targetTime directly to sStart to prevent cross-sentence audio desynchronization!
+          if ((restoreOpts && restoreOpts.targetSentenceId) || rawTargetTime < sStart || (Number.isFinite(sEnd) && sEnd > sStart && rawTargetTime >= sEnd)) {
+            targetTime = sStart;
+          }
+        }
+      }
+
       if (audio.getAttribute('src') !== audioSrc) {
         const wasPlaying = autoPlay || !audio.paused;
         audio.src = audioSrc;
@@ -1213,27 +1241,12 @@ function switchChapter(chNum, autoPlay, restoreOpts) {
           safePlay(audio);
           if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
         }
-      } else if (targetTime > 0 && Math.abs(audio.currentTime - targetTime) > 1.0) {
+      } else if (targetTime > 0 && Math.abs(audio.currentTime - targetTime) > 0.3) {
         try { audio.currentTime = targetTime; updateAudioPlayerUI(); } catch(e) {}
       } else if (autoPlay && audio.paused) {
-        try { audio.currentTime = 0; } catch(e) {}
+        try { audio.currentTime = targetTime > 0 ? targetTime : 0; } catch(e) {}
         safePlay(audio);
         if (globalPlayBtn) globalPlayBtn.textContent = '⏸ Pause';
-      }
-      
-      // Determine target sentence: restore specified ID -> saved last_sentence -> first matched -> first sentence
-      let targetSentence = null;
-      if (restoreOpts && restoreOpts.targetSentenceId) {
-        targetSentence = sec.querySelector('#' + restoreOpts.targetSentenceId);
-      }
-      if (!targetSentence && isRestore) {
-        const savedSentenceId = localStorage.getItem(STORAGE_PREFIX + 'last_sentence_c' + chNum);
-        if (savedSentenceId) {
-          targetSentence = sec.querySelector('#' + savedSentenceId);
-        }
-      }
-      if (!targetSentence) {
-        targetSentence = sec.querySelector('.sentence-unit[data-matched="1"]') || sec.querySelector('.sentence-unit');
       }
 
       if (targetSentence) {
@@ -1320,6 +1333,15 @@ switchChapter(activeChapterNum, false, {
   targetTime: Number.isFinite(initialTime) ? initialTime : 0
 });
 preloadNextChapterAudio(activeChapterNum + 1);
+
+// Clean up one-shot deep-link URL params from address bar so subsequent browser refreshes don't re-lock stale timestamps
+if (window.history && window.history.replaceState && (coldUrlParams.has('t') || coldUrlParams.has('s'))) {
+  try {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.search = '';
+    window.history.replaceState({}, document.title, cleanUrl.toString());
+  } catch(e) {}
+}
 
 function toggleDrawer(event) {
   if (event && event.stopPropagation) event.stopPropagation();
