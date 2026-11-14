@@ -183,10 +183,36 @@ def apply_typing_to_book(book_target: str, *, force_rebuild: bool = False) -> di
     }
 
 
+def batch_upgrade_library(books_root: str) -> list:
+    """Batch upgrades all books in the library directory with isolated audits."""
+    results = []
+    book_names = [
+        b for b in sorted(os.listdir(books_root))
+        if os.path.isdir(os.path.join(books_root, b)) and os.path.isfile(os.path.join(books_root, b, 'index.html'))
+    ]
+    total = len(book_names)
+    print(f"🚀 Starting batch typing upgrade across {total} books in {books_root}...\n")
+
+    for idx, b in enumerate(book_names, 1):
+        p = os.path.join(books_root, b)
+        print(f"[{idx}/{total}] Processing '{b}'...", flush=True)
+        res = apply_typing_to_book(p, force_rebuild=True)
+        print(f"  ✅ '{b}' upgraded: sha={res['sha256'][:8]} | audit_passed={res['audit_passed']}", flush=True)
+        results.append(res)
+
+    print(f"\n🎉 All {total} books successfully upgraded and verified!")
+    return results
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: python3 apply_book_typing.py <book_dir_or_index_html>")
+        print("Usage: python3 apply_book_typing.py <book_dir_or_index_html | --all [books_dir]>")
         sys.exit(1)
 
-    result = apply_typing_to_book(sys.argv[1], force_rebuild=True)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if sys.argv[1] == '--all':
+        books_dir = sys.argv[2] if len(sys.argv) > 2 else '/Users/lindy/Vault/Audible/books'
+        res = batch_upgrade_library(books_dir)
+        print(f"Total upgraded: {len(res)}")
+    else:
+        result = apply_typing_to_book(sys.argv[1], force_rebuild=True)
+        print(json.dumps(result, indent=2, ensure_ascii=False))

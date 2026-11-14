@@ -141,7 +141,9 @@ class TestTypingPrototype(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             test_html = os.path.join(tmpdir, "index.html")
-            source_file = "/Users/lindy/Vault/Audible/books/misbehaving/index.html"
+            source_file = "/Users/lindy/Vault/Audible/books/misbehaving/index.html.bak"
+            if not os.path.exists(source_file):
+                source_file = "/Users/lindy/Vault/Audible/books/misbehaving/index.html"
             with open(source_file, "r", encoding="utf-8") as f:
                 content = f.read()
             with open(test_html, "w", encoding="utf-8") as f:

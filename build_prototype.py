@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import re
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -2364,7 +2365,17 @@ def inject_typing_mode_to_html(content: str, *, remote_passkey_gate: bool = Fals
     content = safe_replace("set_rep", content, target_set_rep, replacement_set_rep)
     content = safe_replace("render_rep", content, target_render_rep, replacement_render_rep)
     content = safe_replace("focus_status", content, target_focus_status, replacement_focus_status)
-    content = safe_replace("chip_group", content, target_chip_group, replacement_chip_group)
+    if target_chip_group in content:
+        content = content.replace(target_chip_group, replacement_chip_group)
+    elif '<button class="dock-chip" id="focusModeBtn"' in content:
+        content = re.sub(
+            r'(<button class="dock-chip" id="focusModeBtn"[^>]*>Focus</button>)',
+            r'\1\n          <button class="dock-chip" id="typingModeBtn" onclick="toggleTypingMode()" aria-label="Typing practice mode (Shortcut: K)">Typing</button>',
+            content,
+            count=1
+        )
+    else:
+        logging.warning("Target pattern 'chip_group' not found for replacement; template structure may have evolved.")
     content = safe_replace("shortcuts_table", content, target_shortcuts, replacement_shortcuts)
 
     idx = content.rfind('</body>')
