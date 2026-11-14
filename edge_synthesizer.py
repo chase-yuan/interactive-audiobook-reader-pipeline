@@ -37,7 +37,7 @@ logger = logging.getLogger("edge_synthesizer")
 
 EDGE_SAMPLE_RATE = 24000
 TARGET_SAMPLE_RATE = 44100
-DEFAULT_VOICE = "en-US-GuyNeural"
+DEFAULT_VOICE = "en-US-BrianMultilingualNeural"
 
 
 def _resolve_ffmpeg_bin() -> str:

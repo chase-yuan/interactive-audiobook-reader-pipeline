@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 VOICE_MAP = {
-    "en": "en-US-GuyNeural",
+    "en": "en-US-BrianMultilingualNeural",
     "zh": "zh-CN-YunxiNeural",
     "de": "de-DE-ConradNeural",
     "fr": "fr-FR-HenriNeural",
