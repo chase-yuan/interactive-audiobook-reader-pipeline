@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,7 +27,7 @@ import numpy as np
 import edge_tts
 
 from artifact_io import atomic_write_json
-from kokoro_synthesizer import (
+from acoustic_text_utils import (
     clean_acoustic_text,
     compute_word_spans,
     is_standalone_divider,
@@ -37,6 +38,37 @@ logger = logging.getLogger("edge_synthesizer")
 EDGE_SAMPLE_RATE = 24000
 TARGET_SAMPLE_RATE = 44100
 DEFAULT_VOICE = "en-US-GuyNeural"
+
+
+def _resolve_ffmpeg_bin() -> str:
+    """Resolve FFmpeg executable path once at module level."""
+    which_ffmpeg = shutil.which("ffmpeg")
+    if which_ffmpeg and os.path.isfile(which_ffmpeg):
+        return which_ffmpeg
+    for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg"):
+        if os.path.isfile(p):
+            return p
+    return "ffmpeg"
+
+
+FFMPEG_BIN = _resolve_ffmpeg_bin()
+_THREAD_LOCAL = threading.local()
+
+
+def _get_thread_event_loop() -> asyncio.AbstractEventLoop:
+    """Get or create persistent thread-local event loop to avoid connection thrashing."""
+    loop = getattr(_THREAD_LOCAL, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        _THREAD_LOCAL.loop = loop
+    return loop
+
+
+def _run_coroutine(coro):
+    """Execute coroutine on the thread-local event loop."""
+    loop = _get_thread_event_loop()
+    return loop.run_until_complete(coro)
 
 
 def speed_to_edge_rate(speed: float) -> str:
@@ -59,12 +91,8 @@ async def _synthesize_edge_audio_bytes(text: str, voice: str, rate: str) -> byte
 
 def _decode_mp3_to_pcm(mp3_bytes: bytes, target_sr: int = EDGE_SAMPLE_RATE) -> np.ndarray:
     """Decode MP3 bytes to float32 mono PCM numpy array via ffmpeg."""
-    which_ffmpeg = shutil.which("ffmpeg")
-    ffmpeg_bin = which_ffmpeg if which_ffmpeg and os.path.isfile(which_ffmpeg) else (
-        next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg") if os.path.isfile(p)), "ffmpeg")
-    )
     cmd = [
-        ffmpeg_bin,
+        FFMPEG_BIN,
         "-y",
         "-f", "mp3",
         "-i", "pipe:0",
@@ -93,7 +121,7 @@ def synthesize_sentence_edge(
         return np.zeros(int(target_sr * 0.30), dtype=np.float32)
 
     try:
-        mp3_bytes = asyncio.run(_synthesize_edge_audio_bytes(acoustic_text, voice, rate))
+        mp3_bytes = _run_coroutine(_synthesize_edge_audio_bytes(acoustic_text, voice, rate))
         return _decode_mp3_to_pcm(mp3_bytes, target_sr)
     except Exception as exc1:
         logger.warning("Edge-TTS attempt 1 failed on '%s...': %s; attempting text normalization", acoustic_text[:40], exc1)
@@ -102,7 +130,7 @@ def synthesize_sentence_edge(
         norm_text = re.sub(r"\s+", " ", norm_text).strip()
         if not norm_text:
             return np.zeros(int(target_sr * 0.30), dtype=np.float32)
-        mp3_bytes = asyncio.run(_synthesize_edge_audio_bytes(norm_text, voice, rate))
+        mp3_bytes = _run_coroutine(_synthesize_edge_audio_bytes(norm_text, voice, rate))
         return _decode_mp3_to_pcm(mp3_bytes, target_sr)
 
 
@@ -204,7 +232,9 @@ def synthesize_chapter(
         if is_standalone_divider(text) or not any(c.isalnum() for c in text):
             trimmed_samples = audio_samples
         else:
-            ns = np.where(np.abs(audio_samples) > 0.008)[0]
+            peak = float(np.max(np.abs(audio_samples))) if len(audio_samples) > 0 else 1.0
+            dyn_thresh = max(0.004, min(0.015, peak * 0.03))  # 30dB below peak
+            ns = np.where(np.abs(audio_samples) > dyn_thresh)[0]
             if len(ns) > 0:
                 # Keep 30ms lead-in (0.030s) to avoid clipping initial consonant attack
                 lead_idx = max(0, ns[0] - int(sr * 0.030))
@@ -213,6 +243,10 @@ def synthesize_chapter(
                 trimmed_samples = audio_samples[lead_idx:tail_idx]
             else:
                 trimmed_samples = audio_samples
+
+            # Enforce defensive duration floor (>= 150ms) to prevent degenerate slices
+            if len(trimmed_samples) < int(sr * 0.15):
+                trimmed_samples = audio_samples if len(audio_samples) >= int(sr * 0.15) else np.zeros(int(sr * 0.25), dtype=np.float32)
 
         sent_start = current_sample / sr
         sent_end = (current_sample + len(trimmed_samples)) / sr
@@ -248,12 +282,8 @@ def synthesize_chapter(
 
     full_audio = np.concatenate(pcm_segments) if pcm_segments else np.zeros(sr, dtype=np.float32)
 
-    which_ffmpeg = shutil.which("ffmpeg")
-    ffmpeg_bin = which_ffmpeg if which_ffmpeg and os.path.isfile(which_ffmpeg) else (
-        next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg") if os.path.isfile(p)), "ffmpeg")
-    )
     cmd = [
-        ffmpeg_bin,
+        FFMPEG_BIN,
         "-y",
         "-f", "f32le",
         "-ar", str(sr),
