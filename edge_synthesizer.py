@@ -116,7 +116,8 @@ def synthesize_chapter(
     model_path: Optional[Path] = None,
     voices_path: Optional[Path] = None,
     inter_sentence_pause: float = 0.25,
-    heading_pause: float = 0.50,
+    heading_pause: float = 0.45,
+    force: bool = False,
 ) -> Tuple[Path, Path]:
     """
     Drop-in synthesize_chapter adapter using Microsoft Edge Neural TTS.
@@ -131,9 +132,11 @@ def synthesize_chapter(
     analysis_data = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.is_file() else []
     analysis_map = {row["id"]: row for row in analysis_data}
 
-    # Chapter-level Checkpoint: only accept if it contains validated audio alignment
+    # Chapter-level Checkpoint: only accept if it contains validated audio alignment and force is not set
     if (
-        aligned_output_path.is_file()
+        not force
+        and os.getenv("FORCE_REALIGN") != "1"
+        and aligned_output_path.is_file()
         and audio_output_path.is_file()
         and audio_output_path.stat().st_size > 1024
     ):
@@ -197,13 +200,27 @@ def synthesize_chapter(
 
             np.savez_compressed(cache_file, samples=audio_samples)
 
+        # Silence Trimming & Boundary Calibration (remove lead/tail encoder silence)
+        if is_standalone_divider(text) or not any(c.isalnum() for c in text):
+            trimmed_samples = audio_samples
+        else:
+            ns = np.where(np.abs(audio_samples) > 0.008)[0]
+            if len(ns) > 0:
+                # Keep 30ms lead-in (0.030s) to avoid clipping initial consonant attack
+                lead_idx = max(0, ns[0] - int(sr * 0.030))
+                # Keep 60ms lead-out (0.060s) for natural acoustic room decay
+                tail_idx = min(len(audio_samples), ns[-1] + int(sr * 0.060))
+                trimmed_samples = audio_samples[lead_idx:tail_idx]
+            else:
+                trimmed_samples = audio_samples
+
         sent_start = current_sample / sr
-        sent_end = (current_sample + len(audio_samples)) / sr
-        current_sample += len(audio_samples)
+        sent_end = (current_sample + len(trimmed_samples)) / sr
+        current_sample += len(trimmed_samples)
 
         word_spans = compute_word_spans(text, sent_start, sent_end) if words else []
 
-        pcm_segments.append(audio_samples)
+        pcm_segments.append(trimmed_samples)
 
         # Pause padding between sentences
         pause_sec = heading_pause if is_heading else inter_sentence_pause

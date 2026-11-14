@@ -157,6 +157,11 @@ def _expand_number_token(s: str) -> str:
     if val < 100:
         rem = val % 10
         return _TENS.get(val // 10, "") + (" " + _ONES.get(rem, "") if rem else "")
+    if 1100 <= val <= 2099 and val % 100 != 0:
+        c, r = val // 100, val % 100
+        c_str = _expand_number_token(str(c))
+        r_str = ("oh " + _ONES.get(r, "")) if r < 10 else _expand_number_token(str(r))
+        return f"{c_str} {r_str}"
     if val < 1000:
         rem = val % 100
         return _ONES.get(val // 100, "") + " hundred" + (" and " + _expand_number_token(str(rem)) if rem else "")
