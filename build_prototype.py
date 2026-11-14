@@ -319,6 +319,11 @@ body.typing-mode-active .sentence-unit .w {{
   transition: color 0.05s ease;
 }}
 
+/* Typed Correct Characters: Immune to error shake */
+body.typing-mode-active .sentence-unit .w .twc-correct {{
+  color: var(--accent) !important;
+}}
+
 /* Hint Flash Glow */
 .twc-hint-glow {{
   color: var(--accent) !important;
@@ -515,6 +520,7 @@ body.typing-mode-active .sentence-unit .w {{
   <span id="hudMetrics">0 WPM · 100% ACC</span>
   
   <button id="hudPlayPauseBtn" class="hud-btn" onclick="toggleTypingAudioPlayPause()" title="Play / Pause active sentence audio [Tab]">Pause</button>
+  <button id="hudSkipWordBtn" class="hud-btn" onclick="skipCurrentWord()" title="Skip current word [Ctrl+→ / Alt+→]">Skip</button>
   <button id="hudLoopBtn" class="hud-btn" onclick="cycleMainRepeat()" title="Cycle sentence repeat: Off / 2× / 3× / ∞ [Ctrl+L]">Loop: Off</button>
   <button id="soundProfileBtn" class="hud-btn" onclick="cycleSoundProfile()" title="Cycle keyboard sound profiles with preview">Sound: Thock</button>
   <button id="transToggleBtn" class="hud-btn active-toggle" onclick="toggleTranslationVisibility()" title="Toggle marginalia translation side notes [T]">Trans: On</button>
@@ -963,20 +969,33 @@ body.typing-mode-active .sentence-unit .w {{
   let errorCount = 0;
   let startTime = null;
 
+  function normalizeDiacritics(str) {{
+    try {{
+      return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }} catch(e) {{
+      return str;
+    }}
+  }}
+
   // Smart keyboard normalization for punctuation and typography
   function isCharMatch(input, expected) {{
     if (!input || !expected) return false;
     if (input === expected) return true;
     if (input.toLowerCase() === expected.toLowerCase()) return true;
 
-    // Single quotes, apostrophes: ' matches ’ ‘ ` ʼ
-    if (input === "'" && ("’‘`ʼ'".indexOf(expected) !== -1)) return true;
+    // Diacritic normalization (e.g. é -> e, naïve -> naive)
+    const normIn = normalizeDiacritics(input).toLowerCase();
+    const normExp = normalizeDiacritics(expected).toLowerCase();
+    if (normIn && normIn === normExp) return true;
+
+    // Single quotes, apostrophes: ' or ` matches ’ ‘ ` ʼ
+    if ((input === "'" || input === '`') && ("’‘`ʼ'".indexOf(expected) !== -1)) return true;
     // Double quotes: " matches “ ” « »
     if (input === '"' && ("“”«»\\"".indexOf(expected) !== -1)) return true;
-    // Hyphens and dashes: - matches — – − ‐
-    if (input === '-' && ("—–−‐-".indexOf(expected) !== -1)) return true;
-    // Ellipsis: . matches …
-    if (input === '.' && expected === '…') return true;
+    // Hyphens and dashes: - or Space matches — – − ‐
+    if ((input === '-' || input === ' ') && ("—–−‐-".indexOf(expected) !== -1)) return true;
+    // Ellipsis: . or Space matches …
+    if ((input === '.' || input === ' ') && expected === '…') return true;
 
     return false;
   }}
@@ -1721,12 +1740,31 @@ body.typing-mode-active .sentence-unit .w {{
       return;
     }}
 
+    // Hotkey: ArrowRight -> Skip current character
+    if (e.key === 'ArrowRight' && !e.ctrlKey && !e.altKey && !e.metaKey) {{
+      e.preventDefault();
+      skipCurrentChar();
+      return;
+    }}
+
+    // Hotkey: Ctrl+ArrowRight / Alt+ArrowRight / Cmd+ArrowRight / Ctrl+Space -> Skip current word
+    if ((e.key === 'ArrowRight' && (e.ctrlKey || e.altKey || e.metaKey)) || (e.key === ' ' && (e.ctrlKey || e.altKey))) {{
+      e.preventDefault();
+      skipCurrentWord();
+      return;
+    }}
+
     // Prevent default browser scrolling/selection
     e.preventDefault();
 
-    // Spacebar advances to next word
+    // Spacebar advances to next word (with smart trailing punctuation tolerance)
     if (e.key === ' ' || e.code === 'Space' || (isCloze && e.key === 'Enter')) {{
-      if (waitingForSpace || inWordCharIdx >= targetWord.length) {{
+      const remainingSlice = targetWord.slice(inWordCharIdx);
+      const isOnlyTrailingPunct = (remainingSlice.length > 0 && /^[\s,.:;!?"'“”‘’—–\-\)\]\}}…]+$/.test(remainingSlice));
+      const isPurePunctWord = /^[^a-zA-Z0-9]+$/.test(targetWord);
+
+      if (waitingForSpace || inWordCharIdx >= targetWord.length || isOnlyTrailingPunct || isPurePunctWord) {{
+        inWordCharIdx = targetWord.length;
         waitingForSpace = false;
         consecutiveErrors = 0;
         SoundEngine.play(true);
@@ -1743,29 +1781,49 @@ body.typing-mode-active .sentence-unit .w {{
     // ANY single character typed: Letters, numbers, punctuation
     if (e.key.length === 1 && e.key !== ' ') {{
       if (waitingForSpace) {{
-        if (isCloze && (e.key === ',' || e.key === '.' || e.key === ':' || e.key === ';')) {{
-          waitingForSpace = false;
-          consecutiveErrors = 0;
-          SoundEngine.play(false);
-          advanceToNextWord();
+        // Continuous typing flow: Check if key matches the next word
+        let nextWordIdx = currentWordIdx + 1;
+        if (isCloze) {{
+          while (nextWordIdx < wordItems.length && !wordItems[nextWordIdx].isClozeTarget) {{
+            nextWordIdx++;
+          }}
+        }}
+        if (nextWordIdx < wordItems.length) {{
+          const nextItem = wordItems[nextWordIdx];
+          const nextTarget = isCloze ? nextItem.cleanWord : nextItem.rawText;
+          const firstChar = nextTarget[0];
+          const isNextMatch = isCharMatch(e.key, firstChar) || 
+            (nextTarget.length > 1 && /^[\(\"“‘\[]/.test(firstChar) && isCharMatch(e.key, nextTarget[1]));
+
+          if (isNextMatch) {{
+            waitingForSpace = false;
+            advanceToNextWord();
+          }} else {{
+            // Smoothly advance on any character keypress instead of triggering a false error on completed word
+            waitingForSpace = false;
+            advanceToNextWord();
+            return;
+          }}
+        }} else {{
+          finishSentenceAndAdvance(false);
           return;
         }}
-        triggerErrorEffect(currentItem.el);
-        SoundEngine.error();
-        return;
       }}
 
+      const activeItem = wordItems[currentWordIdx];
+      if (!activeItem) return;
+      const activeTarget = isCloze ? activeItem.cleanWord : activeItem.rawText;
       const inputChar = e.key;
-      const expectedChar = targetWord[inWordCharIdx];
+      const expectedChar = activeTarget[inWordCharIdx];
 
       // Smart Opening Quote/Bracket Tolerance
-      if (inWordCharIdx === 0 && /^[\(\"“‘\[]/.test(expectedChar) && targetWord.length > 1) {{
-        if (isCharMatch(inputChar, targetWord[1])) {{
+      if (inWordCharIdx === 0 && /^[\(\"“‘\[]/.test(expectedChar) && activeTarget.length > 1) {{
+        if (isCharMatch(inputChar, activeTarget[1])) {{
           correctCount += 2;
           inWordCharIdx = 2;
           consecutiveErrors = 0;
           SoundEngine.play(false);
-          checkCompletion();
+          checkWordCompletion();
           saveSentenceState(activeSentenceEl?.id);
           projectActiveSentenceOnly();
           updateHUDMetrics();
@@ -1778,28 +1836,54 @@ body.typing-mode-active .sentence-unit .w {{
         inWordCharIdx++;
         consecutiveErrors = 0;
         SoundEngine.play(false);
-        checkCompletion();
+        checkWordCompletion();
         saveSentenceState(activeSentenceEl?.id);
         projectActiveSentenceOnly();
       }} else {{
         errorCount++;
         consecutiveErrors++;
-        triggerErrorEffect(currentItem.el);
+        triggerErrorEffect(activeItem.el);
         SoundEngine.error();
 
-        if (consecutiveErrors >= 3) {{
+        if (consecutiveErrors >= 2) {{
           window.triggerHint();
         }}
       }}
       updateHUDMetrics();
     }}
+  }}
 
-    function checkCompletion() {{
-      if (inWordCharIdx >= targetWord.length) {{
-        const isLastWord = (currentWordIdx === wordItems.length - 1);
+  function checkWordCompletion() {{
+    if (currentWordIdx >= wordItems.length) return;
+    const currentItem = wordItems[currentWordIdx];
+    if (!currentItem) return;
+    const isCloze = (window.__TYPING_MODE__ === 'cloze');
+    const targetWord = isCloze ? currentItem.cleanWord : currentItem.rawText;
 
-        // Typing all characters of the last word completes sentence immediately!
-        if (!isCloze && isLastWord) {{
+    if (inWordCharIdx >= targetWord.length) {{
+      const isLastWord = (currentWordIdx === wordItems.length - 1);
+
+      // Typing all characters of the last word completes sentence immediately!
+      if (!isCloze && isLastWord) {{
+        currentWordIdx = wordItems.length;
+        inWordCharIdx = 0;
+        waitingForSpace = false;
+        saveSentenceState(activeSentenceEl?.id, true);
+        projectDocumentTypingState();
+        finishSentenceAndAdvance(false);
+        return;
+      }}
+
+      // In Cloze mode: if this was the last cloze target in sentence, complete immediately!
+      if (isCloze) {{
+        let hasMoreTargets = false;
+        for (let i = currentWordIdx + 1; i < wordItems.length; i++) {{
+          if (wordItems[i].isClozeTarget) {{
+            hasMoreTargets = true;
+            break;
+          }}
+        }}
+        if (!hasMoreTargets) {{
           currentWordIdx = wordItems.length;
           inWordCharIdx = 0;
           waitingForSpace = false;
@@ -1807,34 +1891,14 @@ body.typing-mode-active .sentence-unit .w {{
           projectDocumentTypingState();
           finishSentenceAndAdvance(false);
           return;
+        }} else {{
+          // Auto-advance directly to the next cloze target slot! Zero friction!
+          advanceToNextWord();
+          return;
         }}
-
-        // In Cloze mode: if this was the last cloze target in sentence, complete immediately!
-        if (isCloze) {{
-          let hasMoreTargets = false;
-          for (let i = currentWordIdx + 1; i < wordItems.length; i++) {{
-            if (wordItems[i].isClozeTarget) {{
-              hasMoreTargets = true;
-              break;
-            }}
-          }}
-          if (!hasMoreTargets) {{
-            currentWordIdx = wordItems.length;
-            inWordCharIdx = 0;
-            waitingForSpace = false;
-            saveSentenceState(activeSentenceEl?.id, true);
-            projectDocumentTypingState();
-            finishSentenceAndAdvance(false);
-            return;
-          }} else {{
-            // Auto-advance directly to the next cloze target slot! Zero friction!
-            advanceToNextWord();
-            return;
-          }}
-        }}
-
-        waitingForSpace = true;
       }}
+
+      waitingForSpace = true;
     }}
   }}
 
@@ -1877,10 +1941,53 @@ body.typing-mode-active .sentence-unit .w {{
 
   function triggerErrorEffect(el) {{
     if (!el) return;
-    const activeSpan = el.querySelector('.twc-cursor, .twc-masked-cursor, .twc-cloze-cursor-char') || el;
-    activeSpan.classList.add('twc-error-shake');
-    setTimeout(() => activeSpan.classList.remove('twc-error-shake'), 180);
+    // Strictly isolate error feedback to the active cursor/caret, never turn correct letters red!
+    const activeSpan = el.querySelector('.twc-cursor, .twc-caret-space, .twc-masked-cursor, .twc-cloze-cursor-char');
+    if (activeSpan) {{
+      activeSpan.classList.add('twc-error-shake');
+      setTimeout(() => activeSpan.classList.remove('twc-error-shake'), 180);
+    }}
   }}
+
+  function skipCurrentChar() {{
+    if (!activeSentenceEl || window.__TYPING_MODE__ === 'off') return;
+    if (waitingForSpace) {{
+      waitingForSpace = false;
+      consecutiveErrors = 0;
+      SoundEngine.play(true);
+      advanceToNextWord();
+    }} else if (currentWordIdx < wordItems.length) {{
+      const currentItem = wordItems[currentWordIdx];
+      const isCloze = (window.__TYPING_MODE__ === 'cloze');
+      const targetWord = isCloze ? currentItem.cleanWord : currentItem.rawText;
+      if (inWordCharIdx < targetWord.length) {{
+        inWordCharIdx++;
+        consecutiveErrors = 0;
+        SoundEngine.play(false);
+        checkWordCompletion();
+        saveSentenceState(activeSentenceEl?.id);
+        projectActiveSentenceOnly();
+        updateHUDMetrics();
+      }}
+    }}
+  }}
+  window.skipCurrentChar = skipCurrentChar;
+
+  function skipCurrentWord() {{
+    if (!activeSentenceEl || window.__TYPING_MODE__ === 'off') return;
+    if (currentWordIdx < wordItems.length) {{
+      const currentItem = wordItems[currentWordIdx];
+      const isCloze = (window.__TYPING_MODE__ === 'cloze');
+      const targetWord = isCloze ? currentItem.cleanWord : currentItem.rawText;
+      inWordCharIdx = targetWord.length;
+      waitingForSpace = false;
+      consecutiveErrors = 0;
+      SoundEngine.play(true);
+      advanceToNextWord();
+      updateHUDMetrics();
+    }}
+  }}
+  window.skipCurrentWord = skipCurrentWord;
 
   function updateHUDMetrics() {{
     const metricsEl = document.getElementById('hudMetrics');
@@ -2241,12 +2348,15 @@ replacement_shortcuts = """    <div class="shortcuts-table">
       <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Dismiss popover / modal</span></div>
 
       <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--accent, #3b82f6); margin-top: 14px; margin-bottom: 2px;">Typing Practice Mode</div>
+      <div class="shortcut-item"><span class="kbd-key">Space</span><span>Next word (smart punctuation advance)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">→</span><span>Skip current character</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Ctrl+→ / Alt+→</span><span>Skip current word</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Ctrl+Enter</span><span>Skip sentence</span></div>
       <div class="shortcut-item"><span class="kbd-key">Tab</span><span>Play / Pause sentence audio</span></div>
       <div class="shortcut-item"><span class="kbd-key">Shift+Tab</span><span>Restart sentence from beginning</span></div>
       <div class="shortcut-item"><span class="kbd-key">⌘R / Ctrl+R</span><span>Restart current sentence</span></div>
       <div class="shortcut-item"><span class="kbd-key">Ctrl+L</span><span>Cycle Loop (Off / 2× / 3× / ∞)</span></div>
       <div class="shortcut-item"><span class="kbd-key">Ctrl+H</span><span>Trigger Hint (Glow expected char)</span></div>
-      <div class="shortcut-item"><span class="kbd-key">Ctrl+Enter</span><span>Skip sentence</span></div>
       <div class="shortcut-item"><span class="kbd-key">Alt+T</span><span>Toggle Translation marginalia</span></div>
       <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Exit Typing Mode</span></div>
     </div>"""

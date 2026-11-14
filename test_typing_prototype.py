@@ -70,6 +70,7 @@ class TestTypingPrototype(unittest.TestCase):
             'id="typingSubModeBtn"',
             'id="soundProfileBtn"',
             'id="transToggleBtn"',
+            'id="hudSkipWordBtn"',
             'id="hudMetrics"',
             'id="hudProgressTag"',
             'id="capsLockBadge"',
@@ -120,6 +121,14 @@ class TestTypingPrototype(unittest.TestCase):
     def test_mobile_bridge_zero_width_space_contract(self):
         """Verify mobile bridge seeds zero-width space for reliable iOS virtual backspace."""
         self.assertIn("\\u200B", self.html_content)
+
+    def test_skip_char_and_word_contract(self):
+        """Verify skipCurrentChar, skipCurrentWord, and Smart Space contracts exist."""
+        self.assertIn("function skipCurrentChar()", self.html_content)
+        self.assertIn("function skipCurrentWord()", self.html_content)
+        self.assertIn("window.skipCurrentChar", self.html_content)
+        self.assertIn("window.skipCurrentWord", self.html_content)
+        self.assertIn("isOnlyTrailingPunct", self.html_content)
 
     def test_apply_book_typing_lifecycle(self):
         """Verify apply_book_typing.py performs atomic backup, injection, and AST validation."""
