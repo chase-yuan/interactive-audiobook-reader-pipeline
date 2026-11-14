@@ -318,10 +318,218 @@ body.typing-mode-active .sentence-unit .w {{
   box-shadow: inset 0 -2.5px 0 0 var(--accent) !important;
   transition: color 0.2s ease;
 }}
+
+/* Live Sentence Acoustic Progress Line (2.5px Hairline at Bottom of Prose Column, Zero Text Clutter) */
+.typing-acoustic-progress-bar {{
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--dock-max-width, 676px);
+  height: 2.5px;
+  background: rgba(148, 163, 184, 0.15);
+  z-index: 10001;
+  pointer-events: none;
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
+  display: none;
+}}
+body.typing-mode-active .typing-acoustic-progress-bar {{
+  display: block;
+}}
+.typing-acoustic-fill {{
+  height: 100%;
+  width: 0%;
+  background: var(--accent, #3b82f6);
+  box-shadow: 0 0 8px var(--accent, #3b82f6);
+  border-radius: 2px;
+  transition: width 0.08s linear;
+}}
+
+/* Hidden Input for Mobile / Tablet Virtual Keyboard */
+.twc-hidden-input {{
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  z-index: -1;
+}}
+
+/* Cloze Target Vocab Highlight in Marginalia */
+.vocab-row.target-active-vocab {{
+  border-left: 3px solid var(--accent, #3b82f6) !important;
+  background: var(--bg-hover, rgba(59, 130, 246, 0.08)) !important;
+  padding-left: 8px !important;
+  border-radius: 4px !important;
+  transition: all 0.2s ease !important;
+}}
+
+/* Chapter Complete Modal */
+.typing-complete-overlay {{
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}}
+.typing-complete-overlay.visible {{
+  opacity: 1;
+  pointer-events: auto;
+}}
+.typing-complete-card {{
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 18px;
+  padding: 32px 36px;
+  max-width: 440px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+  transform: scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}}
+.typing-complete-overlay.visible .typing-complete-card {{
+  transform: scale(1);
+}}
+.tc-badge {{
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  margin-bottom: 12px;
+}}
+.tc-title {{
+  margin: 0 0 4px 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-main, #1e293b);
+  letter-spacing: -0.02em;
+}}
+.tc-subtitle {{
+  margin: 0 0 24px 0;
+  font-size: 14px;
+  color: var(--text-secondary, #64748b);
+}}
+.tc-stats-grid {{
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}}
+.tc-stat-box {{
+  background: var(--bg-hover, rgba(148, 163, 184, 0.08));
+  border-radius: 12px;
+  padding: 14px 10px;
+}}
+.tc-stat-val {{
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-main, #1e293b);
+  line-height: 1.2;
+}}
+.tc-stat-label {{
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, #64748b);
+  margin-top: 4px;
+}}
+.tc-actions {{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}}
+.tc-btn {{
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: none;
+}}
+.tc-btn-primary {{
+  background: var(--accent, #3b82f6);
+  color: #ffffff;
+}}
+.tc-btn-primary:hover {{
+  opacity: 0.9;
+  transform: translateY(-1px);
+}}
+.tc-btn-secondary {{
+  background: transparent;
+  color: var(--text-secondary, #64748b);
+  border: 1px solid var(--border, #e2e8f0);
+}}
+.tc-btn-secondary:hover {{
+  background: var(--bg-hover, rgba(148, 163, 184, 0.08));
+  color: var(--text-main, #1e293b);
+}}
 </style>
 
 <!-- Top Chapter Progress Bar -->
 <div id="typingChapterProgressBar"></div>
+
+<!-- Live Sentence Acoustic Progress Line (2.5px Hairline at Bottom of Prose Column, Zero Jitter) -->
+<div id="typingAcousticProgressBar" class="typing-acoustic-progress-bar">
+  <div id="typingAcousticFill" class="typing-acoustic-fill"></div>
+</div>
+
+<!-- Virtual Keyboard Input Bridge (Mobile/iPad Seamless Soft-Keyboard Summon) -->
+<input type="text" id="typingHiddenInput" class="twc-hidden-input" autocomplete="off" autocapitalize="none" spellcheck="false" autocorrect="off" aria-hidden="true" tabindex="-1">
+
+<!-- Chapter Complete Celebration Modal -->
+<div id="typingCompleteModal" class="typing-complete-overlay" onclick="closeChapterCompleteModal()">
+  <div class="typing-complete-card" onclick="event.stopPropagation()">
+    <div class="tc-badge">Chapter Complete</div>
+    <h2 class="tc-title">Practice Finished</h2>
+    <p class="tc-subtitle">Misbehaving · Chapter 1</p>
+    <div class="tc-stats-grid">
+      <div class="tc-stat-box">
+        <span class="tc-stat-val" id="tcFinalWpm">0</span>
+        <span class="tc-stat-label">WPM</span>
+      </div>
+      <div class="tc-stat-box">
+        <span class="tc-stat-val" id="tcFinalAcc">100%</span>
+        <span class="tc-stat-label">Accuracy</span>
+      </div>
+      <div class="tc-stat-box">
+        <span class="tc-stat-val" id="tcFinalTime">0:00</span>
+        <span class="tc-stat-label">Time</span>
+      </div>
+      <div class="tc-stat-box">
+        <span class="tc-stat-val" id="tcFinalSentences">0 / 0</span>
+        <span class="tc-stat-label">Sentences</span>
+      </div>
+    </div>
+    <div class="tc-actions">
+      <button class="tc-btn tc-btn-primary" onclick="restartChapterTyping()">Practice Again</button>
+      <button class="tc-btn tc-btn-secondary" onclick="closeChapterCompleteModal(true)">Return to Reading</button>
+    </div>
+  </div>
+</div>
 
 <!-- Bottom Minimal HUD (Streamlined 1-Row Layout, Auto-Align & Auto-Hide) -->
 <div id="inSituHud" class="in-situ-hud">
@@ -504,7 +712,7 @@ body.typing-mode-active .sentence-unit .w {{
     }});
   }}
 
-  // 2. Marginalia Side Note Translation State (Zero Prose DOM Distortion)
+  // 2. Marginalia Side Note Translation State & Targeted Cloze Glossing
   let showTranslation = localStorage.getItem('typing_show_trans') !== 'false';
 
   function updateMarginaliaState() {{
@@ -512,12 +720,49 @@ body.typing-mode-active .sentence-unit .w {{
     if (showTranslation && activeSentenceEl) {{
       if (typeof showMarginaliaForSentence === 'function') {{
         showMarginaliaForSentence(activeSentenceEl, true);
+
+        // Targeted Glossing: Highlight active vocabulary target in Cloze mode
+        if (window.__TYPING_MODE__ === 'cloze' && currentWordIdx < wordItems.length) {{
+          const item = wordItems[currentWordIdx];
+          const vocabRows = document.querySelectorAll('#marginaliaVocab .vocab-row');
+          if (item && item.isClozeTarget) {{
+            vocabRows.forEach(row => {{
+              const wordSpan = row.querySelector('.v-word');
+              const vText = wordSpan ? wordSpan.textContent.trim().toLowerCase() : '';
+              if (vText && (isVocabMatch(item.cleanWord, vText) || vText.includes(item.cleanWord.toLowerCase()))) {{
+                row.classList.add('target-active-vocab');
+              }} else {{
+                row.classList.remove('target-active-vocab');
+              }}
+            }});
+          }} else {{
+            vocabRows.forEach(row => row.classList.remove('target-active-vocab'));
+          }}
+        }}
       }}
     }} else {{
       if (typeof hideMarginalia === 'function') {{
         hideMarginalia();
       }}
     }}
+  }}
+
+  // Live Acoustic Progress Line (Synchronized with audio.currentTime without touching text)
+  function updateAcousticProgress() {{
+    if (window.__TYPING_MODE__ === 'off' || !activeSentenceEl || !audio) return;
+    const start = parseFloat(activeSentenceEl.dataset.start);
+    const end = parseFloat(activeSentenceEl.dataset.end);
+    if (isNaN(start) || isNaN(end) || end <= start) return;
+
+    const cur = audio.currentTime;
+    let pct = 0;
+    if (cur >= start && cur <= end) {{
+      pct = ((cur - start) / (end - start)) * 100;
+    }} else if (cur > end) {{
+      pct = 100;
+    }}
+    const fill = document.getElementById('typingAcousticFill');
+    if (fill) fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
   }}
 
   // =========================================================================
@@ -806,12 +1051,16 @@ body.typing-mode-active .sentence-unit .w {{
     inWordCharIdx = 0;
     waitingForSpace = false;
     consecutiveErrors = 0;
+    const fill = document.getElementById('typingAcousticFill');
+    if (fill) fill.style.width = '0%';
     ensureValidClozeIndex();
     saveSentenceState(activeSentenceEl.id);
     projectDocumentTypingState();
     window.playActiveSentenceOnce();
     updateHUDMetrics();
     updateMarginaliaState();
+    const hi = document.getElementById('typingHiddenInput');
+    if (hi) hi.focus({{ preventScroll: true }});
   }};
 
   window.gotoPreviousTypingSentence = function() {{
@@ -864,6 +1113,9 @@ body.typing-mode-active .sentence-unit .w {{
         }}
       }}
       if (progressBar) progressBar.style.width = '0%';
+      const fill = document.getElementById('typingAcousticFill');
+      if (fill) fill.style.width = '0%';
+      if (typeof closeChapterCompleteModal === 'function') closeChapterCompleteModal();
       
       // Restore clean reader DOM
       document.querySelectorAll('.sentence-unit').forEach(el => {{
@@ -877,6 +1129,13 @@ body.typing-mode-active .sentence-unit .w {{
       window.removeEventListener('keyup', handleKeyUp, true);
       if (typeof hideMarginalia === 'function') hideMarginalia();
       return;
+    }}
+
+    if (typeof closeChapterCompleteModal === 'function') closeChapterCompleteModal();
+    const hiddenBridge = document.getElementById('typingHiddenInput');
+    if (hiddenBridge) {{
+      hiddenBridge.value = '';
+      hiddenBridge.focus({{ preventScroll: true }});
     }}
 
     // Activate typing isolation sandbox
@@ -996,11 +1255,17 @@ body.typing-mode-active .sentence-unit .w {{
     consecutiveErrors = 0;
     if (!startTime) startTime = performance.now();
 
+    const fill = document.getElementById('typingAcousticFill');
+    if (fill) fill.style.width = '0%';
+
     projectDocumentTypingState();
     window.playActiveSentenceOnce();
     updateHUDMetrics();
     updateChapterProgressBar();
     updateMarginaliaState();
+
+    const hi = document.getElementById('typingHiddenInput');
+    if (hi) hi.focus({{ preventScroll: true }});
   }}
 
   function updateChapterProgressBar() {{
@@ -1357,10 +1622,14 @@ body.typing-mode-active .sentence-unit .w {{
       return;
     }}
 
-    // Hotkey: Tab -> Play / Pause Audio
+    // Hotkey: Tab -> Play / Pause Audio; Shift+Tab -> Restart sentence from beginning
     if (e.key === 'Tab') {{
       e.preventDefault();
-      window.toggleTypingAudioPlayPause();
+      if (e.shiftKey) {{
+        window.restartCurrentSentence();
+      }} else {{
+        window.toggleTypingAudioPlayPause();
+      }}
       return;
     }}
 
@@ -1385,8 +1654,8 @@ body.typing-mode-active .sentence-unit .w {{
       return;
     }}
 
-    // Hotkey: Ctrl+R or Alt+R -> Restart current sentence
-    if ((e.ctrlKey || e.altKey) && (e.key === 'r' || e.key === 'R')) {{
+    // Hotkey: Cmd+R / Ctrl+R / Alt+R -> Restart current sentence (Intercept Mac reload to protect session state)
+    if ((e.metaKey || e.ctrlKey || e.altKey) && (e.key === 'r' || e.key === 'R')) {{
       e.preventDefault();
       window.restartCurrentSentence();
       return;
@@ -1406,8 +1675,8 @@ body.typing-mode-active .sentence-unit .w {{
       return;
     }}
 
-    // Hotkey: T -> Toggle Translation
-    if ((e.key === 't' || e.key === 'T') && (e.ctrlKey || e.altKey)) {{
+    // Hotkey: Cmd+T / Ctrl+T / Alt+T -> Toggle Translation
+    if ((e.metaKey || e.ctrlKey || e.altKey) && (e.key === 't' || e.key === 'T')) {{
       e.preventDefault();
       window.toggleTranslationVisibility();
       return;
@@ -1674,6 +1943,9 @@ body.typing-mode-active .sentence-unit .w {{
         lockSentence(next, false);
       }} else {{
         if (metricsEl) metricsEl.textContent = 'Chapter Complete';
+        if (typeof window.showChapterCompleteModal === 'function') {{
+          window.showChapterCompleteModal();
+        }}
       }}
     }}, isSkip ? 150 : 450);
   }}
@@ -1699,6 +1971,7 @@ body.typing-mode-active .sentence-unit .w {{
   if (audio) {{
     audio.addEventListener('timeupdate', () => {{
       if (window.__TYPING_MODE__ !== 'off' && activeSentenceEl) {{
+        updateAcousticProgress();
         const end = parseFloat(activeSentenceEl.dataset.end);
         if (!isNaN(end) && audio.currentTime >= end) {{
           const rep = (typeof shadowState !== 'undefined' && shadowState.repetitions) ? shadowState.repetitions : 1;
@@ -1706,6 +1979,8 @@ body.typing-mode-active .sentence-unit .w {{
             shadowState.completed = (shadowState.completed || 0) + 1;
             const start = parseFloat(activeSentenceEl.dataset.start);
             if (!isNaN(start)) {{
+              const fill = document.getElementById('typingAcousticFill');
+              if (fill) fill.style.width = '0%';
               audio.currentTime = start;
               audio.play().catch(() => {{}});
               return;
@@ -1755,6 +2030,89 @@ body.typing-mode-active .sentence-unit .w {{
       lockSentence(sentence, false);
     }}
   }};
+
+  // =========================================================================
+  // CHAPTER COMPLETE CELEBRATION MODAL
+  // =========================================================================
+  window.showChapterCompleteModal = function() {{
+    const modal = document.getElementById('typingCompleteModal');
+    if (!modal) return;
+
+    const elapsedMin = (performance.now() - (startTime || performance.now())) / 60000;
+    const totalSec = Math.round((performance.now() - (startTime || performance.now())) / 1000);
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    const timeStr = `${{mins}}:${{secs < 10 ? '0' : ''}}${{secs}}`;
+
+    const wpm = elapsedMin > 0 ? Math.round((correctCount / 5) / elapsedMin) : 0;
+    const total = correctCount + errorCount;
+    const acc = total > 0 ? Math.round((correctCount / total) * 100) : 100;
+
+    const allSentences = Array.from(document.querySelectorAll('.sentence-unit'));
+    let completedCount = 0;
+    allSentences.forEach(s => {{
+      const st = sentenceProgressLedger.get(s.id);
+      if (st && st.completed) completedCount++;
+    }});
+
+    const wpmEl = document.getElementById('tcFinalWpm');
+    if (wpmEl) wpmEl.textContent = wpm;
+    const accEl = document.getElementById('tcFinalAcc');
+    if (accEl) accEl.textContent = `${{acc}}%`;
+    const timeEl = document.getElementById('tcFinalTime');
+    if (timeEl) timeEl.textContent = timeStr;
+    const sentEl = document.getElementById('tcFinalSentences');
+    if (sentEl) sentEl.textContent = `${{completedCount}} / ${{allSentences.length}}`;
+
+    modal.classList.add('visible');
+  }};
+
+  window.closeChapterCompleteModal = function(returnToReading = false) {{
+    const modal = document.getElementById('typingCompleteModal');
+    if (modal) modal.classList.remove('visible');
+    if (returnToReading) {{
+      window.setTypingMode('off');
+    }}
+  }};
+
+  window.restartChapterTyping = function() {{
+    window.closeChapterCompleteModal(false);
+    sentenceProgressLedger.clear();
+    try {{
+      localStorage.removeItem('typing_sentence_ledger_v2');
+    }} catch(e) {{}}
+    correctCount = 0;
+    errorCount = 0;
+    startTime = performance.now();
+    const allSentences = Array.from(document.querySelectorAll('.sentence-unit'));
+    if (allSentences.length > 0) {{
+      lockSentence(allSentences[0], true);
+    }}
+  }};
+
+  // Virtual Keyboard Input Bridge for Mobile / iPad
+  const hiddenInputBridge = document.getElementById('typingHiddenInput');
+  if (hiddenInputBridge) {{
+    hiddenInputBridge.addEventListener('input', () => {{
+      const val = hiddenInputBridge.value;
+      hiddenInputBridge.value = '';
+      if (!val) return;
+      for (let i = 0; i < val.length; i++) {{
+        const char = val[i];
+        handleKeyInput({{
+          key: char,
+          code: 'Key' + char.toUpperCase(),
+          preventDefault: () => {{}},
+          stopImmediatePropagation: () => {{}}
+        }});
+      }}
+    }});
+    hiddenInputBridge.addEventListener('keydown', (e) => {{
+      if (e.key === 'Backspace' || e.key === 'Enter') {{
+        handleKeyInput(e);
+      }}
+    }});
+  }}
 }})();
 </script>
 """
@@ -1892,6 +2250,44 @@ replacement_chip_group = (
 
 if target_chip_group in content:
     content = content.replace(target_chip_group, replacement_chip_group)
+
+# Synchronize Shortcuts Modal (Reading & Practice Dual Mode Reference)
+target_shortcuts = """    <div class="shortcuts-table">
+      <div class="shortcut-item"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
+      <div class="shortcut-item"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
+      <div class="shortcut-item"><span class="kbd-key">[ / ]</span><span>Previous / Next chapter</span></div>
+      <div class="shortcut-item"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
+      <div class="shortcut-item"><span class="kbd-key">R</span><span>Repeat sentence loop</span></div>
+      <div class="shortcut-item"><span class="kbd-key">P</span><span>Focus Mode (Immersion)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">H / B</span><span>Audio mode (hide text for listening)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Dismiss popover / modal</span></div>
+    </div>"""
+
+replacement_shortcuts = """    <div class="shortcuts-table">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--accent, #3b82f6); margin-top: 4px; margin-bottom: 2px;">Reading Mode</div>
+      <div class="shortcut-item"><span class="kbd-key">Space</span><span>Play / Pause</span></div>
+      <div class="shortcut-item"><span class="kbd-key">K</span><span>Typing Mode (Practice)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">← / →</span><span>Previous / Next sentence</span></div>
+      <div class="shortcut-item"><span class="kbd-key">[ / ]</span><span>Previous / Next chapter</span></div>
+      <div class="shortcut-item"><span class="kbd-key">T</span><span>Toggle Bilingual / English-only mode</span></div>
+      <div class="shortcut-item"><span class="kbd-key">R</span><span>Repeat sentence loop (1× / 2× / 3× / ∞)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">P</span><span>Focus Mode (Immersion)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">H / B</span><span>Audio mode (hide text for listening)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Dismiss popover / modal</span></div>
+
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--accent, #3b82f6); margin-top: 14px; margin-bottom: 2px;">Typing Practice Mode</div>
+      <div class="shortcut-item"><span class="kbd-key">Tab</span><span>Play / Pause sentence audio</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Shift+Tab</span><span>Restart sentence from beginning</span></div>
+      <div class="shortcut-item"><span class="kbd-key">⌘R / Ctrl+R</span><span>Restart current sentence</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Ctrl+L</span><span>Cycle Loop (Off / 2× / 3× / ∞)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Ctrl+H</span><span>Trigger Hint (Glow expected char)</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Ctrl+Enter</span><span>Skip sentence</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Alt+T</span><span>Toggle Translation marginalia</span></div>
+      <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Exit Typing Mode</span></div>
+    </div>"""
+
+if target_shortcuts in content:
+    content = content.replace(target_shortcuts, replacement_shortcuts)
 
 idx = content.rfind('</body>')
 if idx != -1:
