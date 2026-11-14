@@ -43,12 +43,12 @@ body.typing-mode-active .sentence-text {{
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease !important;
 }}
 
-/* Bottom Floating Status Bar - Refined Glassmorphic Pill (AP1) */
+/* Bottom Floating Status Bar - Seamless Tokenized Glassmorphic Pill (AP1) */
 .in-situ-hud {{
   position: fixed;
-  bottom: 24px;
+  bottom: calc(var(--space-base, 16px) + env(safe-area-inset-bottom, 16px));
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(0);
   z-index: 9999;
   background: var(--bg-panel-glass, rgba(255, 255, 255, 0.92));
   color: var(--text-main, #1a1a1a);
@@ -61,15 +61,23 @@ body.typing-mode-active .sentence-text {{
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
   display: none;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   user-select: none;
-  max-width: 95vw;
+  max-width: min(var(--dock-max-width, 676px), calc(100vw - 32px));
   white-space: nowrap;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }}
 .in-situ-hud.visible {{
   display: flex;
+}}
+.in-situ-hud.hud-idle-hidden {{
+  transform: translateX(-50%) translateY(calc(100% + 36px));
+  opacity: 0;
+  pointer-events: none;
 }}
 
 /* CapsLock Indicator - Clean Micro-Badge (AP0 & AP3) */
@@ -310,42 +318,12 @@ body.typing-mode-active .sentence-unit .w {{
   box-shadow: inset 0 -2.5px 0 0 var(--accent) !important;
   transition: color 0.2s ease;
 }}
-
-/* Mistakes Modal (Boxless & Pure English) */
-#mistakesModal {{
-  display: none;
-  position: fixed;
-  bottom: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10002;
-  background: var(--bg-panel-glass, rgba(255, 255, 255, 0.95));
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1));
-  border-radius: var(--radius-md, 12px);
-  padding: var(--space-md, 12px);
-  box-shadow: var(--shadow-modal, 0 12px 36px rgba(0,0,0,0.22));
-  backdrop-filter: var(--blur-nav);
-  -webkit-backdrop-filter: var(--blur-nav);
-  width: 90%;
-  max-width: 480px;
-  max-height: 55vh;
-  overflow-y: auto;
-  font-family: var(--font-sans);
-}}
-#mistakesModalOverlay {{
-  display: none;
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: var(--bg-backdrop, rgba(0,0,0,0.28));
-  z-index: 10001;
-  backdrop-filter: var(--blur-drawer);
-}}
 </style>
 
 <!-- Top Chapter Progress Bar -->
 <div id="typingChapterProgressBar"></div>
 
-<!-- Bottom Minimal HUD (Streamlined 1-Row Layout, No Wrap) -->
+<!-- Bottom Minimal HUD (Streamlined 1-Row Layout, Auto-Align & Auto-Hide) -->
 <div id="inSituHud" class="in-situ-hud">
   <button id="typingSubModeBtn" class="hud-btn active-toggle" onclick="cycleTypingSubMode()" title="Cycle mode: Type / Blind / Cloze">Mode: Type</button>
   <span id="capsLockBadge">CAPS</span>
@@ -356,22 +334,7 @@ body.typing-mode-active .sentence-unit .w {{
   <button id="hudLoopBtn" class="hud-btn" onclick="cycleMainRepeat()" title="Cycle sentence repeat: Off / 2× / 3× / ∞ [Ctrl+L]">Loop: Off</button>
   <button id="soundProfileBtn" class="hud-btn" onclick="cycleSoundProfile()" title="Cycle keyboard sound profiles with preview">Sound: Thock</button>
   <button id="transToggleBtn" class="hud-btn active-toggle" onclick="toggleTranslationVisibility()" title="Toggle marginalia translation side notes [T]">Trans: On</button>
-  <button id="mistakesBtn" class="hud-btn" onclick="showMistakesModal()" title="View session mistake ledger">Mistakes (0)</button>
   <button class="hud-btn" onclick="setTypingMode('off')" title="Exit typing mode [Esc]">Exit</button>
-</div>
-
-<!-- Mistakes Modal -->
-<div id="mistakesModalOverlay" onclick="closeMistakesModal()"></div>
-<div id="mistakesModal">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-sm, 8px);">
-    <span style="font-size:var(--font-size-ui, 0.86rem); font-weight:700; color:var(--text-main);">Session Mistake Ledger</span>
-    <button onclick="closeMistakesModal()" style="border:none;background:transparent;cursor:pointer;color:var(--text-sub);font-size:var(--font-size-ui, 0.86rem);">Close</button>
-  </div>
-  <p style="font-size:var(--font-size-xs, 0.72rem); color:var(--text-sub); margin-top:0;">Words requiring reinforcement from this practice session:</p>
-  <div id="mistakesList" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;"></div>
-  <div style="display:flex; justify-content:flex-end; margin-top:12px;">
-    <button class="hud-btn" onclick="closeMistakesModal()">Done</button>
-  </div>
 </div>
 
 <script>
@@ -557,6 +520,69 @@ body.typing-mode-active .sentence-unit .w {{
     }}
   }}
 
+  // =========================================================================
+  // TYPING HUD AUTO-HIDE ENGINE (Pure Focus & Ergonomic Bottom Strip Hover)
+  // Automatically conceals HUD while typing, reveals smoothly when hovering near bottom
+  // =========================================================================
+  let typingHudIdleTimer = null;
+  const TYPING_HUD_IDLE_DELAY = 2400;
+
+  function scheduleTypingHudHide(immediate = false) {{
+    if (typingHudIdleTimer) {{
+      clearTimeout(typingHudIdleTimer);
+      typingHudIdleTimer = null;
+    }}
+    const hud = document.getElementById('inSituHud');
+    if (!hud || window.__TYPING_MODE__ === 'off') return;
+    if (hud._isMouseOver) return;
+
+    if (immediate) {{
+      hud.classList.add('hud-idle-hidden');
+      return;
+    }}
+
+    typingHudIdleTimer = setTimeout(() => {{
+      const h = document.getElementById('inSituHud');
+      if (!h || window.__TYPING_MODE__ === 'off' || h._isMouseOver) return;
+      h.classList.add('hud-idle-hidden');
+    }}, TYPING_HUD_IDLE_DELAY);
+  }}
+
+  function showTypingHud() {{
+    if (window.__TYPING_MODE__ === 'off') return;
+    const hud = document.getElementById('inSituHud');
+    if (!hud) return;
+    hud.classList.remove('hud-idle-hidden');
+    scheduleTypingHudHide(false);
+  }}
+
+  // Pointer move near bottom activation strip (bottom 80px) reveals HUD
+  document.addEventListener('pointermove', function(e) {{
+    if (window.__TYPING_MODE__ === 'off') return;
+    const isNearBottom = (typeof e.clientY === 'number') && (e.clientY >= window.innerHeight - 80);
+    const hud = document.getElementById('inSituHud');
+    const isOverHud = Boolean(hud && hud._isMouseOver);
+    if (isNearBottom || isOverHud) {{
+      showTypingHud();
+    }}
+  }});
+
+  const hudEl = document.getElementById('inSituHud');
+  if (hudEl) {{
+    hudEl.addEventListener('mouseenter', () => {{
+      hudEl._isMouseOver = true;
+      if (typingHudIdleTimer) {{
+        clearTimeout(typingHudIdleTimer);
+        typingHudIdleTimer = null;
+      }}
+      hudEl.classList.remove('hud-idle-hidden');
+    }});
+    hudEl.addEventListener('mouseleave', () => {{
+      hudEl._isMouseOver = false;
+      scheduleTypingHudHide(false);
+    }});
+  }}
+
   // 3. Zero-Jitter Smart Scroll: Only scrolls if the sentence is truly outside comfortable reading bounds!
   function smartScrollIntoView(el) {{
     if (!el) return;
@@ -651,38 +677,6 @@ body.typing-mode-active .sentence-unit .w {{
     'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'not', 'only', 'own', 'same', 'than', 'too', 'very',
     'i', 'you', 'he', 'she', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs'
   ]);
-
-  // Mistakes session ledger
-  const mistakeLedger = new Map();
-
-  window.showMistakesModal = function() {{
-    const overlay = document.getElementById('mistakesModalOverlay');
-    const modal = document.getElementById('mistakesModal');
-    const list = document.getElementById('mistakesList');
-    if (!overlay || !modal || !list) return;
-
-    list.innerHTML = '';
-    if (mistakeLedger.size === 0) {{
-      list.innerHTML = '<span style="color:var(--text-sub); font-size:var(--font-size-xs, 0.72rem); font-style:italic;">Flawless session! Zero mistakes recorded.</span>';
-    }} else {{
-      mistakeLedger.forEach((count, word) => {{
-        const chip = document.createElement('span');
-        chip.style.cssText = 'background:var(--bg-hover); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:12px; padding:2px 8px; font-size:var(--font-size-xs, 0.72rem); font-weight:600; display:inline-flex; align-items:center; gap:4px;';
-        chip.innerHTML = `${{word}} <span style="color:var(--btn-danger-bg, #ef4444); font-size:10px;">×${{count}}</span>`;
-        list.appendChild(chip);
-      }});
-    }}
-
-    overlay.style.display = 'block';
-    modal.style.display = 'block';
-  }};
-
-  window.closeMistakesModal = function() {{
-    const overlay = document.getElementById('mistakesModalOverlay');
-    const modal = document.getElementById('mistakesModal');
-    if (overlay) overlay.style.display = 'none';
-    if (modal) modal.style.display = 'none';
-  }};
 
   // 4. Persistence Ledger for All Sentences in Active Chapter
   const STORAGE_KEY = 'typing_ledger_c' + (typeof activeChapterNum !== 'undefined' ? activeChapterNum : '1');
@@ -827,7 +821,13 @@ body.typing-mode-active .sentence-unit .w {{
       document.body.classList.remove('typing-mode-active');
       if (bottomDock) bottomDock.classList.remove('dock-typing-hidden');
       if (typingChip) typingChip.classList.remove('active');
-      if (hud) hud.classList.remove('visible');
+      if (hud) {{
+        hud.classList.remove('visible', 'hud-idle-hidden');
+        if (typingHudIdleTimer) {{
+          clearTimeout(typingHudIdleTimer);
+          typingHudIdleTimer = null;
+        }}
+      }}
       if (progressBar) progressBar.style.width = '0%';
       
       // Restore clean reader DOM
@@ -862,6 +862,8 @@ body.typing-mode-active .sentence-unit .w {{
 
     if (hud) {{
       hud.classList.add('visible');
+      hud.classList.remove('hud-idle-hidden');
+      scheduleTypingHudHide(false);
       if (typeof window.updateHudLoopBtn === 'function') window.updateHudLoopBtn();
       if (typeof window.updateHudPlayPauseBtn === 'function') window.updateHudPlayPauseBtn();
       
@@ -1246,6 +1248,11 @@ body.typing-mode-active .sentence-unit .w {{
       capsBadge.style.display = e.getModifierState('CapsLock') ? 'inline-block' : 'none';
     }}
 
+    // Auto-hide HUD on typing keypress for pure focus and zero screen obstruction
+    if (!['Tab', 'Escape'].includes(e.key)) {{
+      scheduleTypingHudHide(true);
+    }}
+
     e.stopImmediatePropagation();
 
     // Hotkey: Esc -> Exit back to Read mode
@@ -1378,7 +1385,6 @@ body.typing-mode-active .sentence-unit .w {{
         advanceToNextWord();
       }} else {{
         errorCount++;
-        recordMistake(currentItem.cleanWord);
         triggerErrorEffect(currentItem.el);
         SoundEngine.error();
         updateHUDMetrics();
@@ -1430,7 +1436,6 @@ body.typing-mode-active .sentence-unit .w {{
       }} else {{
         errorCount++;
         consecutiveErrors++;
-        recordMistake(currentItem.cleanWord);
         triggerErrorEffect(currentItem.el);
         SoundEngine.error();
 
@@ -1483,15 +1488,6 @@ body.typing-mode-active .sentence-unit .w {{
         waitingForSpace = true;
       }}
     }}
-  }}
-
-  function recordMistake(word) {{
-    if (!word || word.length < 2) return;
-    const clean = word.toLowerCase();
-    const prev = mistakeLedger.get(clean) || 0;
-    mistakeLedger.set(clean, prev + 1);
-    const btn = document.getElementById('mistakesBtn');
-    if (btn) btn.textContent = `Mistakes (${{mistakeLedger.size}})`;
   }}
 
   function advanceToNextWord() {{
