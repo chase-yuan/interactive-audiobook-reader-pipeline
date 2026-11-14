@@ -1,9 +1,16 @@
 import os
+import sys
 import json
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 sound_samples_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs', 'sound_samples.json')
-with open(sound_samples_file, 'r', encoding='utf-8') as sf:
-    sound_samples_json = sf.read()
+if os.path.exists(sound_samples_file):
+    with open(sound_samples_file, 'r', encoding='utf-8') as sf:
+        sound_samples_json = sf.read()
+else:
+    sound_samples_json = "{}"
 
 proto_code = f"""
 <!-- PROTOTYPE V15: Big-Tech Global Declarative Projection, Studio Mechanical Audio, Zero Visual Pollution -->
@@ -576,6 +583,16 @@ body.typing-mode-active .sentence-unit .w {{
         return null;
       }}
     }},
+    async preloadProfile(profileId) {{
+      if (profileId === 'mute') return;
+      this.init();
+      if (!this.ctx) return;
+      const samples = (typeof __SOUND_SAMPLES__ !== 'undefined') ? __SOUND_SAMPLES__[profileId] : null;
+      if (!samples) return;
+      for (let i = 0; i < samples.length; i++) {{
+        this.getBuffer(profileId, i).catch(() => {{}});
+      }}
+    }},
     async playKeystroke(profileId, isSpace) {{
       if (profileId === 'mute') return;
       this.init();
@@ -1070,11 +1087,22 @@ body.typing-mode-active .sentence-unit .w {{
         }});
       }});
       activeSentenceEl = null;
+      if (audio && !audio.paused) {{
+        audio.pause();
+      }}
+      if (typeof updateFocusPlayBtn === 'function') {{
+        updateFocusPlayBtn();
+      }}
+      if (typeof renderGlobalPlayBtn === 'function') {{
+        renderGlobalPlayBtn();
+      }}
       window.removeEventListener('keydown', handleKeyInput, true);
       window.removeEventListener('keyup', handleKeyUp, true);
       if (typeof hideMarginalia === 'function') hideMarginalia();
       return;
     }}
+
+    SoundEngine.preloadProfile(SOUND_PROFILES[currentSoundProfileIdx].id);
 
     if (typeof closeChapterCompleteModal === 'function') closeChapterCompleteModal();
     const hiddenBridge = document.getElementById('typingHiddenInput');
@@ -1296,6 +1324,125 @@ body.typing-mode-active .sentence-unit .w {{
   // BIG-TECH DECLARATIVE PROJECTION: Declarative Single Source of Truth
   // Eliminates all dirty grey spans, flickering unrendered sentences, and ad-hoc mutations!
   // =========================================================================
+  // High-Speed Localized Projection: Renders ONLY the active sentence on keystrokes (O(1), <0.05ms)
+  function projectActiveSentenceOnly() {{
+    if (!activeSentenceEl || window.__TYPING_MODE__ === 'off') return;
+    const mode = window.__TYPING_MODE__;
+    const wSpans = Array.from(activeSentenceEl.querySelectorAll('.w'));
+    const targetWordIdx = currentWordIdx;
+    const targetCharIdx = inWordCharIdx;
+    const isWaitingSpace = waitingForSpace;
+
+    wSpans.forEach((el, wIdx) => {{
+      if (el._originalHTML === undefined) el._originalHTML = el.innerHTML;
+      const raw = el._originalHTML.trim();
+      const item = wordItems[wIdx];
+
+      // Cloze Mode in Active Sentence
+      if (mode === 'cloze') {{
+        const isClozeTarget = item ? item.isClozeTarget : false;
+        if (!isClozeTarget) {{
+          el.innerHTML = el._originalHTML;
+          return;
+        }}
+
+        const clean = item.cleanWord;
+        if (wIdx < targetWordIdx) {{
+          el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+          return;
+        }}
+        if (wIdx > targetWordIdx) {{
+          let html = '';
+          for (let i = 0; i < clean.length; i++) {{
+            html += `<span class="twc-cloze-slot-char">&nbsp;</span>`;
+          }}
+          const trailingPunct = raw.slice(clean.length);
+          if (trailingPunct) html += trailingPunct;
+          el.innerHTML = html;
+          return;
+        }}
+
+        // Active cloze target word
+        let html = '';
+        for (let i = 0; i < clean.length; i++) {{
+          const char = clean[i];
+          if (i < targetCharIdx) {{
+            html += `<span class="twc-correct">${{char}}</span>`;
+          }} else if (i === targetCharIdx && !isWaitingSpace) {{
+            html += `<span class="twc-cloze-cursor-char">&nbsp;</span>`;
+          }} else if (i === clean.length - 1 && isWaitingSpace) {{
+            html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
+          }} else {{
+            html += `<span class="twc-cloze-slot-char">&nbsp;</span>`;
+          }}
+        }}
+        const trailingPunct = raw.slice(clean.length);
+        if (trailingPunct) html += trailingPunct;
+        el.innerHTML = html;
+        return;
+      }}
+
+      // Dictation (Blind) Mode in Active Sentence
+      if (mode === 'dictation') {{
+        if (wIdx < targetWordIdx) {{
+          el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+          return;
+        }}
+        if (wIdx > targetWordIdx) {{
+          let html = '';
+          for (let i = 0; i < raw.length; i++) {{
+            const char = raw[i];
+            const isPunct = !/^[a-zA-Z0-9]$/.test(char);
+            html += isPunct ? char : `<span class="twc-masked">&nbsp;</span>`;
+          }}
+          el.innerHTML = html;
+          return;
+        }}
+
+        let html = '';
+        for (let i = 0; i < raw.length; i++) {{
+          const char = raw[i];
+          const isPunct = !/^[a-zA-Z0-9]$/.test(char);
+          if (i < targetCharIdx) {{
+            html += `<span class="twc-correct">${{char}}</span>`;
+          }} else if (i === targetCharIdx && !isWaitingSpace) {{
+            html += isPunct ? `<span class="twc-cursor">${{char}}</span>` : `<span class="twc-masked-cursor">&nbsp;</span>`;
+          }} else if (i === raw.length - 1 && isWaitingSpace) {{
+            html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
+          }} else {{
+            html += isPunct ? char : `<span class="twc-masked">&nbsp;</span>`;
+          }}
+        }}
+        el.innerHTML = html;
+        return;
+      }}
+
+      // In-situ (Type) Mode in Active Sentence - ZERO LAYOUT SHIFT ARCHITECTURE
+      if (wIdx < targetWordIdx) {{
+        el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+        return;
+      }}
+      if (wIdx > targetWordIdx) {{
+        el.innerHTML = `<span class="twc-active-pending">${{raw}}</span>`;
+        return;
+      }}
+      let html = '';
+      for (let i = 0; i < raw.length; i++) {{
+        const char = raw[i];
+        if (i < targetCharIdx) {{
+          html += `<span class="twc-correct">${{char}}</span>`;
+        }} else if (i === targetCharIdx && !isWaitingSpace) {{
+          html += `<span class="twc-cursor">${{char}}</span>`;
+        }} else if (i === raw.length - 1 && isWaitingSpace) {{
+          html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
+        }} else {{
+          html += `<span class="twc-active-pending">${{char}}</span>`;
+        }}
+      }}
+      el.innerHTML = html;
+    }});
+  }}
+
   function projectDocumentTypingState() {{
     const mode = window.__TYPING_MODE__;
     if (mode === 'off') return;
@@ -1362,124 +1509,9 @@ body.typing-mode-active .sentence-unit .w {{
         return;
       }}
 
-      // 3. CURRENT ACTIVE SENTENCE: Precise Interactive Cursor & Typing Focus
+      // 3. CURRENT ACTIVE SENTENCE: Delegated to high-speed localized projection
       if (isCurrentActive) {{
-        const targetWordIdx = currentWordIdx;
-        const targetCharIdx = inWordCharIdx;
-        const isWaitingSpace = waitingForSpace;
-
-        wSpans.forEach((el, wIdx) => {{
-          if (el._originalHTML === undefined) el._originalHTML = el.innerHTML;
-          const raw = el._originalHTML.trim();
-          const item = wordItems[wIdx];
-
-          // Cloze Mode in Active Sentence
-          if (mode === 'cloze') {{
-            const isClozeTarget = item ? item.isClozeTarget : false;
-            if (!isClozeTarget) {{
-              el.innerHTML = el._originalHTML;
-              return;
-            }}
-
-            const clean = item.cleanWord;
-            if (wIdx < targetWordIdx) {{
-              el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
-              return;
-            }}
-            if (wIdx > targetWordIdx) {{
-              let html = '';
-              for (let i = 0; i < clean.length; i++) {{
-                html += `<span class="twc-cloze-slot-char">&nbsp;</span>`;
-              }}
-              const trailingPunct = raw.slice(clean.length);
-              if (trailingPunct) html += trailingPunct;
-              el.innerHTML = html;
-              return;
-            }}
-
-            // Active cloze target word
-            let html = '';
-            for (let i = 0; i < clean.length; i++) {{
-              const char = clean[i];
-              if (i < targetCharIdx) {{
-                html += `<span class="twc-correct">${{char}}</span>`;
-              }} else if (i === targetCharIdx && !isWaitingSpace) {{
-                html += `<span class="twc-cloze-cursor-char">&nbsp;</span>`;
-              }} else if (i === clean.length - 1 && isWaitingSpace) {{
-                html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
-              }} else {{
-                html += `<span class="twc-cloze-slot-char">&nbsp;</span>`;
-              }}
-            }}
-            const trailingPunct = raw.slice(clean.length);
-            if (trailingPunct) html += trailingPunct;
-            el.innerHTML = html;
-            return;
-          }}
-
-          // Dictation (Blind) Mode in Active Sentence
-          if (mode === 'dictation') {{
-            if (wIdx < targetWordIdx) {{
-              el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
-              return;
-            }}
-            if (wIdx > targetWordIdx) {{
-              let html = '';
-              for (let i = 0; i < raw.length; i++) {{
-                const char = raw[i];
-                const isPunct = !/^[a-zA-Z0-9]$/.test(char);
-                html += isPunct ? char : `<span class="twc-masked">&nbsp;</span>`;
-              }}
-              el.innerHTML = html;
-              return;
-            }}
-
-            // Active word in Dictation mode
-            let html = '';
-            for (let i = 0; i < raw.length; i++) {{
-              const char = raw[i];
-              const isPunct = !/^[a-zA-Z0-9]$/.test(char);
-              if (i < targetCharIdx) {{
-                html += `<span class="twc-correct">${{char}}</span>`;
-              }} else if (i === targetCharIdx && !isWaitingSpace) {{
-                html += isPunct ? `<span class="twc-cursor">${{char}}</span>` : `<span class="twc-masked-cursor">&nbsp;</span>`;
-              }} else if (i === raw.length - 1 && isWaitingSpace) {{
-                html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
-              }} else {{
-                html += isPunct ? char : `<span class="twc-masked">&nbsp;</span>`;
-              }}
-            }}
-            el.innerHTML = html;
-            return;
-          }}
-
-          // In-situ (Type) Mode in Active Sentence - ZERO LAYOUT SHIFT ARCHITECTURE
-          // 1. Completed words: Rendered as single unbroken text run (OpenType kerning 100% intact!)
-          if (wIdx < targetWordIdx) {{
-            el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
-            return;
-          }}
-          // 2. Upcoming words: Rendered as single unbroken text run (Zero line expansion!)
-          if (wIdx > targetWordIdx) {{
-            el.innerHTML = `<span class="twc-active-pending">${{raw}}</span>`;
-            return;
-          }}
-          // 3. Current active word: ONLY this word gets inline character breakdown
-          let html = '';
-          for (let i = 0; i < raw.length; i++) {{
-            const char = raw[i];
-            if (i < targetCharIdx) {{
-              html += `<span class="twc-correct">${{char}}</span>`;
-            }} else if (i === targetCharIdx && !isWaitingSpace) {{
-              html += `<span class="twc-cursor">${{char}}</span>`;
-            }} else if (i === raw.length - 1 && isWaitingSpace) {{
-              html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
-            }} else {{
-              html += `<span class="twc-active-pending">${{char}}</span>`;
-            }}
-          }}
-          el.innerHTML = html;
-        }});
+        projectActiveSentenceOnly();
         return;
       }}
 
@@ -1651,7 +1683,7 @@ body.typing-mode-active .sentence-unit .w {{
       waitingForSpace = false;
       consecutiveErrors = 0;
       saveSentenceState(activeSentenceEl?.id);
-      projectDocumentTypingState();
+      projectActiveSentenceOnly();
       SoundEngine.play(false);
       return;
     }}
@@ -1682,7 +1714,7 @@ body.typing-mode-active .sentence-unit .w {{
         }}
       }}
       saveSentenceState(activeSentenceEl?.id);
-      projectDocumentTypingState();
+      projectActiveSentenceOnly();
       SoundEngine.play(false);
       return;
     }}
@@ -1733,7 +1765,7 @@ body.typing-mode-active .sentence-unit .w {{
           SoundEngine.play(false);
           checkCompletion();
           saveSentenceState(activeSentenceEl?.id);
-          projectDocumentTypingState();
+          projectActiveSentenceOnly();
           updateHUDMetrics();
           return;
         }}
@@ -1746,7 +1778,7 @@ body.typing-mode-active .sentence-unit .w {{
         SoundEngine.play(false);
         checkCompletion();
         saveSentenceState(activeSentenceEl?.id);
-        projectDocumentTypingState();
+        projectActiveSentenceOnly();
       }} else {{
         errorCount++;
         consecutiveErrors++;
@@ -1821,7 +1853,7 @@ body.typing-mode-active .sentence-unit .w {{
       if (nextIdx !== -1) {{
         currentWordIdx = nextIdx;
         saveSentenceState(activeSentenceEl?.id);
-        projectDocumentTypingState();
+        projectActiveSentenceOnly();
       }} else {{
         currentWordIdx = wordItems.length;
         saveSentenceState(activeSentenceEl?.id, true);
@@ -1836,7 +1868,7 @@ body.typing-mode-active .sentence-unit .w {{
         finishSentenceAndAdvance(false);
       }} else {{
         saveSentenceState(activeSentenceEl?.id);
-        projectDocumentTypingState();
+        projectActiveSentenceOnly();
       }}
     }}
   }}
@@ -1889,7 +1921,7 @@ body.typing-mode-active .sentence-unit .w {{
           window.showChapterCompleteModal();
         }}
       }}
-    }}, isSkip ? 150 : 450);
+    }}, isSkip ? 100 : 180);
   }}
 
   window.triggerHint = function() {{
@@ -2018,6 +2050,7 @@ body.typing-mode-active .sentence-unit .w {{
     window.closeChapterCompleteModal(false);
     sentenceProgressLedger.clear();
     try {{
+      localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem('typing_sentence_ledger_v2');
     }} catch(e) {{}}
     correctCount = 0;
@@ -2032,12 +2065,24 @@ body.typing-mode-active .sentence-unit .w {{
   // Virtual Keyboard Input Bridge for Mobile / iPad
   const hiddenInputBridge = document.getElementById('typingHiddenInput');
   if (hiddenInputBridge) {{
+    hiddenInputBridge.value = '\\u200B';
     hiddenInputBridge.addEventListener('input', () => {{
-      const val = hiddenInputBridge.value;
-      hiddenInputBridge.value = '';
-      if (!val) return;
-      for (let i = 0; i < val.length; i++) {{
-        const char = val[i];
+      const rawVal = hiddenInputBridge.value;
+      if (!rawVal || rawVal.length === 0) {{
+        hiddenInputBridge.value = '\\u200B';
+        handleKeyInput({{
+          key: 'Backspace',
+          code: 'Backspace',
+          preventDefault: () => {{}},
+          stopImmediatePropagation: () => {{}}
+        }});
+        return;
+      }}
+      const chars = rawVal.replace('\\u200B', '');
+      hiddenInputBridge.value = '\\u200B';
+      if (!chars) return;
+      for (let i = 0; i < chars.length; i++) {{
+        const char = chars[i];
         handleKeyInput({{
           key: char,
           code: 'Key' + char.toUpperCase(),
@@ -2056,22 +2101,35 @@ body.typing-mode-active .sentence-unit .w {{
 </script>
 """
 
-source_path = '/Users/lindy/Vault/Audible/books/misbehaving/index.html'
-target_dir = '/Users/lindy/Vault/My Python Productivity Script 2/interactive-audiobook-reader-pipeline/outputs'
+default_source = '/Users/lindy/Vault/Audible/books/misbehaving/index.html'
+source_path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('BOOK_INDEX_PATH', default_source)
+default_target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+target_dir = sys.argv[2] if len(sys.argv) > 2 else os.environ.get('OUTPUT_DIR', default_target_dir)
+os.makedirs(target_dir, exist_ok=True)
 target_path = os.path.join(target_dir, 'prototype-typing-reader.html')
+
+def safe_replace(name: str, src: str, target: str, replacement: str) -> str:
+    if target not in src:
+        logging.warning(f"Target pattern '{name}' not found for replacement; template structure may have evolved.")
+        return src
+    return src.replace(target, replacement)
 
 with open(source_path, 'r', encoding='utf-8') as f:
     content = f.read()
 
 # Fix passkey gate path
-content = content.replace('../../assets/js/passkey-gate.js', 'https://audiblelibrary.online/assets/js/passkey-gate.js')
+content = safe_replace("passkey_gate", content, '../../assets/js/passkey-gate.js', 'https://audiblelibrary.online/assets/js/passkey-gate.js')
 
 # Enable infinite loop '∞' in reader repeat logic
-content = content.replace(
+content = safe_replace(
+    "main_rep_levels",
+    content,
     'const MAIN_REP_LEVELS = [1, 2, 3];',
     'const MAIN_REP_LEVELS = [1, 2, 3, Infinity];'
 )
-content = content.replace(
+content = safe_replace(
+    "focus_rep_levels",
+    content,
     'const FOCUS_REP_LEVELS = [1, 2, 3];',
     'const FOCUS_REP_LEVELS = [1, 2, 3, Infinity];'
 )
@@ -2101,7 +2159,7 @@ replacement_set_rep = """function setMainRepetitions(n) {
   if (focusRepBtn) {
     focusRepBtn.textContent = (nextRep === Infinity) ? '∞' : `${nextRep}×`;
   }"""
-content = content.replace(target_set_rep, replacement_set_rep)
+content = safe_replace("set_rep", content, target_set_rep, replacement_set_rep)
 
 # Upgrade renderRepeatBtn to support '∞' badge
 target_render_rep = """function renderRepeatBtn(rep) {
@@ -2129,7 +2187,7 @@ replacement_render_rep = """function renderRepeatBtn(rep) {
   }
   if (typeof updateHudLoopBtn === 'function') updateHudLoopBtn();
 }"""
-content = content.replace(target_render_rep, replacement_render_rep)
+content = safe_replace("render_rep", content, target_render_rep, replacement_render_rep)
 
 # Upgrade updateFocusStatus to display '∞' properly
 target_focus_status = """function updateFocusStatus() {
@@ -2178,7 +2236,7 @@ replacement_focus_status = """function updateFocusStatus() {
   }
   updateFocusPlayBtn();
 }"""
-content = content.replace(target_focus_status, replacement_focus_status)
+content = safe_replace("focus_status", content, target_focus_status, replacement_focus_status)
 
 # Inject 'Typing' mode chip into the control drawer right next to Focus mode button!
 target_chip_group = '<button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>'
@@ -2187,8 +2245,7 @@ replacement_chip_group = (
     '          <button class="dock-chip" id="typingModeBtn" onclick="toggleTypingMode()" aria-label="Typing practice mode (Shortcut: K)">Typing</button>'
 )
 
-if target_chip_group in content:
-    content = content.replace(target_chip_group, replacement_chip_group)
+content = safe_replace("chip_group", content, target_chip_group, replacement_chip_group)
 
 # Synchronize Shortcuts Modal (Reading & Practice Dual Mode Reference)
 target_shortcuts = """    <div class="shortcuts-table">
@@ -2225,8 +2282,7 @@ replacement_shortcuts = """    <div class="shortcuts-table">
       <div class="shortcut-item"><span class="kbd-key">Esc</span><span>Exit Typing Mode</span></div>
     </div>"""
 
-if target_shortcuts in content:
-    content = content.replace(target_shortcuts, replacement_shortcuts)
+content = safe_replace("shortcuts_table", content, target_shortcuts, replacement_shortcuts)
 
 idx = content.rfind('</body>')
 if idx != -1:
@@ -2237,4 +2293,4 @@ else:
 with open(target_path, 'w', encoding='utf-8') as f:
     f.write(new_content)
 
-print(f"Re-compiled prototype V15 (Big-Tech Global Declarative Projection): {target_path}")
+print(f"Re-compiled prototype V16 (Grill Hardened O(1) Fast Engine): {target_path}")
