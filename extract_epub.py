@@ -244,6 +244,8 @@ def is_title_text(txt: str) -> bool:
         return False
     if re.search(r"[.!?…]$", txt.strip()):
         return False
+    if re.search(r"-\s*$", txt.strip()):
+        return False
     if txt.startswith(("Part ", "Chapter ", "Section ", "Appendix ", "Preface ", "Introduction ", "Book ", "Prologue", "Epilogue", "Table ", "Figure ")):
         return True
     minor_words = {
@@ -337,8 +339,20 @@ def clean_and_merge_elements(elements):
         curr_txt = curr.get("text", "").strip()
         next_txt = next_el.get("text", "").strip()
 
+        # Case A: Trailing hyphen at the end of curr_txt: e.g. "oversimplifi-" or "Homo-"
+        if re.search(r"\b[a-zA-Z]+-\s*$", curr_txt):
+            base = re.sub(r"-\s*$", "", curr_txt)
+            curr["text"] = base + next_txt
+            continue
+
+        next_starts_lower = bool(re.match(r"^\s*[\"“‘'(\[]*[a-z]", next_txt))
+
         is_curr_heading = is_heading_element(curr)
         is_next_heading = is_heading_element(next_el)
+
+        # An element followed by a lowercase continuation cannot be an isolated heading
+        if next_starts_lower:
+            is_curr_heading = False
 
         # Never merge headings with non-headings, or headings with other headings
         if is_curr_heading or is_next_heading:
@@ -352,29 +366,16 @@ def clean_and_merge_elements(elements):
             curr = next_el
             continue
 
-        # Case A: Trailing hyphen at the end of curr_txt: e.g. "oversimplifi-"
-        if re.search(r"\b[a-zA-Z]+-\s*$", curr_txt):
-            base = re.sub(r"-\s*$", "", curr_txt)
-            curr["text"] = base + next_txt
-            continue
-
-        # Case B: next_txt starts with lowercase (unmerged sentence continuation)
-        next_starts_lower = bool(re.match(r"^\s*[\"“‘'(\[]*[a-z]", next_txt))
-
         # Case C: Check if curr_txt is a title or header
         is_title = is_title_text(curr_txt)
 
         curr_has_terminal = bool(re.search(r"[.!?…”\"’)]$", curr_txt))
 
-        # Hard ceiling on soft-wrap merges to prevent mega-sentence bloat in unpunctuated lists/tables
-        is_too_long = len(curr_txt.split()) >= 40 or len(curr_txt) >= 280
-
         # Cross-element continuation allows lowercase continuations across block boundaries,
         # bounded by a safety ceiling (max 300 words / 2000 chars) to prevent runaway sentence bloat in unpunctuated lists.
         is_continuation_ceiling = len(curr_txt.split()) >= 300 or len(curr_txt) >= 2000
-        is_cross_element_continuation = next_starts_lower and not is_continuation_ceiling
 
-        if is_cross_element_continuation or ((next_starts_lower or (not curr_has_terminal and not is_title)) and not is_too_long):
+        if (next_starts_lower or (not curr_has_terminal and not is_title)) and not is_continuation_ceiling:
             curr["text"] = curr_txt + " " + next_txt
         else:
             merged.append(curr)
