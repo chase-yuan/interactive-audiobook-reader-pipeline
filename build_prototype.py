@@ -648,24 +648,7 @@ body.typing-mode-active .sentence-unit .w .twc-correct {{
       osc.stop(t + 0.08);
     }},
     chime() {{
-      const profile = SOUND_PROFILES[currentSoundProfileIdx];
-      if (profile && profile.id === 'mute') return;
-      this.init();
-      if (!this.ctx) return;
-      const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
-      notes.forEach((freq, idx) => {{
-        const t = this.ctx.currentTime + idx * 0.055;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, t);
-        gain.gain.setValueAtTime(0.09, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(t);
-        osc.stop(t + 0.16);
-      }});
+      // Deprecated: Arcade synthetic chime eliminated to preserve narrator acoustic immersion
     }}
   }};
 
@@ -2000,9 +1983,7 @@ body.typing-mode-active .sentence-unit .w .twc-correct {{
   }}
 
   function finishSentenceAndAdvance(isSkip = false) {{
-    if (!isSkip) {{
-      SoundEngine.chime();
-    }}
+    // Zero arcade chime: preserve pure mechanical acoustic immersion and narrator focus
     const metricsEl = document.getElementById('hudMetrics');
     if (metricsEl) metricsEl.textContent = isSkip ? 'Skipped' : 'Complete';
 

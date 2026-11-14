@@ -97,6 +97,10 @@ class TestTypingPrototype(unittest.TestCase):
         for token in forbidden_tokens:
             self.assertNotIn(token, self.html_content, f"Forbidden acoustic element found: {token}")
 
+    def test_no_distracting_arcade_chime(self):
+        """Verify artificial arcade completion chimes are strictly eliminated."""
+        self.assertNotIn("SoundEngine.chime()", self.html_content)
+
     def test_storage_key_atomic_reset_contract(self):
         """Verify STORAGE_KEY dynamic chapter keying and atomic localStorage wipe on restart."""
         self.assertIn("const STORAGE_KEY = 'typing_ledger_c'", self.html_content)
