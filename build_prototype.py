@@ -139,100 +139,176 @@ body.typing-mode-active .sentence-text {{
   background: rgba(9, 105, 218, 0.15) !important;
 }}
 
-/* Character-Level Feedback - Big Tech Design Standard */
-/* 1. Completed characters: Pure Radiant Emerald Green */
-.twc-correct {{
-  color: #10b981 !important;
-  transition: color 0.05s ease;
+/* Zero-Layout-Shift (ZLS) Word & Typography Guard (AP0 & AP4) */
+body.typing-mode-active .sentence-unit .w {{
+  display: inline;
+  white-space: nowrap !important;
+  font-kerning: normal;
+  letter-spacing: normal;
 }}
 
-/* 2. Active sentence pending characters: High-contrast legible text (Zero Dirty Gray!) */
+/* Character-Level Feedback - Big Tech Zero-Displacement Standard */
+/* 1. Completed characters & words: Pure Radiant Emerald Green */
+.twc-correct {{
+  color: #10b981 !important;
+  display: inline;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  margin: 0;
+  padding: 0;
+  border: none;
+}}
+
+/* 2. Active sentence pending characters & words: 100% stable font weight & color */
 .twc-active-pending {{
   color: var(--text-main, #ffffff) !important;
-  opacity: 0.88;
+  display: inline;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  margin: 0;
+  padding: 0;
+  border: none;
 }}
 
 /* 3. Unstarted sentences: Natural book typography */
 .twc-unstarted {{
   color: inherit;
+  display: inline;
 }}
 
-/* Active Typing Caret / Cursor */
+/* 4. Active Typing Caret / Cursor - Strictly Inline, GPU Painted, Zero Layout Shift */
 .twc-cursor {{
   position: relative;
-  display: inline-block;
-  border-bottom: 2.5px solid var(--accent);
+  display: inline;
   color: var(--text-main, #ffffff) !important;
-  animation: cursor-pulse 1.1s infinite alternate;
-}}
-@keyframes cursor-pulse {{
-  0% {{ border-color: var(--accent); }}
-  50% {{ border-color: transparent; }}
-  100% {{ border-color: var(--accent); }}
+  box-shadow: inset 0 -2.5px 0 0 var(--accent);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  margin: 0;
+  padding: 0;
+  border: none;
 }}
 
-/* Masked Dictation Characters */
+/* Vertical Bar Caret (Monkeytype / Apple Standard) */
+.twc-cursor::before {{
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  background-color: var(--accent);
+  border-radius: 1px;
+  animation: twc-caret-blink 1.05s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}}
+
+/* Trailing Caret when waiting for Spacebar */
+.twc-caret-space {{
+  position: relative;
+  display: inline;
+}}
+.twc-caret-space::after {{
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  background-color: var(--accent);
+  border-radius: 1px;
+  animation: twc-caret-blink 1.05s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}}
+
+@keyframes twc-caret-blink {{
+  0%, 45% {{ opacity: 1; }}
+  50%, 95% {{ opacity: 0; }}
+  100% {{ opacity: 1; }}
+}}
+
+/* Masked Dictation Characters (Zero Layout Shift) */
 .twc-masked {{
-  display: inline-block;
-  min-width: 9px;
-  margin: 0 0.5px;
-  border-bottom: 2px solid var(--border-subtle, rgba(255,255,255,0.2));
+  position: relative;
+  display: inline;
+  padding: 0 1px;
+  box-shadow: inset 0 -2px 0 0 var(--border-subtle, rgba(255,255,255,0.25));
   color: transparent !important;
   user-select: none;
 }}
 .twc-masked-cursor {{
-  display: inline-block;
-  min-width: 9px;
-  margin: 0 0.5px;
-  border-bottom: 2.5px solid var(--accent) !important;
-  background: rgba(88, 166, 255, 0.2) !important;
+  position: relative;
+  display: inline;
+  padding: 0 1px;
+  box-shadow: inset 0 -2.5px 0 0 var(--accent);
+  background: rgba(88, 166, 255, 0.16);
   color: transparent !important;
-  border-radius: 2px 2px 0 0;
-  animation: cursor-pulse 0.9s infinite alternate;
+}}
+.twc-masked-cursor::before {{
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  background-color: var(--accent);
+  border-radius: 1px;
+  animation: twc-caret-blink 1.05s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
 }}
 
-/* Cloze Mode: Underline Slot */
+/* Cloze Mode: Underline Slot (Zero Layout Shift) */
 .twc-cloze-slot-char {{
-  display: inline-block;
-  min-width: 10px;
-  margin: 0 1px;
-  text-align: center;
-  border-bottom: 2px dashed var(--accent);
+  position: relative;
+  display: inline;
+  padding: 0 2px;
+  box-shadow: inset 0 -2px 0 0 var(--border-subtle, rgba(255,255,255,0.3));
   color: transparent !important;
   user-select: none;
-  font-family: var(--font-serif);
 }}
 .twc-cloze-cursor-char {{
-  display: inline-block;
-  min-width: 10px;
-  margin: 0 1px;
-  text-align: center;
-  border-bottom: 2.5px solid var(--accent) !important;
-  background: rgba(88, 166, 255, 0.22) !important;
+  position: relative;
+  display: inline;
+  padding: 0 2px;
+  box-shadow: inset 0 -2.5px 0 0 var(--accent);
+  background: rgba(88, 166, 255, 0.16);
   color: transparent !important;
-  border-radius: 2px 2px 0 0;
-  animation: cursor-pulse 0.9s infinite alternate;
+}}
+.twc-cloze-cursor-char::before {{
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  background-color: var(--accent);
+  border-radius: 1px;
+  animation: twc-caret-blink 1.05s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
 }}
 
-/* Micro Shake on Error (AP4 Compliant) */
-@keyframes twc-shake {{
-  0%, 100% {{ transform: translateX(0); }}
-  25% {{ transform: translateX(-2px); }}
-  75% {{ transform: translateX(2px); }}
-}}
+/* Error Feedback: Crimson Inset Glow (AP4 Compliant, Zero Disruption) */
 .twc-error-shake {{
-  animation: twc-shake 0.15s ease-in-out;
   color: var(--btn-danger-bg, #ef4444) !important;
-  border-bottom-color: var(--btn-danger-bg, #ef4444) !important;
+  box-shadow: inset 0 -2.5px 0 0 var(--btn-danger-bg, #ef4444) !important;
+  transition: color 0.05s ease;
 }}
 
 /* Hint Flash Glow */
-@keyframes twc-glow {{
-  0% {{ color: var(--accent); transform: scale(1.15); }}
-  100% {{ color: inherit; transform: scale(1); }}
-}}
 .twc-hint-glow {{
-  animation: twc-glow 0.4s ease-out;
+  color: var(--accent) !important;
+  box-shadow: inset 0 -2.5px 0 0 var(--accent) !important;
+  transition: color 0.2s ease;
 }}
 
 /* Mistakes Modal (Boxless & Pure English) */
@@ -1037,19 +1113,31 @@ body.typing-mode-active .sentence-text {{
             }}
 
             const clean = item.cleanWord;
+            if (wIdx < targetWordIdx) {{
+              el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+              return;
+            }}
+            if (wIdx > targetWordIdx) {{
+              let html = '';
+              for (let i = 0; i < clean.length; i++) {{
+                html += `<span class="twc-cloze-slot-char">&nbsp;</span>`;
+              }}
+              const trailingPunct = raw.slice(clean.length);
+              if (trailingPunct) html += trailingPunct;
+              el.innerHTML = html;
+              return;
+            }}
+
+            // Active cloze target word
             let html = '';
             for (let i = 0; i < clean.length; i++) {{
               const char = clean[i];
-              if (wIdx < targetWordIdx) {{
+              if (i < targetCharIdx) {{
                 html += `<span class="twc-correct">${{char}}</span>`;
-              }} else if (wIdx === targetWordIdx) {{
-                if (i < targetCharIdx) {{
-                  html += `<span class="twc-correct">${{char}}</span>`;
-                }} else if (i === targetCharIdx && !isWaitingSpace) {{
-                  html += `<span class="twc-cloze-cursor-char">&nbsp;</span>`;
-                }} else {{
-                  html += `<span class="twc-cloze-slot-char">&nbsp;</span>`;
-                }}
+              }} else if (i === targetCharIdx && !isWaitingSpace) {{
+                html += `<span class="twc-cloze-cursor-char">&nbsp;</span>`;
+              }} else if (i === clean.length - 1 && isWaitingSpace) {{
+                html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
               }} else {{
                 html += `<span class="twc-cloze-slot-char">&nbsp;</span>`;
               }}
@@ -1060,41 +1148,65 @@ body.typing-mode-active .sentence-text {{
             return;
           }}
 
-          // In-situ (Type) & Dictation (Blind) in Active Sentence
-          let html = '';
-          for (let i = 0; i < raw.length; i++) {{
-            const char = raw[i];
-            const isPunct = !/^[a-zA-Z0-9]$/.test(char);
-
+          // Dictation (Blind) Mode in Active Sentence
+          if (mode === 'dictation') {{
             if (wIdx < targetWordIdx) {{
-              html += `<span class="twc-correct">${{char}}</span>`;
-            }} else if (wIdx === targetWordIdx) {{
+              el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+              return;
+            }}
+            if (wIdx > targetWordIdx) {{
+              let html = '';
+              for (let i = 0; i < raw.length; i++) {{
+                const char = raw[i];
+                const isPunct = !/^[a-zA-Z0-9]$/.test(char);
+                html += isPunct ? char : `<span class="twc-masked">&nbsp;</span>`;
+              }}
+              el.innerHTML = html;
+              return;
+            }}
+
+            // Active word in Dictation mode
+            let html = '';
+            for (let i = 0; i < raw.length; i++) {{
+              const char = raw[i];
+              const isPunct = !/^[a-zA-Z0-9]$/.test(char);
               if (i < targetCharIdx) {{
                 html += `<span class="twc-correct">${{char}}</span>`;
               }} else if (i === targetCharIdx && !isWaitingSpace) {{
-                if (mode === 'dictation') {{
-                  if (isPunct) {{
-                    html += `<span class="twc-cursor">${{char}}</span>`;
-                  }} else {{
-                    html += `<span class="twc-masked-cursor">&nbsp;</span>`;
-                  }}
-                }} else {{
-                  html += `<span class="twc-cursor">${{char}}</span>`;
-                }}
+                html += isPunct ? `<span class="twc-cursor">${{char}}</span>` : `<span class="twc-masked-cursor">&nbsp;</span>`;
+              }} else if (i === raw.length - 1 && isWaitingSpace) {{
+                html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
               }} else {{
-                if (mode === 'dictation') {{
-                  html += isPunct ? char : `<span class="twc-masked">&nbsp;</span>`;
-                }} else {{
-                  // High contrast legible white/silver text (NO DIRTY GREY!)
-                  html += `<span class="twc-active-pending">${{char}}</span>`;
-                }}
-              }}
-            }} else {{
-              if (mode === 'dictation') {{
                 html += isPunct ? char : `<span class="twc-masked">&nbsp;</span>`;
-              }} else {{
-                html += `<span class="twc-active-pending">${{char}}</span>`;
               }}
+            }}
+            el.innerHTML = html;
+            return;
+          }}
+
+          // In-situ (Type) Mode in Active Sentence - ZERO LAYOUT SHIFT ARCHITECTURE
+          // 1. Completed words: Rendered as single unbroken text run (OpenType kerning 100% intact!)
+          if (wIdx < targetWordIdx) {{
+            el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+            return;
+          }}
+          // 2. Upcoming words: Rendered as single unbroken text run (Zero line expansion!)
+          if (wIdx > targetWordIdx) {{
+            el.innerHTML = `<span class="twc-active-pending">${{raw}}</span>`;
+            return;
+          }}
+          // 3. Current active word: ONLY this word gets inline character breakdown
+          let html = '';
+          for (let i = 0; i < raw.length; i++) {{
+            const char = raw[i];
+            if (i < targetCharIdx) {{
+              html += `<span class="twc-correct">${{char}}</span>`;
+            }} else if (i === targetCharIdx && !isWaitingSpace) {{
+              html += `<span class="twc-cursor">${{char}}</span>`;
+            }} else if (i === raw.length - 1 && isWaitingSpace) {{
+              html += `<span class="twc-correct twc-caret-space">${{char}}</span>`;
+            }} else {{
+              html += `<span class="twc-active-pending">${{char}}</span>`;
             }}
           }}
           el.innerHTML = html;
