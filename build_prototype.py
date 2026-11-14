@@ -626,6 +626,17 @@ body.typing-mode-active .sentence-unit .w {{
 
   function ensureValidClozeIndex() {{
     if (window.__TYPING_MODE__ !== 'cloze') return;
+    const hasAnyTarget = wordItems.some(w => w.isClozeTarget);
+    if (!hasAnyTarget) {{
+      currentWordIdx = wordItems.length;
+      inWordCharIdx = 0;
+      waitingForSpace = false;
+      return;
+    }}
+    const state = activeSentenceEl ? sentenceProgressLedger.get(activeSentenceEl.id) : null;
+    if (state && state.completed && currentWordIdx >= wordItems.length) {{
+      return;
+    }}
     if (currentWordIdx >= wordItems.length || !wordItems[currentWordIdx]?.isClozeTarget) {{
       const nextTarget = wordItems.findIndex((w, idx) => idx >= currentWordIdx && w.isClozeTarget);
       if (nextTarget !== -1) {{
@@ -677,6 +688,30 @@ body.typing-mode-active .sentence-unit .w {{
     'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'not', 'only', 'own', 'same', 'than', 'too', 'very',
     'i', 'you', 'he', 'she', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs'
   ]);
+
+  function isVocabMatch(w, vw) {{
+    if (!w || !vw) return false;
+    const lower = w.toLowerCase();
+    const target = vw.toLowerCase();
+    if (lower === target) return true;
+    
+    // Plural / prefix matches (mentors -> mentor, hints -> hint)
+    if (lower.startsWith(target) && (lower.length - target.length) <= 3) return true;
+    if (target.startsWith(lower) && (target.length - lower.length) <= 3) return true;
+
+    // Stemming (striving -> strive, assassinated -> assassinate, recovering -> recover)
+    const stem = s => {{
+      for (const suf of ['ing', 'ed', 'es', 's', 'e']) {{
+        if (s.endsWith(suf) && (s.length - suf.length) >= 3) {{
+          return s.slice(0, -suf.length);
+        }}
+      }}
+      return s;
+    }};
+    if (stem(lower) === stem(target)) return true;
+
+    return false;
+  }}
 
   // 4. Persistence Ledger for All Sentences in Active Chapter
   const STORAGE_KEY = 'typing_ledger_c' + (typeof activeChapterNum !== 'undefined' ? activeChapterNum : '1');
@@ -1007,13 +1042,20 @@ body.typing-mode-active .sentence-unit .w {{
     
     let vocabWords = [];
     try {{
-      const sec = sentenceEl.closest('.chapter-section');
-      if (sec && sec.dataset.vocabJson) {{
-        const vArr = JSON.parse(sec.dataset.vocabJson);
+      const rawVocab = sentenceEl.getAttribute('data-vocab');
+      if (rawVocab) {{
+        const vArr = JSON.parse(rawVocab);
         vArr.forEach(v => {{
-          const parts = v.word.toLowerCase().replace(/[^a-zA-Z\\s]/g, '').split(/\\s+/);
+          if (!v || !v.word) return;
+          const fullClean = v.word.toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
+          if (fullClean.length >= 3 && !STOPWORDS.has(fullClean)) {{
+            vocabWords.push(fullClean);
+          }}
+          const parts = v.word.toLowerCase().replace(/[^a-zA-Z0-9\\s]/g, ' ').split(/\\s+/);
           parts.forEach(p => {{
-            if (p.length >= 3 && !STOPWORDS.has(p)) vocabWords.push(p);
+            if (p.length >= 3 && !STOPWORDS.has(p)) {{
+              vocabWords.push(p);
+            }}
           }});
         }});
       }}
@@ -1026,9 +1068,12 @@ body.typing-mode-active .sentence-unit .w {{
       const rawText = el._originalHTML.trim();
       const cleanWord = rawText.replace(/[^a-zA-Z0-9]/g, '');
       const lower = cleanWord.toLowerCase();
+      const subwords = rawText.split(/[^a-zA-Z0-9]+/).filter(Boolean).map(s => s.toLowerCase());
       
-      const isTarget = !STOPWORDS.has(lower) && vocabWords.length > 0 &&
-                       vocabWords.some(vw => vw === lower || lower.includes(vw));
+      const isTarget = vocabWords.length > 0 && (
+        (!STOPWORDS.has(lower) && vocabWords.some(vw => isVocabMatch(lower, vw))) ||
+        subwords.some(sw => !STOPWORDS.has(sw) && vocabWords.some(vw => isVocabMatch(sw, vw)))
+      );
 
       return {{
         el,
@@ -1038,26 +1083,6 @@ body.typing-mode-active .sentence-unit .w {{
         isClozeTarget: isTarget
       }};
     }});
-
-    if (window.__TYPING_MODE__ === 'cloze') {{
-      let hasAnyTarget = wordItems.some(item => item.isClozeTarget);
-      if (!hasAnyTarget) {{
-        let candidates = wordItems
-          .filter(item => item.cleanWord.length >= 4 && !STOPWORDS.has(item.cleanWord.toLowerCase()))
-          .sort((a,b) => b.cleanWord.length - a.cleanWord.length);
-        if (candidates.length === 0) {{
-          candidates = wordItems
-            .filter(item => item.cleanWord.length >= 3)
-            .sort((a,b) => b.cleanWord.length - a.cleanWord.length);
-        }}
-        if (candidates.length === 0 && wordItems.length > 0) {{
-          candidates = [...wordItems].sort((a,b) => b.cleanWord.length - a.cleanWord.length);
-        }}
-        if (candidates.length > 0) {{
-          candidates[0].isClozeTarget = true;
-        }}
-      }}
-    }}
   }}
 
   // =========================================================================
@@ -1075,8 +1100,43 @@ body.typing-mode-active .sentence-unit .w {{
       const isCompleted = state ? state.completed : false;
       const wSpans = Array.from(sentenceEl.querySelectorAll('.w'));
 
-      // 1. COMPLETED SENTENCE: 100% Solid Emerald Green, Zero Cursor, Crisp & High Achievement
+      // 1. COMPLETED SENTENCE: In cloze mode, only target words stay green; in full modes, all typed words stay green
       if (isCompleted && !isCurrentActive) {{
+        if (mode === 'cloze') {{
+          let sentenceVocab = [];
+          try {{
+            const rawV = sentenceEl.getAttribute('data-vocab');
+            if (rawV) {{
+              const vArr = JSON.parse(rawV);
+              vArr.forEach(v => {{
+                if (!v || !v.word) return;
+                const fullClean = v.word.toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
+                if (fullClean.length >= 3 && !STOPWORDS.has(fullClean)) sentenceVocab.push(fullClean);
+                v.word.toLowerCase().replace(/[^a-zA-Z0-9\\s]/g, ' ').split(/\\s+/).forEach(p => {{
+                  if (p.length >= 3 && !STOPWORDS.has(p)) sentenceVocab.push(p);
+                }});
+              }});
+            }}
+          }} catch(e) {{}}
+
+          wSpans.forEach(el => {{
+            if (el._originalHTML === undefined) el._originalHTML = el.innerHTML;
+            const raw = el._originalHTML.trim();
+            const clean = raw.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            const subwords = raw.split(/[^a-zA-Z0-9]+/).filter(Boolean).map(s => s.toLowerCase());
+            const isTarget = sentenceVocab.length > 0 && (
+              (!STOPWORDS.has(clean) && sentenceVocab.some(vw => isVocabMatch(clean, vw))) ||
+              subwords.some(sw => !STOPWORDS.has(sw) && sentenceVocab.some(vw => isVocabMatch(sw, vw)))
+            );
+            if (isTarget) {{
+              el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+            }} else {{
+              el.innerHTML = el._originalHTML;
+            }}
+          }});
+          return;
+        }}
+
         wSpans.forEach(el => {{
           if (el._originalHTML === undefined) el._originalHTML = el.innerHTML;
           const raw = el._originalHTML.trim();
@@ -1218,6 +1278,41 @@ body.typing-mode-active .sentence-unit .w {{
 
       // 4. PARTIALLY COMPLETED (NON-ACTIVE) SENTENCE: Typed words stay green, untyped stay natural
       if (state && !isCurrentActive) {{
+        if (mode === 'cloze') {{
+          let sentenceVocab = [];
+          try {{
+            const rawV = sentenceEl.getAttribute('data-vocab');
+            if (rawV) {{
+              const vArr = JSON.parse(rawV);
+              vArr.forEach(v => {{
+                if (!v || !v.word) return;
+                const fullClean = v.word.toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
+                if (fullClean.length >= 3 && !STOPWORDS.has(fullClean)) sentenceVocab.push(fullClean);
+                v.word.toLowerCase().replace(/[^a-zA-Z0-9\\s]/g, ' ').split(/\\s+/).forEach(p => {{
+                  if (p.length >= 3 && !STOPWORDS.has(p)) sentenceVocab.push(p);
+                }});
+              }});
+            }}
+          }} catch(e) {{}}
+
+          wSpans.forEach((el, wIdx) => {{
+            if (el._originalHTML === undefined) el._originalHTML = el.innerHTML;
+            const raw = el._originalHTML.trim();
+            const clean = raw.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            const subwords = raw.split(/[^a-zA-Z0-9]+/).filter(Boolean).map(s => s.toLowerCase());
+            const isTarget = sentenceVocab.length > 0 && (
+              (!STOPWORDS.has(clean) && sentenceVocab.some(vw => isVocabMatch(clean, vw))) ||
+              subwords.some(sw => !STOPWORDS.has(sw) && sentenceVocab.some(vw => isVocabMatch(sw, vw)))
+            );
+            if (isTarget && wIdx < state.wordIdx) {{
+              el.innerHTML = `<span class="twc-correct">${{raw}}</span>`;
+            }} else {{
+              el.innerHTML = el._originalHTML;
+            }}
+          }});
+          return;
+        }}
+
         wSpans.forEach((el, wIdx) => {{
           if (el._originalHTML === undefined) el._originalHTML = el.innerHTML;
           const raw = el._originalHTML.trim();
@@ -1325,7 +1420,15 @@ body.typing-mode-active .sentence-unit .w {{
       ensureValidClozeIndex();
     }}
 
-    if (currentWordIdx >= wordItems.length) return;
+    if (currentWordIdx >= wordItems.length) {{
+      if (window.__TYPING_MODE__ === 'cloze' && (e.key === ' ' || e.code === 'Space' || e.key === 'Enter')) {{
+        e.preventDefault();
+        saveSentenceState(activeSentenceEl?.id, true);
+        finishSentenceAndAdvance(false);
+        return;
+      }}
+      return;
+    }}
     const currentItem = wordItems[currentWordIdx];
     const isCloze = (window.__TYPING_MODE__ === 'cloze');
     const targetWord = isCloze ? currentItem.cleanWord : currentItem.rawText;
@@ -1610,6 +1713,15 @@ body.typing-mode-active .sentence-unit .w {{
           }}
           audio.pause();
           if (typeof shadowState !== 'undefined') shadowState.completed = 0;
+
+          // In Cloze mode: if active sentence has NO cloze targets, auto-advance on playback completion
+          if (window.__TYPING_MODE__ === 'cloze') {{
+            const hasAnyTarget = wordItems.some(w => w.isClozeTarget);
+            if (!hasAnyTarget) {{
+              saveSentenceState(activeSentenceEl.id, true);
+              finishSentenceAndAdvance(false);
+            }}
+          }}
         }}
       }}
     }});
