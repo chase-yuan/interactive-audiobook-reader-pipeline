@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -189,6 +190,34 @@ def synthesize_chapter(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     sr = EDGE_SAMPLE_RATE
+
+    # Pre-fetch missing sentences in parallel within this chapter (10 concurrent workers)
+    missing_entries = []
+    for item in canonical_data:
+        cid = item["id"]
+        text = item["text"].strip()
+        content_sig = hashlib.sha256(f"{voice}:{speed:.2f}:{text}".encode("utf-8")).hexdigest()[:10]
+        cache_file = cache_dir / f"{cid}_{voice}_{content_sig}.npz"
+        if not cache_file.is_file():
+            missing_entries.append((cid, text, cache_file))
+
+    if missing_entries:
+        def _fetch_entry(entry):
+            cid, text, c_file = entry
+            if is_standalone_divider(text):
+                audio_samples = np.zeros(int(sr * 0.50), dtype=np.float32)
+            else:
+                acoustic_text = clean_acoustic_text(text)
+                if not any(c.isalnum() for c in acoustic_text):
+                    audio_samples = np.zeros(int(sr * 0.30), dtype=np.float32)
+                else:
+                    audio_samples = synthesize_sentence_edge(acoustic_text, voice=voice, speed=speed, target_sr=sr)
+            np.savez_compressed(c_file, samples=audio_samples)
+
+        workers = min(10, len(missing_entries))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            list(executor.map(_fetch_entry, missing_entries))
+
     pcm_segments: List[np.ndarray] = []
     aligned_items: List[Dict[str, Any]] = []
     current_sample = 0
