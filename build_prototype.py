@@ -1774,7 +1774,7 @@ content = content.replace(target_focus_status, replacement_focus_status)
 # Inject 'Typing' mode chip into the control drawer right next to Focus mode button!
 target_chip_group = '<button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>'
 replacement_chip_group = (
-    '<button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>\\n'
+    '<button class="dock-chip" id="focusModeBtn" onclick="toggleFocusMode()" aria-label="Focus mode (Shortcut: P)">Focus</button>\n'
     '          <button class="dock-chip" id="typingModeBtn" onclick="toggleTypingMode()" aria-label="Typing practice mode (Shortcut: K)">Typing</button>'
 )
 
