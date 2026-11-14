@@ -1627,19 +1627,24 @@ body.typing-mode-active .sentence-unit .w {{
     }}
   }});
 
-  // Mouse Click Handler: Seamless non-destructive sentence switching
+  // Mouse Click Handler: Seamless non-destructive sentence switching in Typing Mode
   const prevHandleClick = window.handleSentenceClick;
   window.handleSentenceClick = function(event, id, start, end, hasMatch) {{
-    if (prevHandleClick) prevHandleClick(event, id, start, end, hasMatch);
-    if (window.__TYPING_MODE__ !== 'off') {{
-      const sentence = document.getElementById(id);
-      if (sentence) {{
-        if (activeSentenceEl === sentence) {{
-          window.playActiveSentenceOnce();
-        }} else {{
-          lockSentence(sentence, false);
-        }}
-      }}
+    if (window.__TYPING_MODE__ === 'off') {{
+      if (prevHandleClick) return prevHandleClick(event, id, start, end, hasMatch);
+      return;
+    }}
+
+    if (event && event.stopPropagation) event.stopPropagation();
+
+    const sentence = document.getElementById(id);
+    if (!sentence) return;
+
+    if (activeSentenceEl === sentence) {{
+      window.playActiveSentenceOnce();
+      updateMarginaliaState();
+    }} else {{
+      lockSentence(sentence, false);
     }}
   }};
 }})();
