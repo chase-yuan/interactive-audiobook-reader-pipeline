@@ -55,6 +55,7 @@ def _check_temporal_integrity(content: str) -> list:
 
         units = re.split(r'<(?:div|span) class="sentence-unit"', ch_content)
         prev_end = None
+        first_unit_checked = False
         for u in units[1:]:
             m = sent_re.search('<span class="sentence-unit"' + u[:400]) or sent_re.search('<div class="sentence-unit"' + u[:400])
             if not m:
@@ -69,18 +70,40 @@ def _check_temporal_integrity(content: str) -> list:
                 continue
             if end < start:
                 errors.append(f"Ch {ch_num} {uid}: end {end:.2f}s precedes start {start:.2f}s")
-            is_reordered = 'data-reorder="1"' in u[:500] or 'data-epigraph="1"' in u[:500]
-            if not is_reordered:
-                if prev_end is not None and start < (prev_end - 0.05):
-                    errors.append(f"Ch {ch_num} {uid}: sentence overlap (starts at {start:.2f}s before previous ended at {prev_end:.2f}s)")
-                elif prev_end is not None and (start - prev_end) > 20.0:
+            
+            # Shift-Left Gate: Guard against unhandled leading acoustic void before first sentence
+            if not first_unit_checked:
+                first_unit_checked = True
+                leading_threshold = 30.0 if str(ch_num) == "1" else 4.0
+                if start > leading_threshold:
                     is_covered = any(
-                        float(r.get("start", 0)) <= (start + 2.0) and float(r.get("end", 0)) >= (prev_end - 2.0)
+                        float(r.get("start", 0)) <= 1.0 and float(r.get("end", 0)) >= (start - 1.0)
                         for r in ch_skips
                     )
                     if not is_covered:
-                        errors.append(f"Ch {ch_num} {uid}: unhandled excessive gap of {start - prev_end:.2f}s between sentences without skip-range reconciliation")
-                prev_end = max(prev_end or 0.0, end)
+                        errors.append(f"Ch {ch_num} {uid}: unhandled leading void of {start:.2f}s before first sentence without skip-range reconciliation (potential missing intro/speech)")
+
+            unit_skips = list(ch_skips)
+            m_unit_skips = re.search(r'data-skip-ranges="([^"]+)"', u[:500])
+            if m_unit_skips:
+                try:
+                    import html as html_lib
+                    unit_skips.extend(json.loads(html_lib.unescape(m_unit_skips.group(1))))
+                except Exception:
+                    pass
+
+            is_reordered = 'data-reorder="1"' in u[:500] or 'data-epigraph="1"' in u[:500]
+            if prev_end is not None and start < (prev_end - 0.05):
+                if not is_reordered:
+                    errors.append(f"Ch {ch_num} {uid}: sentence overlap (starts at {start:.2f}s before previous ended at {prev_end:.2f}s)")
+            elif prev_end is not None and (start - prev_end) > 6.0:
+                is_covered = any(
+                    float(r.get("start", 0)) <= (start + 2.0) and float(r.get("end", 0)) >= (prev_end - 2.0)
+                    for r in unit_skips
+                )
+                if not is_covered:
+                    errors.append(f"Ch {ch_num} {uid}: unhandled excessive gap of {start - prev_end:.2f}s between sentences without skip-range reconciliation")
+            prev_end = max(prev_end or 0.0, end)
 
             # Check for adjacent duplicate word timestamps on observed words
             text_part = u.split('<div class="inspect-panel"')[0]

@@ -111,6 +111,41 @@ def _toc_titles(zf: zipfile.ZipFile, opf_dir: PurePosixPath, manifest: Dict[str,
     return {str(PurePosixPath(key)): value for key, value in result.items()}
 
 
+def extract_chapter_summaries_from_epub(epub_path: Path) -> Dict[str, str]:
+    """
+    Extract chapter summaries/maps if present in EPUB front-matter or appendix.
+    Detects sections like 'Chapter Summaries and Map', 'Chapter Synopses', etc.,
+    and returns a mapping {chapter_identifier: summary_text}.
+    """
+    summaries: Dict[str, str] = {}
+    try:
+        with zipfile.ZipFile(Path(epub_path).resolve()) as zf:
+            for name in zf.namelist():
+                if not name.endswith((".html", ".xhtml", ".htm")):
+                    continue
+                content = zf.read(name).decode("utf-8", errors="ignore")
+                lower = content.lower()
+                if not any(m in lower for m in ("chapter summaries", "chapter synopses", "summaries of chapters", "chapter map")):
+                    continue
+                
+                parts = re.split(r'(CHAPTER\s+\d+|EPILOGUE)', content, flags=re.IGNORECASE)
+                if len(parts) > 2:
+                    for i in range(1, len(parts), 2):
+                        header = parts[i].strip()
+                        body = parts[i+1] if i+1 < len(parts) else ""
+                        clean_body = re.sub(r'<[^>]+>', ' ', body)
+                        clean_body = ' '.join(clean_body.split())
+                        clean_body = re.split(r'BOOK\s+[IVXLCDM]+', clean_body, flags=re.IGNORECASE)[0].strip()
+                        clean_body = clean_body.lstrip('. :-—')
+                        if clean_body:
+                            num_m = re.search(r'\d+', header)
+                            key = num_m.group(0) if num_m else header.upper()
+                            summaries[key] = clean_body
+    except Exception:
+        pass
+    return summaries
+
+
 def parse_epub(epub_path: Path, cover_output: Optional[Path] = None) -> Dict:
     """Return ordered, non-empty EPUB spine documents and optionally extract its cover."""
     epub_path = Path(epub_path).resolve()
@@ -175,7 +210,13 @@ def parse_epub(epub_path: Path, cover_output: Optional[Path] = None) -> Dict:
                 Path(cover_output).write_bytes(zf.read(cover))
     if not chapters:
         raise ValueError("EPUB spine contains no textual chapters")
-    return {"metadata": metadata, "chapters": chapters, "cover_member": cover}
+    chapter_summaries = extract_chapter_summaries_from_epub(epub_path)
+    return {
+        "metadata": metadata,
+        "chapters": chapters,
+        "cover_member": cover,
+        "chapter_summaries": chapter_summaries,
+    }
 
 
 def ffprobe_duration(path: Path) -> float:

@@ -26,7 +26,7 @@
 | **New EPUB -> Autonomous TTS Audiobook** | `python3 universal_runner.py /path/to/book.epub --book-dir /path/to/book_dir` |
 | **New EPUB + Audio -> Audiobook** | `python3 universal_runner.py /path/to/book.epub --audio-dir /path/to/audio --concurrency 8` |
 | **Directory -> Full Chunked Release** | `python3 pipeline.py --book-dir /path/to/book_dir --publish` |
-| **Run Pipeline Test Suite** | `python3 -m unittest test_release_gate.py test_html_builder.py test_design_tokens.py test_shift_left_sentence_gate.py` |
+| **Run Pipeline Test Suite** | `python3 -m unittest test_release_gate.py test_html_builder.py test_design_tokens.py test_shift_left_sentence_gate.py test_leading_acoustic_gap_gate.py` |
 
 ---
 
@@ -88,6 +88,8 @@
    - 严禁将处理拆解为“先跑这几个章节的脚本 -> 停下来汇报 -> 等用户命令 -> 再跑对齐 -> 停下来汇报 -> 再上架”。
    - 必须通过统一协调入口（如 `pipeline.py` 或统一编排脚本）全自动连续流转：
      `抽取/对齐 ➔ 语言学解析 ➔ 校验门禁 ➔ 切片构建 ➔ R2同步 ➔ 生产部署 ➔ 边缘验证 ➔ 输出卡密`。
+
+
 
 
 
