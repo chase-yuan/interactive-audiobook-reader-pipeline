@@ -2402,9 +2402,9 @@ def generate_synthetic_base_reader(output_path: str = None) -> str:
             {"id": "s-2", "elem_idx": 2, "tag": "p", "text": "Practice shadow typing with immersive audio synchronization."},
         ]
         analysis = [
-            {"id": "s-0", "elem_idx": 0, "tag": "h1", "text": "Chapter 1: The Foundations", "trans": "第一章：基础", "vocab": [{"word": "foundations", "phonetic": "faʊnˈdeɪʃənz", "meaning": "基础"}]},
-            {"id": "s-1", "elem_idx": 1, "tag": "p", "text": "This is a demonstration of the interactive reader pipeline.", "trans": "这是交互式阅读器流水线的演示。", "vocab": [{"word": "demonstration", "phonetic": "ˌdemənˈstreɪʃn", "meaning": "演示"}]},
-            {"id": "s-2", "elem_idx": 2, "tag": "p", "text": "Practice shadow typing with immersive audio synchronization.", "trans": "在沉浸式音频同步下练习影子跟打。", "vocab": [{"word": "synchronization", "phonetic": "ˌsɪŋkrənaɪˈzeɪʃn", "meaning": "同步"}]},
+            {"id": "s-0", "elem_idx": 0, "tag": "h1", "text": "Chapter 1: The Foundations", "trans": "第一章：基础", "vocab": [{"word": "foundations", "pos": "n.", "def": "基础"}]},
+            {"id": "s-1", "elem_idx": 1, "tag": "p", "text": "This is a demonstration of the interactive reader pipeline.", "trans": "这是交互式阅读器流水线的演示。", "vocab": [{"word": "demonstration", "pos": "n.", "def": "演示"}]},
+            {"id": "s-2", "elem_idx": 2, "tag": "p", "text": "Practice shadow typing with immersive audio synchronization.", "trans": "在沉浸式音频同步下练习影子跟打。", "vocab": [{"word": "synchronization", "pos": "n.", "def": "同步"}]},
         ]
         aligned = [
             {
