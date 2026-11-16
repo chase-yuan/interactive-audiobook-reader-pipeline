@@ -24,8 +24,15 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
-import edge_tts
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    import edge_tts
+except ImportError:
+    edge_tts = None
 
 from artifact_io import atomic_write_json
 from acoustic_text_utils import (
@@ -90,8 +97,10 @@ async def _synthesize_edge_audio_bytes(text: str, voice: str, rate: str) -> byte
     return bytes(data)
 
 
-def _decode_mp3_to_pcm(mp3_bytes: bytes, target_sr: int = EDGE_SAMPLE_RATE) -> np.ndarray:
+def _decode_mp3_to_pcm(mp3_bytes: bytes, target_sr: int = EDGE_SAMPLE_RATE) -> Any:
     """Decode MP3 bytes to float32 mono PCM numpy array via ffmpeg."""
+    if np is None:
+        raise RuntimeError("numpy is required for PCM decoding in edge_synthesizer")
     cmd = [
         FFMPEG_BIN,
         "-y",
@@ -114,8 +123,10 @@ def synthesize_sentence_edge(
     voice: str = DEFAULT_VOICE,
     speed: float = 1.0,
     target_sr: int = EDGE_SAMPLE_RATE,
-) -> np.ndarray:
+) -> Any:
     """Synthesize a single sentence using Edge-TTS with fallback recovery."""
+    if np is None or edge_tts is None:
+        raise RuntimeError("numpy and edge-tts must be installed to use synthesize_sentence_edge")
     rate = speed_to_edge_rate(speed)
     acoustic_text = clean_acoustic_text(text)
     if not any(c.isalnum() for c in acoustic_text):
@@ -156,6 +167,9 @@ def synthesize_chapter(
     analysis_path = Path(analysis_path).resolve()
     aligned_output_path = Path(aligned_output_path).resolve()
     audio_output_path = Path(audio_output_path).resolve()
+
+    if np is None or edge_tts is None:
+        raise RuntimeError("numpy and edge-tts must be installed to use Edge-TTS synthesizer")
 
     canonical_data = json.loads(canonical_path.read_text(encoding="utf-8"))
     analysis_data = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.is_file() else []

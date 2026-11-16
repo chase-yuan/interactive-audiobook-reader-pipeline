@@ -144,8 +144,12 @@ class TestTypingPrototype(unittest.TestCase):
             source_file = "/Users/lindy/Vault/Audible/books/misbehaving/index.html.bak"
             if not os.path.exists(source_file):
                 source_file = "/Users/lindy/Vault/Audible/books/misbehaving/index.html"
-            with open(source_file, "r", encoding="utf-8") as f:
-                content = f.read()
+            if os.path.exists(source_file):
+                with open(source_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+            else:
+                from build_prototype import generate_synthetic_base_reader
+                content = generate_synthetic_base_reader()
             with open(test_html, "w", encoding="utf-8") as f:
                 f.write(content)
 

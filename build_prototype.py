@@ -1744,7 +1744,7 @@ body.typing-mode-active .sentence-unit .w .twc-correct {{
     // Spacebar advances to next word (with smart trailing punctuation tolerance)
     if (e.key === ' ' || e.code === 'Space' || (isCloze && e.key === 'Enter')) {{
       const remainingSlice = targetWord.slice(inWordCharIdx);
-      const isOnlyTrailingPunct = (remainingSlice.length > 0 && /^[\s,.:;!?"'“”‘’—–\-\)\]\}}…]+$/.test(remainingSlice));
+      const isOnlyTrailingPunct = (remainingSlice.length > 0 && /^[\\s,.:;!?"'“”‘’—–\\-\\)\\]}}…]+$/.test(remainingSlice));
       const isPurePunctWord = /^[^a-zA-Z0-9]+$/.test(targetWord);
 
       if (waitingForSpace || inWordCharIdx >= targetWord.length || isOnlyTrailingPunct || isPurePunctWord) {{
@@ -1777,7 +1777,7 @@ body.typing-mode-active .sentence-unit .w .twc-correct {{
           const nextTarget = isCloze ? nextItem.cleanWord : nextItem.rawText;
           const firstChar = nextTarget[0];
           const isNextMatch = isCharMatch(e.key, firstChar) || 
-            (nextTarget.length > 1 && /^[\(\"“‘\[]/.test(firstChar) && isCharMatch(e.key, nextTarget[1]));
+            (nextTarget.length > 1 && /^[("“‘\\[]/.test(firstChar) && isCharMatch(e.key, nextTarget[1]));
 
           if (isNextMatch) {{
             waitingForSpace = false;
@@ -1801,7 +1801,7 @@ body.typing-mode-active .sentence-unit .w .twc-correct {{
       const expectedChar = activeTarget[inWordCharIdx];
 
       // Smart Opening Quote/Bracket Tolerance
-      if (inWordCharIdx === 0 && /^[\(\"“‘\[]/.test(expectedChar) && activeTarget.length > 1) {{
+      if (inWordCharIdx === 0 && /^[("“‘\\[]/.test(expectedChar) && activeTarget.length > 1) {{
         if (isCharMatch(inputChar, activeTarget[1])) {{
           correctCount += 2;
           inWordCharIdx = 2;
@@ -2384,6 +2384,91 @@ def inject_typing_mode_to_html(content: str, *, remote_passkey_gate: bool = Fals
     else:
         return content + proto_code
 
+
+def generate_synthetic_base_reader(output_path: str = None) -> str:
+    """Generate a clean, specification-compliant synthetic reader HTML for standalone build and testing."""
+    import tempfile
+    from pathlib import Path
+    from validate_outputs import validate_for_release
+    from html_builder import build_master_reader
+
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td)
+        (p / "audio").mkdir(exist_ok=True)
+        (p / "audio" / "chapter_01.mp3").write_bytes(b"FIXTURE_AUDIO")
+        canonical = [
+            {"id": "s-0", "elem_idx": 0, "tag": "h1", "text": "Chapter 1: The Foundations"},
+            {"id": "s-1", "elem_idx": 1, "tag": "p", "text": "This is a demonstration of the interactive reader pipeline."},
+            {"id": "s-2", "elem_idx": 2, "tag": "p", "text": "Practice shadow typing with immersive audio synchronization."},
+        ]
+        analysis = [
+            {"id": "s-0", "elem_idx": 0, "tag": "h1", "text": "Chapter 1: The Foundations", "trans": "第一章：基础", "vocab": [{"word": "foundations", "pos": "n.", "def": "基础"}]},
+            {"id": "s-1", "elem_idx": 1, "tag": "p", "text": "This is a demonstration of the interactive reader pipeline.", "trans": "这是交互式阅读器流水线的演示。", "vocab": [{"word": "demonstration", "pos": "n.", "def": "演示"}]},
+            {"id": "s-2", "elem_idx": 2, "tag": "p", "text": "Practice shadow typing with immersive audio synchronization.", "trans": "在沉浸式音频同步下练习影子跟打。", "vocab": [{"word": "synchronization", "pos": "n.", "def": "同步"}]},
+        ]
+        aligned = [
+            {
+                **analysis[0],
+                "word_spans": [
+                    {"word": "Chapter", "start": 0.0, "end": 0.4},
+                    {"word": "1:", "start": 0.4, "end": 0.7},
+                    {"word": "The", "start": 0.7, "end": 0.9},
+                    {"word": "Foundations", "start": 0.9, "end": 1.5},
+                ],
+                "raw_start": 0.0, "raw_end": 1.5, "start": 0.0, "end": 1.5,
+                "has_audio_match": True, "fallback_used": False, "alignment_status": "validated",
+                "matched_token_count": 4, "source_token_count": 4, "match_ratio": 1.0,
+            },
+            {
+                **analysis[1],
+                "word_spans": [
+                    {"word": "This", "start": 1.6, "end": 1.9},
+                    {"word": "is", "start": 1.9, "end": 2.1},
+                    {"word": "a", "start": 2.1, "end": 2.2},
+                    {"word": "demonstration", "start": 2.2, "end": 2.9},
+                    {"word": "of", "start": 2.9, "end": 3.0},
+                    {"word": "the", "start": 3.0, "end": 3.2},
+                    {"word": "interactive", "start": 3.2, "end": 3.8},
+                    {"word": "reader", "start": 3.8, "end": 4.1},
+                    {"word": "pipeline.", "start": 4.1, "end": 4.6},
+                ],
+                "raw_start": 1.6, "raw_end": 4.6, "start": 1.6, "end": 4.6,
+                "has_audio_match": True, "fallback_used": False, "alignment_status": "validated",
+                "matched_token_count": 9, "source_token_count": 9, "match_ratio": 1.0,
+            },
+            {
+                **analysis[2],
+                "word_spans": [
+                    {"word": "Practice", "start": 4.8, "end": 5.3},
+                    {"word": "shadow", "start": 5.3, "end": 5.7},
+                    {"word": "typing", "start": 5.7, "end": 6.1},
+                    {"word": "with", "start": 6.1, "end": 6.3},
+                    {"word": "immersive", "start": 6.3, "end": 6.9},
+                    {"word": "audio", "start": 6.9, "end": 7.3},
+                    {"word": "synchronization.", "start": 7.3, "end": 8.1},
+                ],
+                "raw_start": 4.8, "raw_end": 8.1, "start": 4.8, "end": 8.1,
+                "has_audio_match": True, "fallback_used": False, "alignment_status": "validated",
+                "matched_token_count": 7, "source_token_count": 7, "match_ratio": 1.0,
+            },
+        ]
+        for suffix, data in (("canonical_sentences", canonical), ("full_analysis", analysis), ("aligned_sentences", aligned)):
+            (p / f"book_ch01_{suffix}.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        report_path = p / "reader_validation_report.json"
+        _, token = validate_for_release(p, report_path)
+
+        target_file = Path(output_path) if output_path else (p / "reader.html")
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        build_master_reader(
+            "Prototype Reader", "Interactive Typing Edition", "Autonomous Pipeline",
+            [{"num": 1, "title": "Chapter 1: The Foundations", "audio": "./audio/chapter_01.mp3", "aligned_json": str(p / "book_ch01_aligned_sentences.json")}],
+            str(target_file),
+            release_token=token,
+            release_report_path=str(report_path)
+        )
+        return target_file.read_text(encoding="utf-8")
+
+
 if __name__ == '__main__':
     default_source = '/Users/lindy/Vault/Audible/books/misbehaving/index.html'
     source_path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('BOOK_INDEX_PATH', default_source)
@@ -2392,8 +2477,11 @@ if __name__ == '__main__':
     os.makedirs(target_dir, exist_ok=True)
     target_path = os.path.join(target_dir, 'prototype-typing-reader.html')
 
-    with open(source_path, 'r', encoding='utf-8') as f:
-        content = f.read()
+    if os.path.isfile(source_path):
+        with open(source_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    else:
+        content = generate_synthetic_base_reader()
 
     new_content = inject_typing_mode_to_html(content, remote_passkey_gate=True)
 
