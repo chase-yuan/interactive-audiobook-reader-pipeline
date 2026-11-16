@@ -917,7 +917,8 @@ body.typing-mode-active .sentence-unit .w .twc-correct {{
   }}
 
   // 4. Persistence Ledger for All Sentences in Active Chapter
-  const STORAGE_KEY = 'typing_ledger_c' + (typeof activeChapterNum !== 'undefined' ? activeChapterNum : '1');
+  const bookIdPrefix = (typeof window.__BOOK_ID__ !== 'undefined' && window.__BOOK_ID__) || (window.location.pathname.split('/').filter(Boolean).pop() || '').replace('.html', '') || 'global';
+  const STORAGE_KEY = 'typing_ledger_' + bookIdPrefix + '_c' + (typeof activeChapterNum !== 'undefined' ? activeChapterNum : '1');
   const sentenceProgressLedger = new Map();
 
   function loadSavedLedger() {{
@@ -1271,7 +1272,8 @@ body.typing-mode-active .sentence-unit .w .twc-correct {{
       wordIdx: currentWordIdx,
       charIdx: inWordCharIdx,
       waitingForSpace: waitingForSpace,
-      completed: isCompleted
+      completed: isCompleted,
+      updatedAt: Date.now()
     }});
     persistLedgerToStorage();
   }}

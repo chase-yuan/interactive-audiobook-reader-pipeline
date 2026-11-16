@@ -103,7 +103,7 @@ class TestTypingPrototype(unittest.TestCase):
 
     def test_storage_key_atomic_reset_contract(self):
         """Verify STORAGE_KEY dynamic chapter keying and atomic localStorage wipe on restart."""
-        self.assertIn("const STORAGE_KEY = 'typing_ledger_c'", self.html_content)
+        self.assertIn("const STORAGE_KEY = 'typing_ledger_' + bookIdPrefix + '_c'", self.html_content)
         self.assertIn("localStorage.removeItem(STORAGE_KEY)", self.html_content)
 
     def test_localized_o1_projection_contract(self):
